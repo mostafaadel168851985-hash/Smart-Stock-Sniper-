@@ -1,160 +1,170 @@
 import streamlit as st
-import requests
 import pandas as pd
+from tradingview_ta import TA_Handler, Interval
 
-st.set_page_config(page_title="EGX Sniper PRO", layout="wide")
+st.set_page_config(layout="wide")
 
-# ================= STYLE =================
+# ========= STYLE (تقليل المسافات فقط) =========
 st.markdown("""
 <style>
-.stApp {
-    background: linear-gradient(135deg,#020617,#020617,#0f172a);
-    color:white;
+.block-container {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
 }
-
-input {
-    background:#0f172a !important;
-    color:white !important;
-    border-radius:10px !important;
-    border:1px solid #334155 !important;
+hr {
+    margin: 6px 0 !important;
 }
-
-button[data-baseweb="tab"] {
-    background:#0f172a;
-    border-radius:10px;
-    color:white;
-}
-button[aria-selected="true"] {
-    background:#1e293b !important;
-    border-bottom:3px solid red;
+.card {
+    background:#020617;
+    padding:12px 14px;
+    border-radius:12px;
+    line-height:1.4;
+    font-size:14px;
 }
 </style>
 """, unsafe_allow_html=True)
 
 st.title("🏹 EGX Sniper PRO")
 
-ALL_STOCKS = ["TMGH","COMI","ETEL","SWDY","EFID","ATQA","ALCN","RMDA","ORAS","FWRY"]
+tabs = st.tabs(["📊 تحليل سهم","🔥 فرص"])
 
-# ================= DATA =================
-@st.cache_data(ttl=300)
+# ========= DATA =========
 def get_data(symbol):
-    try:
-        url = "https://scanner.tradingview.com/egypt/scan"
-        payload = {
-            "symbols":{"tickers":[f"EGX:{symbol}"],"query":{"types":[]}},
-            "columns":["close","high","low","volume","RSI"]
-        }
-        r = requests.post(url,json=payload)
-        d = r.json()["data"][0]["d"]
-        return float(d[0]),float(d[1]),float(d[2]),float(d[3]),float(d[4])
-    except:
-        return None
+    handler = TA_Handler(
+        symbol=symbol,
+        screener="egypt",
+        exchange="EGX",
+        interval=Interval.INTERVAL_1_DAY
+    )
+    analysis = handler.get_analysis()
 
-# ================= CALC =================
+    return {
+        "price": analysis.indicators.get("close", 0),
+        "high": analysis.indicators.get("high", 0),
+        "low": analysis.indicators.get("low", 0),
+        "volume": analysis.indicators.get("volume", 0),
+        "rsi": analysis.indicators.get("RSI", 0)
+    }
+
+# ========= CALC =========
 def pivots(p,h,l):
-    piv=(p+h+l)/3
-    s1=(2*piv)-h
-    s2=piv-(h-l)
-    r1=(2*piv)-l
-    r2=piv+(h-l)
+    pivot = (h+l+p)/3
+    s1 = 2*pivot - h
+    s2 = pivot - (h-l)
+    r1 = 2*pivot - l
+    r2 = pivot + (h-l)
     return s1,s2,r1,r2
 
-def smart_score(p,s1,rsi,volume):
-    score = 0
-    if abs(p-s1)/p < 0.02: score += 40
-    if rsi < 40: score += 30
-    if volume > 2_000_000: score += 30
-    return min(score,100)
-
-# ================= الكارت القديم =================
-def show_old_card(code,p,h,l,v,rsi):
+# ========= CARD (نفس القديم بالظبط + compact) =========
+def show_card(code,p,h,l,v,rsi):
 
     s1,s2,r1,r2 = pivots(p,h,l)
 
     st.markdown(f"""
-    <div style="
-        background:#020617;
-        padding:20px;
-        border-radius:15px;
-        line-height:1.9;
-        font-size:16px;
-    ">
+    <div class="card">
 
-    <h2>{code} -</h2>
+    <h3 style="margin-bottom:6px;">{code} -</h3>
 
     💰 السعر الحالي: {p:.2f}<br>
-    📉 RSI: {rsi:.1f}<br>
+    📉 RSI: {rsi:.1f}
 
-    🧱 الدعم: {s1:.2f} / {s2:.2f}<br>
-    🚧 المقاومة: {r1:.2f} / {r2:.2f}<br>
-    💧 السيولة: {"عالية" if v>2_000_000 else "متوسطة" if v>1_000_000 else "ضعيفة"}<br>
+    <div style="margin-top:4px;">
+    🧱 الدعم: {s1:.2f} / {s2:.2f} &nbsp;&nbsp;
+    🚧 المقاومة: {r1:.2f} / {r2:.2f}
+    </div>
+
+    <div style="margin-top:3px;">
+    💧 السيولة: {"عالية" if v>2_000_000 else "متوسطة" if v>1_000_000 else "ضعيفة"}
+    </div>
 
     <hr>
 
     🔄 لا توجد إشارة ارتداد<br>
-    ⚡ لا يوجد تأكيد<br>
+    ⚡ لا يوجد تأكيد
 
     <hr>
 
     🎯 المضارب: 50/100<br>
-    دخول: {round(s1+0.1,2)} | وقف خسارة: {round(s1-0.15,2)}<br><br>
+    دخول: {round(s1+0.1,2)} | وقف خسارة: {round(s1-0.15,2)}
 
+    <div style="margin-top:3px;">
     🔁 السوينج: 65/100<br>
-    دخول: {round((s1+r1)/2,2)} | وقف خسارة: {round((s1+r1)/2-0.25,2)}<br><br>
+    دخول: {round((s1+r1)/2,2)} | وقف خسارة: {round((s1+r1)/2-0.25,2)}
+    </div>
 
+    <div style="margin-top:3px;">
     🏦 المستثمر: 55/100<br>
-    دخول: {round((s1+s2)/2,2)} | وقف خسارة: {round(s2-0.25,2)}<br>
+    دخول: {round((s1+s2)/2,2)} | وقف خسارة: {round(s2-0.25,2)}
+    </div>
 
     <hr>
 
-    📌 التوصية: انتظار<br>
-
-    📝 ملحوظة:<br>
-    أقرب دعم {s1:.2f} - دعم أقوى {s2:.2f}
+    📌 التوصية: انتظار
 
     </div>
     """, unsafe_allow_html=True)
 
-    # الشارت (مفيش تغيير)
-    st.components.v1.html(f"""
-    <iframe src="https://www.tradingview.com/widgetembed/?symbol=EGX:{code}&interval=D&theme=dark"
-    width="100%" height="350"></iframe>
-    """, height=350)
+# ========= TAB 1 =========
+with tabs[0]:
 
-# ================= UI =================
-tab1,tab2 = st.tabs(["📊 تحليل سهم","🔥 فرص"])
+    symbol = st.text_input("ادخل كود السهم", "MAAL")
 
-# ================= تحليل =================
-with tab1:
-    code = st.text_input("ادخل كود السهم")
+    if symbol:
+        try:
+            data = get_data(symbol)
 
-    if code:
-        d = get_data(code.upper())
-        if d:
-            show_old_card(code.upper(),*d)
+            show_card(
+                symbol,
+                data['price'],
+                data['high'],
+                data['low'],
+                data['volume'],
+                data['rsi']
+            )
 
-# ================= فرص =================
-with tab2:
+            st.markdown("### 📊 الشارت")
 
-    rows=[]
-    for s in ALL_STOCKS:
-        d = get_data(s)
-        if not d: continue
+            st.components.v1.html(f"""
+            <iframe src="https://s.tradingview.com/widgetembed/?symbol=EGX:{symbol}&interval=D"
+            width="100%" height="400"></iframe>
+            """, height=400)
 
-        p,h,l,v,rsi = d
-        s1,_,_,_ = pivots(p,h,l)
+        except:
+            st.error("السهم غير متاح")
 
-        score = smart_score(p,s1,rsi,v)
+# ========= TAB 2 =========
+with tabs[1]:
 
-        if score >= 60:
+    st.subheader("🔥 فرص جاهزة")
+
+    symbols = ["ATQA","FWRY","SWDY"]
+
+    rows = []
+
+    for s in symbols:
+        try:
+            d = get_data(s)
+            p = d['price']
+            rsi = d['rsi']
+
+            score = 50
+
+            if rsi < 40:
+                score += 20
+            elif rsi > 70:
+                score -= 10
+
             rows.append({
-                "السهم":s,
-                "السعر":round(p,2),
-                "RSI":round(rsi,1),
-                "Score":score
+                "🔥": "🔥" if score >= 70 else "⭐" if score >= 55 else "👀",
+                "السهم": s,
+                "السعر": round(p,2),
+                "RSI": round(rsi,1),
+                "Score": score
             })
 
-    if rows:
-        st.dataframe(pd.DataFrame(rows),use_container_width=True)
-    else:
-        st.warning("لا توجد فرص حالياً")
+        except:
+            pass
+
+    df = pd.DataFrame(rows).sort_values("Score", ascending=False)
+
+    st.dataframe(df, use_container_width=True)
