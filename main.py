@@ -3,31 +3,61 @@ import requests
 import pandas as pd
 
 # ================= CONFIG =================
-st.set_page_config(page_title="EGX Sniper PRO", layout="wide")
+st.set_page_config(page_title="EGX Sniper PRO MAX", layout="wide")
 
 # ================= STYLE =================
 st.markdown("""
 <style>
+
 .stApp {
-    background: linear-gradient(135deg,#020617,#0f172a);
+    background: linear-gradient(135deg,#020617,#020617,#0f172a);
+    color:#ffffff;
+}
+
+h1,h2,h3,h4,p,span,div {
+    color:#ffffff !important;
+}
+
+/* Tabs */
+.stTabs [role="tab"] {
+    background:#0f172a;
+    padding:10px;
+    border-radius:10px;
+    margin-right:5px;
     color:white;
 }
-.card {
-    background:#0f172a;
-    padding:20px;
-    border-radius:18px;
-    line-height:1.8;
-    font-size:16px;
-    box-shadow:0 0 20px rgba(0,0,0,0.5);
+.stTabs [aria-selected="true"] {
+    background:#1e293b;
+    border:1px solid #3b82f6;
 }
-hr {border:1px solid #1e293b;}
+
+/* Card */
+.card {
+    background:#020617;
+    padding:16px;
+    border-radius:14px;
+    line-height:1.4;
+    font-size:14px;
+    box-shadow:0 0 12px rgba(0,0,0,0.6);
+}
+
+.small {font-size:12px;color:#cbd5f5;}
+
+hr {
+    margin:6px 0;
+    border:1px solid #1e293b;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏹 EGX Sniper PRO")
+st.title("🏹 EGX Sniper PRO MAX")
 
 # ================= STOCKS =================
-ALL_STOCKS = ["TMGH","COMI","ETEL","SWDY","EFID","ATQA","ALCN","RMDA","ORAS","FWRY","AMOC","HELI"]
+ALL_STOCKS = [
+"TMGH","COMI","ETEL","SWDY","EFID","ATQA",
+"ALCN","RMDA","ORAS","FWRY","AMOC","HELI"
+]
 
 # ================= DATA =================
 @st.cache_data(ttl=300)
@@ -62,86 +92,96 @@ def rsi(p,h,l):
     if h==l: return 50
     return ((p-l)/(h-l))*100
 
+def trend(p,h,l):
+    if p > (h+l)/2:
+        return "📈 صاعد"
+    elif p < (h+l)/2:
+        return "📉 هابط"
+    else:
+        return "➡️ عرضي"
+
 def liquidity(v):
     if v>2_000_000: return "عالية"
     elif v>500_000: return "متوسطة"
     else: return "ضعيفة"
 
-# ================= SIGNAL FIX =================
+# ================= SIGNAL =================
 def get_signal(p,s1,r1,rsi_val):
+
     dist_s = abs(p-s1)/p*100
     dist_r = abs(p-r1)/p*100
 
-    # BUY له أولوية عند الدعم
-    if dist_s < 1.5 and rsi_val < 45:
-        return "🟢 BUY"
-
-    # SELL فقط عند المقاومة
-    elif dist_r < 1.5 and rsi_val > 65:
-        return "🔴 SELL"
-
+    if dist_s < 1.5 and rsi_val < 35:
+        return "🟢 BUY STRONG"
+    elif dist_s < 2.5 and rsi_val < 50:
+        return "🟡 BUY"
+    elif dist_r < 1.5 and rsi_val > 70:
+        return "🔴 SELL STRONG"
+    elif dist_r < 2.5 and rsi_val > 60:
+        return "🟠 SELL"
     else:
         return "⚪ HOLD"
 
+# ================= SCORE =================
+def calc_score(rsi_val,trend_type):
+    base = 50 + (50 - abs(50-rsi_val))
+
+    if "صاعد" in trend_type:
+        base += 10
+    elif "هابط" in trend_type:
+        base -= 10
+
+    return round(max(0,min(100,base)),1)
+
 # ================= AI COMMENT =================
-def ai_comment(signal,p,s1,r1):
-    if signal=="🟢 BUY":
-        return f"السهم قريب من دعم قوي ({round(s1,2)})، فرصة ارتداد جيدة."
-    elif signal=="🔴 SELL":
-        return f"السهم عند مقاومة ({round(r1,2)})، يفضل جني أرباح."
+def ai_comment(signal,trend_type):
+
+    if "BUY STRONG" in signal:
+        return "ارتداد قوي من الدعم + اتجاه مناسب للدخول."
+    elif "BUY" in signal:
+        return "فرصة محتملة لكن تحتاج تأكيد."
+    elif "SELL STRONG" in signal:
+        return "تشبع شرائي عند مقاومة، يفضل البيع."
+    elif "SELL" in signal:
+        return "اقتراب من مقاومة، الحذر مطلوب."
     else:
-        return "السهم في منتصف الحركة، لا توجد فرصة واضحة حالياً."
+        if "صاعد" in trend_type:
+            return "الاتجاه صاعد لكن لا توجد نقطة دخول حالياً."
+        return "السهم في منطقة حيادية، الأفضل الانتظار."
 
 # ================= CARD =================
 def show_card(code,p,h,l,v):
 
     s1,s2,r1,r2 = pivots(p,h,l)
     rsi_val = rsi(p,h,l)
+    trend_type = trend(p,h,l)
     liq = liquidity(v)
+
     signal = get_signal(p,s1,r1,rsi_val)
+    score = calc_score(rsi_val,trend_type)
+    comment = ai_comment(signal,trend_type)
 
-    # SCORES
-    trader = 50
-    swing = round(60 + (50-abs(50-rsi_val)),2)
-    investor = 55
-
-    comment = ai_comment(signal,p,s1,r1)
+    entry = round(s1+0.1,2)
+    stop = round(s1-0.15,2)
+    target = round(r1,2)
 
     st.markdown(f"""
     <div class="card">
 
-    <h3>{code} -</h3>
-
-    💰 السعر: {p:.2f}<br>
-    📉 RSI: {rsi_val:.1f}<br>
-
-    🧱 الدعم: {s2:.2f} / {s1:.2f}<br>
-    🚧 المقاومة: {r2:.2f} / {r1:.2f}<br>
-    💧 السيولة: {liq}<br>
+    <b>{code}</b> | 💰 {p:.2f} | RSI {rsi_val:.1f} | {trend_type}<br>
+    🧱 {s2:.2f}/{s1:.2f} | 🚧 {r2:.2f}/{r1:.2f} | 💧 {liq}
 
     <hr>
 
-    📊 الإشارة: {signal}
+    📊 {signal} | ⭐ Score: {score}
 
     <hr>
 
-    🎯 المضارب: {trader}/100<br>
-    دخول: {round(s1+0.1,2)} | وقف: {round(s1-0.15,2)}<br>
-
-    🔁 السوينج: {swing}/100<br>
-    دخول: {round((s1+r1)/2,2)} | وقف: {round((s1+r1)/2-0.25,2)}<br>
-
-    🏦 المستثمر: {investor}/100<br>
-    دخول: {round((s1+s2)/2,2)} | وقف: {round(s2-0.25,2)}<br>
+    🎯 Entry {entry} | Stop {stop} | Target {target}
 
     <hr>
 
-    🤖 AI Comment:<br>
-    {comment}
-
-    <hr>
-
-    📌 التوصية: {signal}
+    🤖 {comment}
 
     </div>
     """, unsafe_allow_html=True)
@@ -157,34 +197,35 @@ def scanner():
         p,h,l,v = data
         s1,s2,r1,r2 = pivots(p,h,l)
         rsi_val = rsi(p,h,l)
-        liq = liquidity(v)
+        trend_type = trend(p,h,l)
+
         signal = get_signal(p,s1,r1,rsi_val)
-
-        dist = abs(p-s1)/p*100
-
-        if dist < 1:
-            status="🔥 لاصق دعم"
-        elif dist < 2:
-            status="🟢 قريب دعم"
-        else:
-            status="⚪ بعيد"
+        score = calc_score(rsi_val,trend_type)
 
         rows.append({
             "السهم":s,
             "السعر":round(p,2),
             "RSI":round(rsi_val,1),
-            "الدعم":round(s1,2),
-            "المقاومة":round(r1,2),
-            "السيولة":liq,
-            "الحالة":status,
-            "الإشارة":signal
+            "Trend":trend_type,
+            "الإشارة":signal,
+            "Score":score
         })
 
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+
+    return df.sort_values(by="Score",ascending=False)
+
+# ================= ALERT =================
+def alerts(df):
+    strong = df[df["الإشارة"].str.contains("STRONG")]
+    if not strong.empty:
+        st.success("🔥 أفضل الفرص الآن:")
+        st.dataframe(strong,use_container_width=True)
 
 # ================= UI =================
-tab1,tab2 = st.tabs(["📊 تحليل سهم","🚨 Scanner"])
+tab1,tab2,tab3 = st.tabs(["📊 تحليل سهم","🚨 Scanner","🏆 Top فرص"])
 
+# تحليل
 with tab1:
     code = st.text_input("ادخل كود السهم").upper()
     if code:
@@ -194,9 +235,15 @@ with tab1:
         else:
             st.warning("السهم غير متاح")
 
+# Scanner
 with tab2:
     df = scanner()
     if df.empty:
         st.warning("لا توجد بيانات")
     else:
         st.dataframe(df,use_container_width=True)
+
+# Top فرص
+with tab3:
+    df = scanner()
+    alerts(df)
