@@ -1,3 +1,5 @@
-tradingview-ta
-pandas
 streamlit
+pandas
+numpy
+requests
+tradingview-ta
