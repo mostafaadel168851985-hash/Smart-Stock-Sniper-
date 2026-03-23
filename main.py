@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 
-st.set_page_config(page_title="EGX Sniper PRO", layout="wide")
+st.set_page_config(page_title="EGX Sniper PRO MAX", layout="wide")
 
 # ================= STYLE =================
 st.markdown("""
@@ -11,22 +11,47 @@ st.markdown("""
     background: linear-gradient(135deg,#020617,#020617,#0f172a);
     color:white;
 }
+
+/* CARD */
 .card {
     background:#020617;
-    padding:20px;
-    border-radius:18px;
-    line-height:1.9;
-    font-size:15px;
-    box-shadow:0 0 25px rgba(0,0,0,0.6);
+    padding:14px;
+    border-radius:14px;
+    line-height:1.5;
+    font-size:14px;
+    box-shadow:0 0 15px rgba(0,0,0,0.6);
 }
+
+/* INPUT */
+input {
+    background:#0f172a !important;
+    color:white !important;
+    border-radius:10px !important;
+    border:1px solid #334155 !important;
+}
+
+/* TABS */
+button[data-baseweb="tab"] {
+    background:#0f172a;
+    border-radius:10px;
+    margin-right:6px;
+    color:white;
+}
+button[aria-selected="true"] {
+    background:#1e293b !important;
+    border-bottom:3px solid red;
+}
+
 hr {
-    border:1px solid #334155;
-    margin:12px 0;
+    border:1px solid #1e293b;
+    margin:8px 0;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏹 EGX Sniper PRO")
+st.title("🏹 EGX Sniper PRO MAX")
+
+ALL_STOCKS = ["TMGH","COMI","ETEL","SWDY","EFID","ATQA","ALCN","RMDA","ORAS","FWRY"]
 
 # ================= DATA =================
 @st.cache_data(ttl=300)
@@ -39,7 +64,6 @@ def get_data(symbol):
         }
         r = requests.post(url,json=payload)
         d = r.json()["data"][0]["d"]
-
         return float(d[0]),float(d[1]),float(d[2]),float(d[3]),float(d[4])
     except:
         return None
@@ -55,7 +79,7 @@ def pivots(p,h,l):
 
 def liquidity(v):
     if v>3_000_000:
-        return "سيولة عالية"
+        return "سيولة عالية 🔥"
     elif v>1_000_000:
         return "سيولة متوسطة"
     return "سيولة ضعيفة"
@@ -66,26 +90,22 @@ def signal(p,s1,r1,rsi):
     dist_s = abs(p-s1)/p*100
     dist_r = abs(p-r1)/p*100
 
-    if dist_s < 1.5 and rsi < 45:
-        return "🟢 توجد إشارة ارتداد"
+    # تحسين الفرص (مش قليلة قوي)
+    if dist_s < 2 and rsi < 55:
+        return "🟢 BUY"
 
     if dist_r < 1.5 and rsi > 70:
-        return "🔴 جني أرباح"
+        return "🔴 SELL"
 
-    return "↪️ لا توجد إشارة ارتداد"
-
-def confirm(rsi):
-    if rsi < 40:
-        return "🟢 يوجد تأكيد"
-    return "⚪ لا يوجد تأكيد"
+    return "⚪ HOLD"
 
 # ================= AI =================
 def ai_comment(sig,rsi):
-    if "ارتداد" in sig:
-        return "السهم قريب من الدعم وقد يظهر ارتداد، يمكن المتابعة."
-    if "جني" in sig:
-        return "السهم عند مقاومة قوية، يفضل الحذر أو جني أرباح."
-    return "السهم في منتصف الاتجاه، لا توجد فرصة واضحة حالياً."
+    if "BUY" in sig:
+        return "السهم قريب من الدعم مع فرصة دخول جيدة."
+    if "SELL" in sig:
+        return "السهم عند مقاومة، يفضل جني أرباح."
+    return "لا توجد فرصة واضحة حالياً."
 
 # ================= CARD =================
 def show_card(code,p,h,l,v,rsi):
@@ -93,77 +113,94 @@ def show_card(code,p,h,l,v,rsi):
     s1,s2,r1,r2 = pivots(p,h,l)
 
     sig = signal(p,s1,r1,rsi)
-    conf = confirm(rsi)
 
     entry = round(s1+0.1,2)
     stop = round(s1-0.15,2)
     target = round(r1,2)
 
-    swing_entry = round((s1+r1)/2,2)
-    invest_entry = round((s1+s2)/2,2)
-
-    trader_score = 50
-    swing_score = round(60 + (50-abs(50-rsi)),2)
-    investor_score = 55
+    rr = round((target-entry)/(entry-stop),2) if entry!=stop else 0
 
     st.markdown(f"""
     <div class="card">
 
-    <h2>{code} -</h2>
+    <b style="font-size:22px;">{code}</b><br>
 
-    💰 السعر الحالي: {p:.2f}<br>
-    📉 RSI: {rsi:.1f}<br>
+    💰 {p:.2f} | RSI {rsi:.1f}<br>
 
-    🧱 الدعم: {s1:.2f} / {s2:.2f}<br>
-    🚧 المقاومة: {r1:.2f} / {r2:.2f}<br>
-    💧 السيولة: {liquidity(v)}
+    🧱 {s1:.2f}/{s2:.2f} | 🚧 {r1:.2f}/{r2:.2f}<br>
+    💧 {liquidity(v)}
 
     <hr>
 
-    🔄 {sig}<br>
-    ⚡ {conf}
+    📢 {sig}<br>
+
+    🎯 دخول {entry} | وقف {stop} | هدف {target}<br>
+    ⚖️ R/R {rr}
 
     <hr>
 
-    🎯 المضارب: {trader_score}/100<br>
-    ⚡ مناسب لمضاربة سريعة قرب الدعم {s1:.2f}<br>
-    دخول: {entry} ، وقف خسارة: {stop}<br><br>
-
-    🔁 السوينج: {swing_score}/100<br>
-    🔁 السهم في حركة تصحيح داخل اتجاه عام<br>
-    دخول: {swing_entry} ، وقف خسارة: {round(swing_entry-0.25,2)}<br><br>
-
-    🏦 المستثمر: {investor_score}/100<br>
-    🏦 الاتجاه طويل الأجل إيجابي طالما السعر أعلى المتوسط<br>
-    دخول: {invest_entry} ، وقف خسارة: {round(s2-0.25,2)}
-
-    <hr>
-
-    📌 التوصية: انتظار
-
-    📝 ملحوظة للمحبوس:<br>
-    أقرب دعم {s1:.2f} ، دعم أقوى {s2:.2f}
-
-    <hr>
-
-    🤖 AI:<br>
-    {ai_comment(sig,rsi)}
+    🤖 {ai_comment(sig,rsi)}
 
     </div>
     """, unsafe_allow_html=True)
 
-    # ===== CHART =====
+    # chart
     st.components.v1.html(f"""
     <iframe src="https://www.tradingview.com/widgetembed/?symbol=EGX:{code}&interval=D&theme=dark"
-    width="100%" height="400"></iframe>
-    """, height=400)
+    width="100%" height="350"></iframe>
+    """, height=350)
 
 # ================= UI =================
-code = st.text_input("ادخل كود السهم").upper()
+tab1,tab2,tab3 = st.tabs(["📊 تحليل","🚨 Scanner","🏆 فرص"])
 
-if code:
-    d = get_data(code)
-    if d:
-        show_card(code,*d)
-    else:
-        st.warning("السهم غير متاح")
+# تحليل
+with tab1:
+    code = st.text_input("ادخل كود السهم")
+    if code:
+        d = get_data(code.upper())
+        if d:
+            show_card(code.upper(),*d)
+
+# scanner
+with tab2:
+    rows=[]
+    for s in ALL_STOCKS:
+        d = get_data(s)
+        if not d: continue
+        p,h,l,v,rsi = d
+        s1,s2,r1,r2 = pivots(p,h,l)
+        sig = signal(p,s1,r1,rsi)
+
+        rows.append({
+            "السهم":s,
+            "السعر":p,
+            "RSI":rsi,
+            "الإشارة":sig
+        })
+
+    st.dataframe(pd.DataFrame(rows),use_container_width=True)
+
+# فرص
+with tab3:
+    rows=[]
+    for s in ALL_STOCKS:
+        d = get_data(s)
+        if not d: continue
+        p,h,l,v,rsi = d
+        s1,s2,r1,r2 = pivots(p,h,l)
+
+        sig = signal(p,s1,r1,rsi)
+
+        if "BUY" in sig:
+            score = round(100 - abs(50-rsi),1)
+
+            rows.append({
+                "السهم":s,
+                "السعر":p,
+                "RSI":rsi,
+                "Score":score
+            })
+
+    df = pd.DataFrame(rows).sort_values(by="Score",ascending=False)
+
+    st.dataframe(df,use_container_width=True)
