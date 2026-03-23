@@ -4,44 +4,35 @@ from tradingview_ta import TA_Handler, Interval
 
 st.set_page_config(layout="wide")
 
-# ================= DARK MODE FIX =================
+# ================= DARK MODE =================
 st.markdown("""
 <style>
-html, body, [class*="css"]  {
-    background-color: #0b1320 !important;
-    color: white !important;
+html, body {
+    background-color: #0b1320;
+    color: white;
 }
 
-.stTextInput>div>div>input {
-    background-color: #111827;
+.card {
+    background: #111827;
+    padding: 12px;
+    border-radius: 15px;
+    margin-top: 10px;
+    line-height: 1.5;
+}
+
+hr {
+    margin: 8px 0;
+}
+
+.stTextInput input {
+    background: #111827;
     color: white;
     border-radius: 10px;
-    border: 1px solid #333;
-}
-
-/* الكارت */
-.card {
-    background: #0f172a;
-    padding: 12px;
-    border-radius: 14px;
-    color: white;
-    line-height: 1.4;
-    margin-top: 8px;
-}
-
-/* تقليل المسافات */
-.small { margin-bottom: 4px; }
-hr { margin: 8px 0px; }
-
-/* Tabs */
-.stTabs [data-baseweb="tab"] {
-    font-size: 16px;
-    padding: 8px;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ================= DATA =================
+# ================= GET DATA =================
 def get_data(symbol):
     try:
         handler = TA_Handler(
@@ -52,62 +43,52 @@ def get_data(symbol):
         )
         analysis = handler.get_analysis()
 
-        return {
-            "price": analysis.indicators.get("close"),
-            "high": analysis.indicators.get("high"),
-            "low": analysis.indicators.get("low"),
-            "volume": analysis.indicators.get("volume"),
-            "rsi": analysis.indicators.get("RSI")
-        }
-
+        return analysis.indicators
     except:
         return None
 
-# ================= FALLBACK =================
-def safe_data(d):
-    if d is None or d["price"] is None:
-        return {
-            "price": 4.42,
-            "high": 4.79,
-            "low": 3.73,
-            "volume": 2000000,
-            "rsi": 55
-        }
-    return d
+# ================= CALCULATIONS =================
+def analyze(d):
 
-# ================= SCORES =================
-def scores(d):
+    price = d.get("close", 4.42)
+    high = d.get("high", 4.79)
+    low = d.get("low", 3.73)
+    rsi = d.get("RSI", 50)
 
-    rsi = d["rsi"]
-    price = d["price"]
-    low = d["low"]
-    high = d["high"]
+    support1 = round(low,2)
+    support2 = round(low*0.97,2)
 
-    scalper = 50
-    if rsi < 40: scalper += 25
-    if rsi > 70: scalper -= 20
-    if price <= low*1.02: scalper += 15
+    resistance1 = round(high*0.95,2)
+    resistance2 = round(high,2)
 
-    swing = 50
-    if 40 < rsi < 60: swing += 20
-    if price > (low + high)/2: swing += 15
+    entry = round(support1*1.02,2)
+    stop = round(support2*0.98,2)
+    target = round(resistance1,2)
 
-    invest = 50
-    if rsi < 60: invest += 10
-    if price > low: invest += 10
+    # Scores
+    scalper = 50 + (20 if rsi<40 else -10 if rsi>70 else 10)
+    swing = 50 + (20 if 40<rsi<60 else 0)
+    invest = 50 + (10 if rsi<60 else 0)
 
-    return int(scalper), int(swing), int(invest)
+    return {
+        "price":price,"rsi":rsi,
+        "s1":support1,"s2":support2,
+        "r1":resistance1,"r2":resistance2,
+        "entry":entry,"stop":stop,"target":target,
+        "scalper":scalper,"swing":swing,"invest":invest
+    }
 
-# ================= TRADE =================
-def plan(d):
+# ================= AI COMMENT =================
+def ai_comment(data):
 
-    entry = round(d["low"]*1.02,2)
-    stop = round(d["low"]*0.97,2)
-    target = round(d["high"]*0.98,2)
+    if data["rsi"] > 70:
+        return "السهم متشبع شراء ⚠️ يفضل انتظار تصحيح"
+    elif data["rsi"] < 40:
+        return "السهم قريب من دعم 🔥 فرصة مضاربة"
+    else:
+        return "السهم في منطقة حيادية 👀 راقب الاختراق"
 
-    return entry, stop, target
-
-# ================= HEADER =================
+# ================= UI =================
 st.title("🏹 EGX Sniper PRO")
 
 tab1, tab2 = st.tabs(["📊 تحليل سهم","🔥 فرص"])
@@ -117,51 +98,41 @@ with tab1:
 
     symbol = st.text_input("ادخل كود السهم", "MAAL")
 
-    if symbol:
+    d = get_data(symbol)
 
-        d = safe_data(get_data(symbol))
-
-        entry, stop, target = plan(d)
-        scalper, swing, invest = scores(d)
+    if d:
+        data = analyze(d)
 
         st.markdown(f"""
         <div class="card">
 
-        <h3>{symbol} -</h3>
+        <h3>{symbol}</h3>
 
-        💰 السعر: {round(d['price'],2)} |
-        RSI: {round(d['rsi'],1)}
-
-        <div class="small"></div>
-
-        🧱 {round(d['low'],2)} / {round(d['low']*1.1,2)}  
-        🚧 {round(d['high']*0.9,2)} / {round(d['high'],2)}  
-
-        💧 {"سيولة عالية 🔥" if d['volume']>1000000 else "سيولة ضعيفة"}
+        💰 السعر: {data['price']} | RSI: {data['rsi']}
 
         <hr>
 
-        🔄 لا توجد إشارة ارتداد  
-        ⚡ لا يوجد تأكيد
+        🧱 دعم 1: {data['s1']}  
+        🧱 دعم 2: {data['s2']}
+
+        🚧 مقاومة 1: {data['r1']}  
+        🚧 مقاومة 2: {data['r2']}
 
         <hr>
 
-        🎯 مضارب: {scalper}/100  
-        دخول: {entry} | وقف: {stop}
-
-        <div class="small"></div>
-
-        🔁 سوينج: {swing}/100  
-        دخول: {round(entry*1.04,2)}
-
-        <div class="small"></div>
-
-        🏦 مستثمر: {invest}/100  
-        دخول: {round(entry*0.9,2)}
+        🎯 دخول: {data['entry']}  
+        ❌ وقف خسارة: {data['stop']}  
+        🎯 هدف: {data['target']}
 
         <hr>
 
-        📌 {"شراء" if scalper>65 else "انتظار"}
+        ⚡ مضارب: {data['scalper']}/100  
+        🔁 سوينج: {data['swing']}/100  
+        🏦 مستثمر: {data['invest']}/100  
+
+        <hr>
+
+        🤖 {ai_comment(data)}
 
         </div>
         """, unsafe_allow_html=True)
@@ -176,25 +147,28 @@ with tab2:
     rows = []
 
     for s in symbols:
+        d = get_data(s)
 
-        d = safe_data(get_data(s))
-        scalper, swing, invest = scores(d)
+        if not d:
+            continue
 
-        total = int((scalper + swing + invest)/3)
+        data = analyze(d)
 
-        if total < 55:
+        score = int((data["scalper"]+data["swing"]+data["invest"])/3)
+
+        if score < 60:
             continue
 
         rows.append({
-            "🔥": "🔥" if total>70 else "⭐",
+            "🔥": "🔥",
             "السهم": s,
-            "السعر": round(d['price'],2),
-            "RSI": round(d['rsi'],1),
-            "Score": total
+            "Entry": data["entry"],
+            "Stop": data["stop"],
+            "RSI": data["rsi"],
+            "Score": score
         })
 
     if len(rows)==0:
         st.warning("لا توجد فرص حالياً")
     else:
-        df = pd.DataFrame(rows).sort_values("Score", ascending=False)
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(pd.DataFrame(rows), use_container_width=True)
