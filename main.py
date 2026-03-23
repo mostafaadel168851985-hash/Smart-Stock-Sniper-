@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 
-st.set_page_config(page_title="EGX Sniper ULTIMATE", layout="wide")
+st.set_page_config(page_title="EGX Sniper PRO MAX AI", layout="wide")
 
 # ================= STYLE =================
 st.markdown("""
@@ -13,17 +13,17 @@ st.markdown("""
 }
 .card {
     background:#020617;
-    padding:14px;
+    padding:16px;
     border-radius:16px;
-    line-height:1.5;
+    line-height:1.6;
     font-size:14px;
     box-shadow:0 0 20px rgba(0,0,0,0.6);
 }
-hr {border:1px solid #1e293b;}
+hr {border:1px solid #1e293b;margin:10px 0;}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏹 EGX Sniper ULTIMATE")
+st.title("🏹 EGX Sniper PRO MAX AI")
 
 ALL_STOCKS = ["TMGH","COMI","ETEL","SWDY","EFID","ATQA","ALCN","RMDA","ORAS","FWRY"]
 
@@ -38,14 +38,7 @@ def get_data(symbol):
         }
         r = requests.post(url,json=payload)
         d = r.json()["data"][0]["d"]
-
-        price = float(d[0])
-        high = float(d[1])
-        low = float(d[2])
-        volume = float(d[3])
-        rsi = float(d[4])
-
-        return price,high,low,volume,rsi
+        return float(d[0]),float(d[1]),float(d[2]),float(d[3]),float(d[4])
     except:
         return None
 
@@ -58,75 +51,70 @@ def pivots(p,h,l):
     r2=piv+(h-l)
     return s1,s2,r1,r2
 
-def volume_score(v):
-    if v>3_000_000: return 90
-    elif v>1_500_000: return 75
-    elif v>500_000: return 60
-    else: return 40
+def trend(p,h,l):
+    return "صاعد 📈" if p > (h+l)/2 else "هابط 📉"
 
-def volume_spike(v):
-    return "🚀 Volume Spike" if v>2_500_000 else ""
+def candle_signal(p,h,l):
+    body = abs(p - ((h+l)/2))
+    if body < (h-l)*0.2:
+        return "تجميع ⚖️"
+    elif p > (h+l)/2:
+        return "شمعة صاعدة 📈"
+    else:
+        return "شمعة هابطة 📉"
 
-def ema_trend(p,h,l):
-    mid=(h+l)/2
-    return "📈 Bullish" if p>mid else "📉 Bearish"
-
-def breakout(p,r1,s1):
-    if p > r1:
-        return "🚀 Breakout Up"
-    if p < s1:
-        return "⚠️ Breakout Down"
-    return ""
-
-# ================= MACD (تقريب) =================
-def macd_signal(rsi):
-    if rsi > 60:
-        return "📈 MACD Bullish"
-    elif rsi < 40:
-        return "📉 MACD Bearish"
-    return "⚖️ Neutral"
+def volume(v):
+    if v > 3_000_000:
+        return "سيولة عالية 🔥"
+    elif v > 1_000_000:
+        return "سيولة متوسطة"
+    return "سيولة ضعيفة"
 
 # ================= SIGNAL =================
-def signal_logic(p,s1,r1,rsi,vol):
+def signal_logic(p,s1,r1,rsi):
 
     dist_s = abs(p-s1)/p*100
     dist_r = abs(p-r1)/p*100
 
-    if dist_s < 1.5 and rsi < 40 and vol > 60:
-        return "🟢 BUY STRONG"
+    if dist_s < 1.5 and rsi < 45:
+        return "BUY STRONG"
 
-    if dist_s < 2.5 and rsi < 50:
-        return "🟡 BUY"
+    if dist_s < 2.5 and rsi < 55:
+        return "BUY"
 
     if dist_r < 1.5 and rsi > 70:
-        return "🔴 TAKE PROFIT"
+        return "SELL"
 
-    return "⚪ HOLD"
+    return "HOLD"
 
 # ================= AI =================
-def ai_decision(signal,rsi,trend):
+def ai_comment(signal,rsi):
 
-    if "BUY STRONG" in signal:
-        return "💎 Accumulate بقوة"
+    if signal == "BUY STRONG":
+        return "🔥 فرصة قوية جداً: السهم عند دعم + RSI ممتاز → دخول تدريجي"
 
-    if "BUY" in signal:
-        return "📊 شراء تدريجي"
+    if signal == "BUY":
+        return "🟡 فرصة جيدة: السهم قريب دعم → دخول بحذر"
 
-    if "TAKE PROFIT" in signal:
-        return "💰 بيع جزئي"
+    if signal == "SELL":
+        return "🔴 السهم عند مقاومة قوية → يفضل جني أرباح"
 
-    if rsi > 75:
-        return "⚠️ السهم متشبع شراء"
+    return "⚪ لا توجد فرصة واضحة حالياً"
 
-    return "⏳ انتظار"
+# ================= POSITION SIZE =================
+def position_size(balance, risk, entry, stop):
+    risk_amount = balance * (risk/100)
+    diff = abs(entry - stop)
+    if diff == 0:
+        return 0
+    return int(risk_amount / diff)
 
 # ================= CARD =================
 def show_card(code,p,h,l,v,rsi):
 
     s1,s2,r1,r2 = pivots(p,h,l)
-    vol = volume_score(v)
 
-    sig = signal_logic(p,s1,r1,rsi,vol)
+    signal = signal_logic(p,s1,r1,rsi)
 
     entry = round(s1+0.1,2)
     stop = round(s1-0.15,2)
@@ -134,18 +122,7 @@ def show_card(code,p,h,l,v,rsi):
 
     rr = round((target-entry)/(entry-stop),2) if entry!=stop else 0
 
-    trend = ema_trend(p,h,l)
-    macd = macd_signal(rsi)
-    vol_sp = volume_spike(v)
-    brk = breakout(p,r1,s1)
-
-    decision = ai_decision(sig,rsi,trend)
-
-    # ALERT
-    if "BUY STRONG" in sig:
-        st.success("🚀 فرصة قوية الآن")
-    elif "BUY" in sig:
-        st.info("📊 فرصة محتملة")
+    size = position_size(100000,2,entry,stop)
 
     st.markdown(f"""
     <div class="card">
@@ -153,86 +130,84 @@ def show_card(code,p,h,l,v,rsi):
     <h2>{code}</h2>
 
     💰 {p:.2f} | RSI {rsi:.1f}<br>
-    {trend} | {macd}<br>
+    📈 {trend(p,h,l)} | {candle_signal(p,h,l)}<br>
+
     🧱 {s1:.2f}/{s2:.2f} | 🚧 {r1:.2f}/{r2:.2f}<br>
-    💧 Vol | {vol_sp} {brk}
+    💧 {volume(v)}
 
     <hr>
 
-    📢 {sig}
+    📢 الإشارة: {signal}
 
-    🎯 Entry {entry} | Stop {stop} | Target {target}<br>
-    ⚖️ R/R = {rr}
+    🎯 دخول: {entry} | وقف: {stop} | هدف: {target}<br>
+    ⚖️ R/R: {rr}
+
+    💰 حجم الصفقة: {size} سهم
 
     <hr>
 
-    🤖 {decision}
+    🤖 {ai_comment(signal,rsi)}
 
     </div>
     """, unsafe_allow_html=True)
 
-    # ===== CHART =====
     st.components.v1.html(f"""
     <iframe src="https://www.tradingview.com/widgetembed/?symbol=EGX:{code}&interval=D&theme=dark"
     width="100%" height="400"></iframe>
     """, height=400)
 
-# ================= SCANNER =================
-def scanner():
-
-    rows=[]
-
-    for s in ALL_STOCKS:
-        data = get_data(s)
-        if not data: continue
-
-        p,h,l,v,rsi = data
-        s1,s2,r1,r2 = pivots(p,h,l)
-
-        vol = volume_score(v)
-        sig = signal_logic(p,s1,r1,rsi,vol)
-
-        score = round((100 - abs(50-rsi)) + vol/2,1)
-
-        rows.append({
-            "السهم":s,
-            "السعر":round(p,2),
-            "RSI":round(rsi,1),
-            "Score":score,
-            "الإشارة":sig
-        })
-
-    return pd.DataFrame(rows)
-
-# ================= TOP =================
-def top(df):
-    return df[df["الإشارة"].str.contains("BUY")].sort_values(by="Score",ascending=False)
-
 # ================= UI =================
-tab1,tab2,tab3 = st.tabs(["📊 تحليل سهم","🚨 Scanner","🏆 Top فرص"])
+tab1,tab2,tab3 = st.tabs(["📊 تحليل","🚨 Scanner","🏆 Top فرص"])
 
 # تحليل
 with tab1:
     code = st.text_input("ادخل كود السهم").upper()
     if code:
-        data = get_data(code)
-        if data:
-            show_card(code,*data)
-        else:
-            st.warning("السهم غير متاح")
+        d = get_data(code)
+        if d:
+            show_card(code,*d)
 
 # Scanner
 with tab2:
-    df = scanner()
+    rows=[]
+    for s in ALL_STOCKS:
+        d = get_data(s)
+        if not d: continue
+        p,h,l,v,rsi = d
+        s1,s2,r1,r2 = pivots(p,h,l)
+        sig = signal_logic(p,s1,r1,rsi)
+
+        rows.append({
+            "السهم":s,
+            "السعر":round(p,2),
+            "RSI":round(rsi,1),
+            "الإشارة":sig
+        })
+
+    df = pd.DataFrame(rows)
     st.dataframe(df,use_container_width=True)
 
-# Top فرص
+# Top فرص (BUY فقط)
 with tab3:
-    df = scanner()
-    t = top(df)
+    rows=[]
+    for s in ALL_STOCKS:
+        d = get_data(s)
+        if not d: continue
+        p,h,l,v,rsi = d
+        s1,s2,r1,r2 = pivots(p,h,l)
 
-    if t.empty:
-        st.warning("لا توجد فرص حالياً")
-    else:
-        st.success("🔥 أفضل فرص شراء")
-        st.dataframe(t,use_container_width=True)
+        sig = signal_logic(p,s1,r1,rsi)
+
+        if "BUY" in sig:
+            score = round(100 - abs(50-rsi),1)
+
+            rows.append({
+                "السهم":s,
+                "السعر":p,
+                "RSI":rsi,
+                "الإشارة":sig,
+                "Score":score
+            })
+
+    df = pd.DataFrame(rows).sort_values(by="Score",ascending=False)
+    st.dataframe(df,use_container_width=True)
