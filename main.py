@@ -69,6 +69,34 @@ def smart_entry_zone(p, s1, r1):
         mid = (s1+r1)/2
         return round(mid-0.15,2), round(mid+0.15,2)
 
+# ================== SMART SCORE ==================
+def smart_score(p, s1, r1, rsi, vol):
+    score = 0
+
+    # RSI
+    if 30 <= rsi <= 60:
+        score += 25
+    elif rsi < 30:
+        score += 15
+    elif rsi > 70:
+        score -= 10
+
+    # Liquidity
+    if vol > 2_000_000:
+        score += 25
+    elif vol > 500_000:
+        score += 15
+
+    # Near support
+    if abs(p - s1)/s1 < 0.05:
+        score += 25
+
+    # Breakout
+    if p > r1:
+        score += 25
+
+    return max(score, 0)
+
 # ================== SIGNALS ==================
 def reversal_signal(p, s1, r1, rsi):
     if p <= s1 * 1.02 and rsi < 35:
@@ -93,7 +121,6 @@ def ai_score_comment(p, s1, s2, r1, r2, rsi):
     if rsi > 70: trader_score -= 20
 
     trader_score = max(min(trader_score,100),0)
-
     trader_comment = f"⚡ مناسب لمضاربة قرب الدعم {s1:.2f}"
 
     swing_score = 60 + (50 - abs(50 - rsi))
@@ -112,18 +139,6 @@ def ai_score_comment(p, s1, s2, r1, r2, rsi):
         "swing": {"score": swing_score, "comment": swing_comment, "entry": swing_entry, "sl": swing_sl},
         "invest": {"score": invest_score, "comment": invest_comment, "entry": invest_entry, "sl": invest_sl}
     }
-
-# ================== FILTER ==================
-def is_valid_trade(p, s1, r1, rsi, vol):
-    if rsi < 30 or rsi > 70:
-        return False
-    if liquidity(vol) == "سيولة ضعيفة":
-        return False
-    if abs(p - s1)/s1 < 0.03:
-        return True
-    if p > r1:
-        return True
-    return False
 
 # ================== REPORT ==================
 def show_report(code, p, h, l, v):
@@ -171,6 +186,7 @@ def show_report(code, p, h, l, v):
 # ================== SCANNER ==================
 def scanner():
     results = []
+
     for s in WATCHLIST:
         p,h,l,v = get_data(s)
         if not p:
@@ -179,14 +195,17 @@ def scanner():
         s1, s2, r1, r2 = pivots(p,h,l)
         rsi = rsi_smart(p,h,l)
 
-        if not is_valid_trade(p, s1, r1, rsi, v):
+        score = smart_score(p, s1, r1, rsi, v)
+        if score < 40:
             continue
 
         zone_low, zone_high = smart_entry_zone(p, s1, r1)
 
-        results.append(f"{s} | السعر {p:.2f} | RSI {rsi:.1f} | 🎯 Zone {zone_low}-{zone_high}")
+        results.append((score, f"{s} | السعر {p:.2f} | RSI {rsi:.1f} | Score {score} | 🎯 Zone {zone_low}-{zone_high}"))
 
-    return results
+    results.sort(reverse=True, key=lambda x: x[0])
+
+    return [r[1] for r in results]
 
 # ================== UI ==================
 st.title("🏹 EGX Sniper PRO")
