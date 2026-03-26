@@ -1,88 +1,83 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-import yfinance as yf
+import time
 from tradingview_ta import TA_Handler, Interval
 
-# ------------------ SETTINGS ------------------
 st.set_page_config(layout="wide")
 
-# Dark Mode
+# ---------- DARK UI (زي الأول بالظبط) ----------
 st.markdown("""
 <style>
-body {background-color:#0e1117;color:white;}
-.stApp {background-color:#0e1117;}
+body {
+    background-color: #0b0f1a;
+    color: white;
+}
+.stApp {
+    background-color: #0b0f1a;
+}
 .card {
-    background-color:#111827;
-    padding:20px;
-    border-radius:15px;
-    margin-top:20px;
+    background: linear-gradient(145deg, #111827, #0b0f1a);
+    padding: 20px;
+    border-radius: 20px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    margin-top: 20px;
+}
+input {
+    background-color: #1f2937 !important;
+    color: white !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ------------------ SYMBOLS ------------------
-EGX_SYMBOLS = [
-    "COMI","ETEL","TMGH","SWDY","EFIH",
-    "ORAS","AMOC","RMDA","FWRY","MPRC",
-    "MAAL"
-]
-
-# ------------------ DATA ------------------
+# ---------- FUNCTIONS ----------
 def get_tv_data(symbol):
-    try:
-        handler = TA_Handler(
-            symbol=symbol,
-            screener="egypt",
-            exchange="EGX",
-            interval=Interval.INTERVAL_1_DAY
-        )
-        analysis = handler.get_analysis()
-        d = analysis.indicators
+    for i in range(3):  # retry 3 مرات
+        try:
+            handler = TA_Handler(
+                symbol=symbol,
+                screener="egypt",
+                exchange="EGX",
+                interval=Interval.INTERVAL_1_DAY
+            )
 
-        return {
-            "price": d["close"],
-            "rsi": d["RSI"],
-            "ema50": d.get("EMA50", d["close"]),
-            "ema200": d.get("EMA200", d["close"]),
-        }
+            analysis = handler.get_analysis()
+            d = analysis.indicators
 
-    except:
-        return None
+            return {
+                "price": d["close"],
+                "rsi": d["RSI"],
+                "high": d["high"],
+                "low": d["low"],
+            }
 
+        except:
+            time.sleep(1)
 
-def get_yf_data(symbol):
-    try:
-        df = yf.download(symbol + ".CA", period="3mo", interval="1d")
-        return df
-    except:
-        return None
+    return None
 
 
-# ------------------ STRATEGY ------------------
 def analyze(symbol):
-    tv = get_tv_data(symbol)
-    yf_data = get_yf_data(symbol)
+    data = get_tv_data(symbol)
 
-    if tv is None or yf_data is None or len(yf_data) == 0:
+    if data is None:
         return None
 
-    price = tv["price"]
-    rsi = tv["rsi"]
+    price = data["price"]
+    rsi = data["rsi"]
 
-    support = yf_data["Low"].rolling(20).min().iloc[-1]
-    resistance = yf_data["High"].rolling(20).max().iloc[-1]
+    support = data["low"]
+    resistance = data["high"]
 
     score = 0
 
     if 40 < rsi < 60:
         score += 30
-    if price > tv["ema50"]:
-        score += 30
-    if price > tv["ema200"]:
-        score += 20
     if price > support:
+        score += 30
+    if price < resistance:
+        score += 20
+    if rsi < 70:
         score += 20
 
     return {
@@ -91,71 +86,67 @@ def analyze(symbol):
         "rsi": round(rsi,1),
         "support": round(support,2),
         "resistance": round(resistance,2),
-        "score": score,
-        "data": yf_data
+        "score": score
     }
 
 
-# ------------------ UI ------------------
+# ---------- UI ----------
 st.title("🏹 EGX Sniper PRO MAX")
 
 tab1, tab2 = st.tabs(["📊 تحليل سهم", "🔥 الفرص"])
 
-# ------------------ ANALYSIS ------------------
+# ---------- ANALYSIS ----------
 with tab1:
-    symbol = st.selectbox("ادخل السهم", EGX_SYMBOLS)
+    symbol = st.text_input("ادخل كود السهم", "TMGH")
 
-    result = analyze(symbol)
+    if symbol:
+        result = analyze(symbol.upper())
 
-    if result:
-        st.markdown(f"""
-        <div class="card">
-        <h2>{result['symbol']}</h2>
+        if result:
 
-        💰 السعر الحالي: {result['price']}  
-        📊 RSI: {result['rsi']}  
+            rec = "🔥 دخول" if result["score"] >= 70 else "⚠️ انتظار" if result["score"] >= 50 else "❌ تجنب"
 
-        🧱 الدعم: {result['support']}  
-        🚧 المقاومة: {result['resistance']}  
+            st.markdown(f"""
+            <div class="card">
 
-        💧 السيولة: {"عالية" if result['score']>70 else "متوسطة"}  
+            <h2>{result['symbol']}</h2>
 
-        ----------------------
+            💰 السعر: {result['price']} | RSI: {result['rsi']}
 
-        🎯 المضارب: {result['score']}/100  
-        ⚡ مناسب مضاربة سريعة  
+            🧱 دعم: {result['support']}  
+            🚧 مقاومة: {result['resistance']}  
 
-        🔁 السوينج: {min(100, result['score']+10)}/100  
+            💧 السيولة: {"عالية" if result['score']>70 else "متوسطة"}
 
-        🏦 المستثمر: {min(100, result['score']+20)}/100  
+            ----------------------
 
-        ----------------------
+            🎯 التقييم: {result['score']}/100  
+            💡 {"ارتداد من دعم قوي" if result['score']>70 else "حركة عرضية"}
 
-        📌 التوصية: {"🔥 دخول" if result['score']>70 else "⚠️ انتظار"}
-        </div>
-        """, unsafe_allow_html=True)
+            ----------------------
 
-        # ----------- CHART -----------
-        df = result["data"]
+            🎯 دخول: {round(result['price']*1.01,2)}  
+            ❌ وقف خسارة: {round(result['support']*0.99,2)}
 
-        fig = go.Figure(data=[go.Candlestick(
-            x=df.index,
-            open=df['Open'],
-            high=df['High'],
-            low=df['Low'],
-            close=df['Close']
-        )])
+            ----------------------
 
-        st.plotly_chart(fig, use_container_width=True)
+            📌 التوصية: {rec}
 
-    else:
-        st.warning("❌ لا توجد بيانات")
+            </div>
+            """, unsafe_allow_html=True)
 
-# ------------------ OPPORTUNITIES ------------------
+        else:
+            st.error("❌ السهم غير متاح أو TradingView واقع حالياً")
+
+
+# ---------- OPPORTUNITIES ----------
 with tab2:
+
+    symbols = ["COMI","ETEL","TMGH","SWDY","EFIH","ORAS","AMOC","RMDA","FWRY","MPRC"]
+
     rows = []
 
-    for s in EGX_SYMBOLS:
+    for s in symbols:
         r = analyze(s)
         if r:
             rows.append(r)
@@ -173,4 +164,4 @@ with tab2:
         ]], use_container_width=True)
 
     else:
-        st.warning("❌ لا توجد فرص")
+        st.error("❌ لا توجد فرص حالياً")
