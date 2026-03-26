@@ -3,217 +3,193 @@ import requests
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="EGX Sniper PRO", layout="wide")
+st.set_page_config(layout="wide")
 
-# ================== STYLE ==================
+# ================= STYLE =================
 st.markdown("""
 <style>
-body, .stApp {background:#0d1117;color:white;}
+.stApp {background-color:#0d1117;color:white;}
 .card {
-    background:#161b22;
-    padding:18px;
-    border-radius:18px;
-    margin-top:15px;
-    line-height:1.8;
+background:#161b22;
+padding:18px;
+border-radius:18px;
+margin-bottom:15px;
+box-shadow:0 0 10px rgba(0,0,0,0.4);
 }
-hr {border:0.5px solid #2c313a;}
+hr {border:0.5px solid #333;}
 </style>
 """, unsafe_allow_html=True)
 
-# ================== DATA ==================
-@st.cache_data(ttl=300)
+# ================= SYMBOLS =================
+SYMBOLS = [
+"COMI","ETEL","TMGH","SWDY","EFIH","ORAS","AMOC","CLHO","OCIC",
+"ATQA","RMDA","FWRY","ZMID","SVCE","ACAMD","BONY","MEPA","LUTS"
+]
+
+# ================= DATA =================
+@st.cache_data(ttl=60)
 def get_data(symbol):
     try:
         url = "https://scanner.tradingview.com/egypt/scan"
         payload = {
-            "symbols":{"tickers":[f"EGX:{symbol}"],"query":{"types":[]}},
-            "columns":["close","high","low","volume"]
+            "symbols": {"tickers": [f"EGX:{symbol}"], "query": {"types": []}},
+            "columns": [
+                "close","high","low","volume",
+                "RSI","EMA200","MACD.macd","MACD.signal"
+            ]
         }
+        res = requests.post(url, json=payload).json()
+        d = res["data"][0]["d"]
 
-        r = requests.post(url, json=payload).json()
-        d = r["data"][0]["d"]
-
-        p,h,l,v = float(d[0]),float(d[1]),float(d[2]),float(d[3])
-
-        # RSI + Indicators من TradingView
-        try:
-            from tradingview_ta import TA_Handler, Interval
-
-            handler = TA_Handler(
-                symbol=symbol,
-                screener="egypt",
-                exchange="EGX",
-                interval=Interval.INTERVAL_1_DAY
-            )
-
-            analysis = handler.get_analysis()
-
-            rsi = analysis.indicators.get("RSI",50)
-            ema20 = analysis.indicators.get("EMA20",p)
-            ema50 = analysis.indicators.get("EMA50",p)
-
-        except:
-            rsi, ema20, ema50 = 50, p, p
-
-        return p,h,l,v,rsi,ema20,ema50
-
+        return {
+            "price": d[0],
+            "high": d[1],
+            "low": d[2],
+            "volume": d[3],
+            "rsi": d[4],
+            "ema200": d[5],
+            "macd": d[6],
+            "signal": d[7]
+        }
     except:
-        return None,None,None,None,50,0,0
+        return None
 
-# ================== INDICATORS ==================
+# ================= LOGIC =================
 def pivots(p,h,l):
-    piv=(p+h+l)/3
-    s1=(2*piv)-h
-    s2=piv-(h-l)
-    r1=(2*piv)-l
-    r2=piv+(h-l)
+    piv = (p+h+l)/3
+    s1 = (2*piv)-h
+    s2 = piv-(h-l)
+    r1 = (2*piv)-l
+    r2 = piv+(h-l)
     return s1,s2,r1,r2
 
-# ================== SIGNAL ENGINE ==================
-def analyze(p,s1,s2,r1,r2,rsi,volume,ema20,ema50):
+def liquidity(v):
+    if v > 2_000_000: return "🔥 عالية"
+    if v > 500_000: return "⚠ متوسطة"
+    return "❌ ضعيفة"
 
-    near_support = abs(p - s1)/s1 < 0.03
-    breakout = p > r1
-    strong_volume = volume > 1_000_000
-    uptrend = p > ema20 > ema50
+def volume_spike(v):
+    if v > 3_000_000:
+        return "🚀 Volume Spike"
+    return ""
 
-    # ===== SCORE =====
+def smart_score(p,s1,r1,rsi,ema):
     score = 50
-    if rsi < 30: score += 20
-    if near_support: score += 15
-    if strong_volume: score += 10
-    if breakout: score += 10
-    if uptrend: score += 10
+    if rsi < 30: score += 25
+    if abs(p-s1)/s1 < 0.02: score += 20
+    if p > ema: score += 10
+    return min(score,100)
 
-    score = min(100, score)
+def rating(score):
+    if score >= 80: return "🔥 قوية"
+    if score >= 60: return "⚠ متوسطة"
+    return "❌ ضعيفة"
 
-    # ===== RANK =====
-    if score >= 75:
-        rank = "🔥 قوية"
-    elif score >= 60:
-        rank = "⚠ متوسطة"
-    else:
-        rank = "❌ ضعيفة"
+def ai_comment(p,s1,r1,rsi):
+    if rsi < 30:
+        return "🧠 ارتداد محتمل من الدعم → فرصة مضاربية"
+    if p > r1:
+        return "🧠 اختراق مقاومة → اتجاه صاعد"
+    return "🧠 حركة عرضية"
 
-    # ===== ENTRY =====
-    if breakout:
-        entry = r1
-        sl = r1 - 0.2
-        comment = "📈 اختراق مقاومة → فرصة قوية لاستكمال الصعود"
-    elif near_support:
-        entry = s1 + 0.05
-        sl = s1 - 0.1
-        comment = "🟢 ارتداد من الدعم → فرصة مضاربة جيدة"
-    else:
-        entry = (s1 + r1)/2
-        sl = entry - 0.3
-        comment = "⚠ لا توجد فرصة واضحة حالياً"
+def entry_zone(s1):
+    return round(s1*1.01,2), round(s1*1.03,2)
 
-    return score, rank, entry, sl, comment
+def stop_loss(s1):
+    return round(s1*0.97,2)
 
-# ================== CARD ==================
-def show_card(code,p,h,l,v,rsi,ema20,ema50):
+def confidence(score):
+    return f"{score}%"
+
+# ================= CARD =================
+def show_card(sym,data):
+    p,h,l,v,rsi,ema = data["price"],data["high"],data["low"],data["volume"],data["rsi"],data["ema200"]
 
     s1,s2,r1,r2 = pivots(p,h,l)
-    score, rank, entry, sl, comment = analyze(p,s1,s2,r1,r2,rsi,v,ema20,ema50)
+
+    score_trader = smart_score(p,s1,r1,rsi,ema)
+    score_swing = min(100,60+(50-abs(50-rsi)))
+    score_invest = 80 if p>ema else 50
+
+    entry1,entry2 = entry_zone(s1)
+    sl = stop_loss(s1)
 
     st.markdown(f"""
     <div class="card">
+    <h2>{sym}</h2>
 
-    <h3>{code}</h3>
+    💰 السعر: {p:.2f} | RSI: {rsi:.1f}<br><br>
 
-    💰 السعر: {p:.2f}<br>
-    📉 RSI: {rsi:.1f}<br>
+    🧱 دعم 1: {s1:.2f}<br>
+    🧱 دعم 2: {s2:.2f}<br><br>
 
-    🧱 الدعم: {s1:.2f} / {s2:.2f}<br>
-    🚧 المقاومة: {r1:.2f} / {r2:.2f}<br>
+    🚧 مقاومة 1: {r1:.2f}<br>
+    🚧 مقاومة 2: {r2:.2f}<br><br>
 
-    <hr>
-
-    🎯 التقييم: {rank} ({score}/100)<br>
-    💡 {comment}<br>
+    💧 السيولة: {liquidity(v)} {volume_spike(v)}<br>
 
     <hr>
 
-    🎯 دخول: {entry:.2f}<br>
-    ❌ وقف خسارة: {sl:.2f}<br>
+    🎯 التقييم: {rating(score_trader)} ({score_trader}/100)<br>
+    🧠 {ai_comment(p,s1,r1,rsi)}<br>
+
+    🎯 منطقة دخول: {entry1} - {entry2}<br>
+    ❌ وقف خسارة: {sl}<br>
+    📊 Confidence: {confidence(score_trader)}
 
     <hr>
 
-    📝 ملحوظة للمحبوس: أقرب دعم {s1:.2f} - الدعم الأقوى {s2:.2f}
+    🎯 المضارب: {score_trader}/100<br>
+    🔁 السوينج: {int(score_swing)}/100<br>
+    🏦 المستثمر: {score_invest}/100<br>
+
+    <hr>
+
+    📌 ملحوظة: أقرب دعم {s1:.2f} - دعم أقوى {s2:.2f}
 
     </div>
     """, unsafe_allow_html=True)
 
-# ================== MARKET SCAN ==================
-def scan_market():
-
-    url = "https://scanner.tradingview.com/egypt/scan"
-
-    payload = {
-        "symbols":{"query":{"types":[]},"tickers":[]},
-        "columns":["name","close","high","low","volume"]
-    }
-
-    r = requests.post(url, json=payload).json()
-
+# ================= SCANNER =================
+def scan():
     rows = []
+    for s in SYMBOLS:
+        d = get_data(s)
+        if not d: continue
 
-    for stock in r["data"]:
-
-        name = stock["d"][0]
-        p = stock["d"][1]
-        h = stock["d"][2]
-        l = stock["d"][3]
-        v = stock["d"][4]
-
+        p,h,l,v,rsi,ema = d["price"],d["high"],d["low"],d["volume"],d["rsi"],d["ema200"]
         s1,s2,r1,r2 = pivots(p,h,l)
 
-        rsi = ((p-l)/(h-l))*100 if h!=l else 50
-
-        score, rank, entry, sl, _ = analyze(p,s1,s2,r1,r2,rsi,v,p,p)
+        score = smart_score(p,s1,r1,rsi,ema)
 
         rows.append({
-            "السهم": name,
+            "السهم": s,
             "السعر": round(p,2),
             "RSI": round(rsi,1),
             "دعم": round(s1,2),
             "مقاومة": round(r1,2),
-            "التقييم": rank,
-            "دخول": round(entry,2),
-            "وقف": round(sl,2),
+            "التقييم": rating(score),
             "Score": score
         })
 
-    df = pd.DataFrame(rows)
-    df = df.sort_values(by="Score", ascending=False)
+    df = pd.DataFrame(rows).sort_values("Score",ascending=False)
+    return df
 
-    return df.head(20)
-
-# ================== UI ==================
+# ================= UI =================
 st.title("🏹 EGX Sniper PRO")
 
-tab1, tab2 = st.tabs(["📊 تحليل سهم","🔥 أفضل الفرص"])
+tab1,tab2 = st.tabs(["📊 تحليل سهم","🔥 الفرص"])
 
-# ===== تحليل =====
 with tab1:
-    code = st.text_input("ادخل كود السهم").upper()
-
-    if code:
-        p,h,l,v,rsi,ema20,ema50 = get_data(code)
-
-        if p:
-            show_card(code,p,h,l,v,rsi,ema20,ema50)
+    sym = st.text_input("ادخل السهم").upper()
+    if sym:
+        d = get_data(sym)
+        if d:
+            show_card(sym,d)
         else:
             st.error("السهم غير متاح")
 
-# ===== فرص =====
 with tab2:
-    st.subheader("🔥 Top Opportunities")
-
-    df = scan_market()
-
-    if not df.empty:
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.warning("لا توجد فرص حالياً")
+    st.subheader("🔥 أفضل الفرص")
+    df = scan()
+    st.dataframe(df, use_container_width=True)
