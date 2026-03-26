@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from tradingview_ta import TA_Handler, Interval
-import plotly.graph_objects as go
 
 # =============================
 # 🎨 UI ثابت (Dark Mode)
@@ -12,12 +11,31 @@ st.set_page_config(layout="wide")
 
 st.markdown("""
 <style>
-body {background-color: #0b1220; color: white;}
-.card {
-    background-color: #111827;
-    padding: 20px;
-    border-radius: 15px;
+
+body {
+    background-color: #0b1220;
+    color: white;
 }
+
+.card {
+    background: #111827;
+    padding: 25px;
+    border-radius: 20px;
+    box-shadow: 0px 0px 20px rgba(0,0,0,0.4);
+    margin-top: 20px;
+}
+
+.title {
+    font-size: 28px;
+    font-weight: bold;
+    margin-bottom: 15px;
+}
+
+.line {
+    border-top: 1px solid #2a2a2a;
+    margin: 15px 0;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -41,25 +59,19 @@ def get_tv(symbol):
 # =============================
 def get_data(symbol):
     try:
-        df = yf.download(symbol + ".CA", period="6mo", interval="1d")
-        df.dropna(inplace=True)
-        return df
+        for suffix in [".CAIRO", ".EG", ""]:
+            df = yf.download(symbol + suffix, period="6mo", interval="1d")
+            if df is not None and not df.empty:
+                df.dropna(inplace=True)
+                return df
+        return None
     except:
         return None
 
 # =============================
-# 📈 Indicators (FIXED)
+# 📈 RSI
 # =============================
-def indicators(df):
-    if len(df) < 50:
-        return None
-
-    df["MA20"] = df["Close"].rolling(20).mean()
-    df["MA50"] = df["Close"].rolling(50).mean()
-    df["RSI"] = rsi(df["Close"])
-    return df.dropna()
-
-def rsi(series, period=14):
+def compute_rsi(series, period=14):
     delta = series.diff()
     gain = delta.clip(lower=0).rolling(period).mean()
     loss = (-delta.clip(upper=0)).rolling(period).mean()
@@ -67,77 +79,9 @@ def rsi(series, period=14):
     return 100 - (100 / (1 + rs))
 
 # =============================
-# 🎯 Strategy PRO++
+# 🚀 APP
 # =============================
-def strategy(df):
-    last = df.iloc[-1]
-
-    # Trend
-    if last["MA20"] > last["MA50"]:
-        trend = "صاعد 📈"
-    else:
-        trend = "ضعيف ⚠️"
-
-    # Breakout
-    resistance = df["High"].rolling(20).max().iloc[-1]
-    support = df["Low"].rolling(20).min().iloc[-1]
-
-    breakout = last["Close"] > resistance * 0.99
-    pullback = last["Close"] <= support * 1.02
-
-    # Entry logic
-    if breakout:
-        entry = resistance
-        signal = "BUY 🔥"
-    elif pullback:
-        entry = support
-        signal = "BUY (Pullback)"
-    else:
-        entry = last["Close"]
-        signal = "WAIT ⏳"
-
-    stop = entry * 0.96
-    target = entry * 1.06
-
-    return trend, signal, entry, stop, target, support, resistance
-
-# =============================
-# 📊 Chart (Candlestick)
-# =============================
-def chart(df):
-    fig = go.Figure()
-
-    fig.add_trace(go.Candlestick(
-        x=df.index,
-        open=df['Open'],
-        high=df['High'],
-        low=df['Low'],
-        close=df['Close']
-    ))
-
-    fig.add_trace(go.Scatter(x=df.index, y=df["MA20"], name="MA20"))
-    fig.add_trace(go.Scatter(x=df.index, y=df["MA50"], name="MA50"))
-
-    fig.update_layout(template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
-
-# =============================
-# 🤖 AI Recommendation
-# =============================
-def ai(signal, trend, rsi):
-    if signal == "BUY 🔥" and rsi < 70:
-        return "🚀 فرصة قوية - اختراق واضح"
-    elif "Pullback" in signal:
-        return "📉 شراء من دعم - مخاطرة أقل"
-    elif rsi > 80:
-        return "⚠️ تشبع شرائي - خطر"
-    else:
-        return "⏳ انتظار أفضل"
-
-# =============================
-# 🚀 UI
-# =============================
-st.title("🏹 EGX Sniper PRO++")
+st.title("🏹 EGX Sniper PRO MAX")
 
 symbol = st.text_input("ادخل كود السهم", "TMGH")
 
@@ -157,80 +101,129 @@ if df is None or df.empty:
     st.error("❌ لا توجد بيانات")
     st.stop()
 
-df = indicators(df)
+# =============================
+# 📈 Indicators
+# =============================
+df["MA20"] = df["Close"].rolling(20).mean()
+df["MA50"] = df["Close"].rolling(50).mean()
+df["RSI"] = compute_rsi(df["Close"])
 
-if df is None:
+df.dropna(inplace=True)
+
+if len(df) < 20:
     st.warning("⚠️ بيانات غير كافية")
     st.stop()
 
-trend, signal, entry, stop, target, support, resistance = strategy(df)
-
 last = df.iloc[-1]
-rsi_val = round(last["RSI"], 2)
 
-recommendation = ai(signal, trend, rsi_val)
+price = round(last["Close"],2)
+rsi_val = round(last["RSI"],2)
 
 # =============================
-# 📦 CARD (نفس الشكل)
+# 🧱 Support / Resistance
+# =============================
+support1 = round(df["Low"].rolling(20).min().iloc[-1],2)
+support2 = round(df["Low"].rolling(50).min().iloc[-1],2)
+
+res1 = round(df["High"].rolling(20).max().iloc[-1],2)
+res2 = round(df["High"].rolling(50).max().iloc[-1],2)
+
+# =============================
+# 💧 Liquidity
+# =============================
+volume = df["Volume"].iloc[-1]
+if volume > df["Volume"].mean():
+    liquidity = "عالية 💧"
+else:
+    liquidity = "متوسطة ⚠️"
+
+# =============================
+# 🔔 Signals
+# =============================
+bounce = "لا توجد إشارة ارتداد"
+confirm = "لا يوجد تأكيد"
+
+if price <= support1 * 1.02:
+    bounce = "قريب من دعم 🔥"
+
+if last["MA20"] > last["MA50"]:
+    confirm = "اتجاه صاعد ✅"
+
+# =============================
+# 🎯 Strategies
+# =============================
+entry_scalp = support1
+stop_scalp = round(entry_scalp * 0.96,2)
+
+entry_swing = price
+stop_swing = round(price * 0.94,2)
+
+entry_invest = round(last["MA50"],2)
+stop_invest = round(entry_invest * 0.9,2)
+
+# =============================
+# 📊 Scores
+# =============================
+score_scalp = 50
+score_swing = 65
+score_invest = 55
+
+if rsi_val < 40:
+    score_scalp += 10
+
+if last["MA20"] > last["MA50"]:
+    score_swing += 10
+    score_invest += 10
+
+# =============================
+# 📌 Recommendation
+# =============================
+recommend = "انتظار ⏳"
+
+if price <= support1 * 1.02:
+    recommend = "شراء قرب الدعم 🔥"
+
+elif rsi_val > 80:
+    recommend = "جني أرباح ⚠️"
+
+# =============================
+# 📦 UI CARD (OLD STYLE EXACT)
 # =============================
 st.markdown(f"""
 <div class="card">
 
-<h2>{symbol}</h2>
+<div class="title">{symbol} -</div>
 
-💰 السعر الحالي: {round(last['Close'],2)}  
+💰 السعر الحالي: {price}  
 📊 RSI: {rsi_val}  
 
-🧱 الدعم: {round(support,2)}  
-🚧 المقاومة: {round(resistance,2)}  
+🧱 الدعم: {support2} / {support1}  
+🚧 المقاومة: {res2} / {res1}  
 
-<hr>
+💧 السيولة: {liquidity}  
 
-🎯 دخول: {round(entry,2)}  
-❌ وقف خسارة: {round(stop,2)}  
-🏁 هدف: {round(target,2)}  
+<div class="line"></div>
 
-📈 الاتجاه: {trend}  
-🔥 الإشارة: {signal}  
+↩️ {bounce}  
+⚡ {confirm}  
 
-<hr>
+<div class="line"></div>
 
-🤖 التوصية: {recommendation}
+🎯 المضارب: {score_scalp}/100  
+⚡ مناسب لمضاربة سريعة قرب الدعم {support1} مع الالتزام بوقف الخسارة  
+🎯 دخول: {entry_scalp} ، وقف خسارة: {stop_scalp}  
+
+🔁 السوينيج: {score_swing}/100  
+📊 السهم في حركة تصحيح داخل اتجاه عام، مراقبة الارتداد مطلوبة  
+🎯 دخول: {entry_swing} ، وقف خسارة: {stop_swing}  
+
+🏦 المستثمر: {score_invest}/100  
+📈 الاتجاه طويل الأجل إيجابي طالما السعر أعلى المتوسط 50 يوم  
+🎯 دخول: {entry_invest} ، وقف خسارة: {stop_invest}  
+
+<div class="line"></div>
+
+📌 التوصية: {recommend}
 
 </div>
 """, unsafe_allow_html=True)
-
-# =============================
-# 📉 Chart
-# =============================
-chart(df)
-
-# =============================
-# 🔥 Scanner (زي الصورة)
-# =============================
-st.subheader("🔥 الفرص")
-
-watchlist = ["COMI","ETEL","TMGH","SWDY","EFIH","ORAS"]
-
-results = []
-
-for s in watchlist:
-    d = get_data(s)
-    d = indicators(d) if d is not None else None
-
-    if d is None:
-        continue
-
-    _, sig, _, _, _, sup, res = strategy(d)
-
-    results.append({
-        "السهم": s,
-        "الدعم": round(sup,2),
-        "المقاومة": round(res,2),
-        "الإشارة": sig
-    })
-
-if results:
-    st.dataframe(pd.DataFrame(results))
-else:
-    st.warning("لا توجد فرص")
