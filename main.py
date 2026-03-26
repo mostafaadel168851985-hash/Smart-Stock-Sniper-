@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import requests
 from tradingview_ta import TA_Handler, Interval
 
 st.set_page_config(layout="wide")
@@ -16,7 +17,6 @@ background:#161b22;
 padding:20px;
 border-radius:20px;
 margin-bottom:20px;
-box-shadow:0 0 10px rgba(0,0,0,0.6);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -29,6 +29,8 @@ SYMBOLS = [
 
 # ================= GET DATA =================
 def get_data(symbol):
+
+    # ===== TRY tradingview-ta =====
     try:
         handler = TA_Handler(
             symbol=symbol,
@@ -46,6 +48,30 @@ def get_data(symbol):
             "rsi": float(analysis.indicators.get("RSI", 50)),
             "ema": float(analysis.indicators.get("EMA200", 0)),
             "volume": float(analysis.indicators.get("volume", 0))
+        }
+
+    except:
+        pass
+
+    # ===== FALLBACK TradingView Scanner =====
+    try:
+        url = "https://scanner.tradingview.com/egypt/scan"
+
+        payload = {
+            "symbols": {"tickers": [f"EGX:{symbol}"], "query": {"types": []}},
+            "columns": ["close","high","low","volume","RSI","EMA200"]
+        }
+
+        r = requests.post(url, json=payload).json()
+        d = r["data"][0]["d"]
+
+        return {
+            "price": float(d[0]),
+            "high": float(d[1]),
+            "low": float(d[2]),
+            "volume": float(d[3]),
+            "rsi": float(d[4]),
+            "ema": float(d[5])
         }
 
     except:
@@ -68,10 +94,9 @@ def liquidity(v):
     else:
         return "❌ سيولة ضعيفة"
 
-# ================= AI SYSTEM =================
+# ================= AI =================
 def ai_analysis(p, s1, s2, r1, r2, rsi, ema):
 
-    # ===== TRADER =====
     trader_score = 50
     if rsi < 30:
         trader_score += 25
@@ -80,30 +105,18 @@ def ai_analysis(p, s1, s2, r1, r2, rsi, ema):
     if ema and p > ema:
         trader_score += 10
 
-    trader_comment = "⚡ فرصة ارتداد من الدعم" if trader_score >= 70 else "⚠ لا يوجد تأكيد قوي"
+    trader_comment = "🔥 ارتداد من دعم قوي" if trader_score >= 75 else "⚠ فرصة ضعيفة"
 
     trader_entry = round(s1 * 1.01, 2)
     trader_sl = round(s1 * 0.97, 2)
 
-    # ===== SWING =====
     swing_score = int(min(100, 60 + (50 - abs(50 - rsi))))
-    swing_comment = "🔁 اتجاه متوسط إيجابي" if p > ema else "🔁 حركة تصحيح"
+    swing_comment = "🔁 اتجاه صاعد" if p > ema else "🔁 تصحيح"
 
-    swing_entry = round((s1 + r1) / 2, 2)
-    swing_sl = round(swing_entry - 0.25, 2)
+    invest_score = 80 if p > ema else 50
+    invest_comment = "🏦 استثمار إيجابي" if p > ema else "🏦 ضعيف"
 
-    # ===== INVEST =====
-    invest_score = 80 if p > ema else 55
-    invest_comment = "🏦 اتجاه طويل الأجل صاعد" if p > ema else "🏦 اتجاه ضعيف"
-
-    invest_entry = round((s1 + s2) / 2, 2)
-    invest_sl = round(s2 - 0.25, 2)
-
-    return {
-        "trader": (trader_score, trader_comment, trader_entry, trader_sl),
-        "swing": (swing_score, swing_comment, swing_entry, swing_sl),
-        "invest": (invest_score, invest_comment, invest_entry, invest_sl)
-    }
+    return trader_score, trader_comment, trader_entry, trader_sl, swing_score, swing_comment, invest_score, invest_comment
 
 def rating(score):
     if score >= 80:
@@ -114,22 +127,18 @@ def rating(score):
         return "❌ ضعيفة"
 
 # ================= CARD =================
-def show_card(symbol, data):
+def show_card(symbol, d):
 
-    p = data["price"]
-    h = data["high"]
-    l = data["low"]
-    rsi = data["rsi"]
-    ema = data["ema"]
-    v = data["volume"]
+    p = d["price"]
+    h = d["high"]
+    l = d["low"]
+    rsi = d["rsi"]
+    ema = d["ema"]
+    v = d["volume"]
 
     s1, s2, r1, r2 = pivots(p, h, l)
 
-    ai = ai_analysis(p, s1, s2, r1, r2, rsi, ema)
-
-    trader = ai["trader"]
-    swing = ai["swing"]
-    invest = ai["invest"]
+    trader_score, trader_comment, entry, sl, swing_score, swing_comment, invest_score, invest_comment = ai_analysis(p,s1,s2,r1,r2,rsi,ema)
 
     st.markdown(f"""
     <div class="card">
@@ -138,45 +147,40 @@ def show_card(symbol, data):
 
     💰 السعر: {p:.2f} | RSI: {rsi:.1f}<br><br>
 
-    🧱 دعم 1: {s1}<br>
-    🧱 دعم 2: {s2}<br><br>
-
-    🚧 مقاومة 1: {r1}<br>
-    🚧 مقاومة 2: {r2}<br><br>
+    🧱 دعم: {s1} / {s2}<br>
+    🚧 مقاومة: {r1} / {r2}<br><br>
 
     💧 {liquidity(v)}<br>
 
     <hr>
 
-    🎯 التقييم: {rating(trader[0])} ({trader[0]}/100)<br><br>
+    🎯 التقييم: {rating(trader_score)} ({trader_score}/100)<br>
+    💡 {trader_comment}<br><br>
 
-    🎯 دخول: {trader[2]}<br>
-    ❌ وقف خسارة: {trader[3]}<br>
-
-    <hr>
-
-    🎯 المضارب: {trader[0]}/100<br>
-    {trader[1]}<br><br>
-
-    🔁 السوينج: {swing[0]}/100<br>
-    {swing[1]}<br><br>
-
-    🏦 المستثمر: {invest[0]}/100<br>
-    {invest[1]}<br>
+    🎯 دخول: {entry}<br>
+    ❌ وقف خسارة: {sl}<br>
 
     <hr>
 
-    📌 ملحوظة: أقرب دعم {s1} - دعم أقوى {s2}
+    🎯 المضارب: {trader_score}/100<br>
+    🔁 السوينج: {swing_score}/100<br>
+    🏦 المستثمر: {invest_score}/100<br>
+
+    <hr>
+
+    📌 أقرب دعم {s1} - دعم أقوى {s2}
 
     </div>
     """, unsafe_allow_html=True)
 
 # ================= SCANNER =================
 def scan_market():
+
     rows = []
 
     for sym in SYMBOLS:
         d = get_data(sym)
+
         if not d:
             continue
 
@@ -186,7 +190,7 @@ def scan_market():
         rsi = d["rsi"]
         ema = d["ema"]
 
-        s1, _, r1, _ = pivots(p, h, l)
+        s1, _, r1, _ = pivots(p,h,l)
 
         score = 50
         if rsi < 30:
@@ -218,19 +222,17 @@ st.title("🏹 EGX Sniper PRO")
 
 tab1, tab2 = st.tabs(["📊 تحليل سهم", "🔥 الفرص"])
 
-# ===== TAB 1 =====
 with tab1:
     symbol = st.text_input("ادخل كود السهم").upper().strip()
 
     if symbol:
-        data = get_data(symbol)
+        d = get_data(symbol)
 
-        if data:
-            show_card(symbol, data)
+        if d:
+            show_card(symbol, d)
         else:
             st.error("السهم غير متاح أو البيانات غير متوفرة")
 
-# ===== TAB 2 =====
 with tab2:
     st.subheader("🔥 أفضل الفرص")
 
