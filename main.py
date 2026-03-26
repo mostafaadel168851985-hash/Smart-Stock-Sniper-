@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 st.set_page_config(layout="wide")
 
 # =========================
-# ⚙️ إعدادات
+# ⚙️ الأسهم
 # =========================
 EGX_SYMBOLS = [
     "COMI","ETEL","TMGH","SWDY","EFIH","ORAS","AMOC",
@@ -34,6 +34,7 @@ def get_data(symbol):
             "rsi": d.get("RSI", 50),
             "high": d.get("high", 0),
             "low": d.get("low", 0),
+            "ema50": d.get("EMA50", 0),
             "ema200": d.get("EMA200", 0),
         }
     except:
@@ -41,80 +42,121 @@ def get_data(symbol):
 
 
 # =========================
-# 🧠 Smart Score
+# 🧠 Trend Detection
 # =========================
-def smart_score(d):
-    p, rsi, ema = d["price"], d["rsi"], d["ema200"]
-    s1, r1 = d["low"], d["high"]
-
-    score = 0
-
-    if abs(p - s1)/s1 < 0.015:
-        score += 25
-
-    if rsi < 35:
-        score += 25
-    elif rsi < 45:
-        score += 15
-    elif rsi > 70:
-        score -= 20
-
-    if p > ema:
-        score += 20
+def trend(d):
+    if d["price"] > d["ema50"] > d["ema200"]:
+        return "UP"
+    elif d["price"] < d["ema50"] < d["ema200"]:
+        return "DOWN"
     else:
-        score -= 10
+        return "SIDE"
+
+
+# =========================
+# 🔥 Breakout / Pullback
+# =========================
+def setup(d):
+    p, r1, s1 = d["price"], d["high"], d["low"]
 
     if p > r1 * 0.995:
-        score += 25
-
-    return max(min(score,100),0)
-
-
-# =========================
-# 📊 Recommendation AI
-# =========================
-def ai_recommendation(d, score):
-    p, rsi = d["price"], d["rsi"]
-    s1, r1 = d["low"], d["high"]
-
-    if score >= 80:
-        return "📈 السهم في اتجاه صاعد مع اقتراب من اختراق مقاومة — فرصة شراء قوية"
-    elif score >= 65:
-        return "✅ السهم جيد لكن يحتاج تأكيد — يفضل الدخول مع اختراق المقاومة"
-    elif score >= 50:
-        return "⚠ السهم في نطاق عرضي — يفضل الانتظار"
+        return "BREAKOUT"
+    elif abs(p - s1)/s1 < 0.02:
+        return "PULLBACK"
     else:
-        return "❌ السهم ضعيف حالياً — تجنب الدخول"
+        return "NONE"
 
 
 # =========================
-# 🎯 Strategy
+# 🎯 Smart Score
 # =========================
-def strategy(d):
-    entry = d["price"]
-    stop = round(d["low"] * 0.98, 2)
-    target = round(d["high"] * 1.02, 2)
+def smart_score(d):
+    score = 0
 
-    rr = round((target-entry)/(entry-stop),2) if (entry-stop)!=0 else 0
+    if trend(d) == "UP":
+        score += 30
+
+    if setup(d) == "BREAKOUT":
+        score += 30
+    elif setup(d) == "PULLBACK":
+        score += 20
+
+    if d["rsi"] < 40:
+        score += 20
+
+    return min(score,100)
+
+
+# =========================
+# 🎯 Smart Entry
+# =========================
+def strategy(d, score):
+    p, s1, r1 = d["price"], d["low"], d["high"]
+
+    if score < 60:
+        return None, None, None, None
+
+    # breakout
+    if setup(d) == "BREAKOUT":
+        entry = r1
+    else:
+        entry = s1
+
+    stop = round(entry * 0.97, 2)
+    target = round(entry * 1.05, 2)
+
+    rr = round((target-entry)/(entry-stop),2)
 
     return entry, stop, target, rr
 
 
 # =========================
-# 📉 Fake Chart (Simulation)
+# 🤖 AI Recommendation
 # =========================
-def draw_chart(price):
-    prices = np.random.normal(price, price*0.01, 50)
+def ai(d, score):
+    t = trend(d)
+    s = setup(d)
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(y=prices, mode='lines'))
-    fig.update_layout(height=300, margin=dict(l=10,r=10,t=10,b=10))
+    if score >= 80:
+        return f"🔥 اتجاه صاعد قوي + {s} — فرصة ممتازة"
+    elif score >= 60:
+        return f"✅ اتجاه {t} مع {s} — فرصة محتملة"
+    else:
+        return f"❌ لا يوجد اتجاه واضح — تجنب"
 
+
+# =========================
+# 📉 Candlestick Chart (Fake OHLC but realistic)
+# =========================
+def chart(price):
+    data = []
+
+    last = price
+
+    for _ in range(50):
+        open_p = last
+        close = open_p + np.random.normal(0, price*0.01)
+        high = max(open_p, close) + np.random.rand()*0.02*price
+        low = min(open_p, close) - np.random.rand()*0.02*price
+
+        data.append([open_p, high, low, close])
+        last = close
+
+    df = pd.DataFrame(data, columns=["Open","High","Low","Close"])
+
+    fig = go.Figure(data=[go.Candlestick(
+        open=df["Open"],
+        high=df["High"],
+        low=df["Low"],
+        close=df["Close"]
+    )])
+
+    fig.update_layout(height=400)
     return fig
 
 
 # =========================
-# 📊 Scan Market
+# 📊 Scan
 # =========================
 def scan():
     rows = []
@@ -130,8 +172,8 @@ def scan():
             "السهم": s,
             "السعر": round(d["price"],2),
             "RSI": round(d["rsi"],1),
-            "دعم": round(d["low"],2),
-            "مقاومة": round(d["high"],2),
+            "Trend": trend(d),
+            "Setup": setup(d),
             "Score": score
         })
 
@@ -146,7 +188,7 @@ def scan():
 # =========================
 # UI
 # =========================
-st.title("🏹 EGX Sniper PRO MAX AI")
+st.title("🏹 EGX Sniper PRO MAX - Institutional Edition")
 
 tab1, tab2 = st.tabs(["📊 تحليل سهم", "🔥 الفرص"])
 
@@ -167,24 +209,24 @@ with tab1:
             st.write(f"💰 السعر: {d['price']}")
             st.write(f"📊 RSI: {round(d['rsi'],1)}")
 
-            st.write(f"🧱 دعم: {round(d['low'],2)}")
-            st.write(f"🚧 مقاومة: {round(d['high'],2)}")
+            st.write(f"📈 Trend: {trend(d)}")
+            st.write(f"🔥 Setup: {setup(d)}")
 
             st.write(f"🎯 Score: {score}")
 
-            # AI Recommendation
-            st.info(ai_recommendation(d, score))
+            st.info(ai(d, score))
 
-            # Strategy
-            entry, stop, target, rr = strategy(d)
+            entry, stop, target, rr = strategy(d, score)
 
-            st.write(f"🎯 دخول: {entry}")
-            st.write(f"❌ وقف خسارة: {stop}")
-            st.write(f"🏁 هدف: {target}")
-            st.write(f"📊 R/R: {rr}")
+            if entry:
+                st.success(f"🎯 دخول: {entry}")
+                st.write(f"❌ وقف خسارة: {stop}")
+                st.write(f"🏁 هدف: {target}")
+                st.write(f"📊 R/R: {rr}")
+            else:
+                st.warning("❌ لا يوجد دخول حالياً")
 
-            # Chart
-            st.plotly_chart(draw_chart(d["price"]), use_container_width=True)
+            st.plotly_chart(chart(d["price"]), use_container_width=True)
 
         else:
             st.warning("السهم غير متاح")
@@ -199,7 +241,7 @@ with tab2:
     if df.empty:
         st.warning("لا توجد بيانات")
     else:
-        df = df[df["Score"] >= 65]
+        df = df[df["Score"] >= 60]
 
         st.subheader("🔥 أفضل الفرص")
         st.dataframe(df.head(5))
