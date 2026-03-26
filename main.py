@@ -43,13 +43,13 @@ def pivots(p, h, l):
     r2 = piv + (h - l)
     return s1, s2, r1, r2
 
-def rsi_smart(p, h, l):
+def rsi_pro(p, h, l):
     if h == l:
         return 50
-    base = ((p - l) / (h - l)) * 100
-    if base > 80: return base - 5
-    if base < 20: return base + 5
-    return base
+    val = ((p - l) / (h - l)) * 100
+    if val < 20: return val + 5
+    if val > 80: return val - 5
+    return val
 
 def liquidity(vol):
     if vol > 2_000_000:
@@ -58,6 +58,14 @@ def liquidity(vol):
         return "سيولة متوسطة"
     else:
         return "سيولة ضعيفة"
+
+# ================== TREND ==================
+def trend_filter(p, s1, r1):
+    if p > r1:
+        return "صاعد"
+    elif p < s1:
+        return "هابط"
+    return "عرضي"
 
 # ================== SMART ENTRY ==================
 def smart_entry_zone(p, s1, r1):
@@ -69,11 +77,14 @@ def smart_entry_zone(p, s1, r1):
         mid = (s1+r1)/2
         return round(mid-0.15,2), round(mid+0.15,2)
 
-# ================== SMART SCORE ==================
+# ================== VOLUME ==================
+def volume_spike(vol):
+    return vol > 1_000_000
+
+# ================== SCORE ==================
 def smart_score(p, s1, r1, rsi, vol):
     score = 0
 
-    # RSI
     if 30 <= rsi <= 60:
         score += 25
     elif rsi < 30:
@@ -81,19 +92,19 @@ def smart_score(p, s1, r1, rsi, vol):
     elif rsi > 70:
         score -= 10
 
-    # Liquidity
     if vol > 2_000_000:
         score += 25
     elif vol > 500_000:
         score += 15
 
-    # Near support
     if abs(p - s1)/s1 < 0.05:
         score += 25
 
-    # Breakout
     if p > r1:
         score += 25
+
+    if volume_spike(vol):
+        score += 10
 
     return max(score, 0)
 
@@ -105,11 +116,11 @@ def reversal_signal(p, s1, r1, rsi):
         return "🔴 إشارة ارتداد هابط", "down"
     return "لا توجد إشارة ارتداد", None
 
-def confirmation_signal(p, s1, r1, rsi):
-    if p > r1 and rsi > 55:
-        return "🟢 تأكيد شراء بعد كسر مقاومة", "buy"
+def confirmation_signal(p, s1, r1, rsi, vol):
+    if p > r1 and rsi > 55 and volume_spike(vol):
+        return "🟢 تأكيد قوي (اختراق + فوليوم)", "buy"
     if p < s1 and rsi < 45:
-        return "🔴 تأكيد بيع بعد كسر دعم", "sell"
+        return "🔴 تأكيد بيع", "sell"
     return "⚪ لا يوجد تأكيد", None
 
 # ================== AI ==================
@@ -143,11 +154,11 @@ def ai_score_comment(p, s1, s2, r1, r2, rsi):
 # ================== REPORT ==================
 def show_report(code, p, h, l, v):
     s1, s2, r1, r2 = pivots(p, h, l)
-    rsi = rsi_smart(p, h, l)
+    rsi = rsi_pro(p, h, l)
     liq = liquidity(v)
 
     rev_txt, _ = reversal_signal(p, s1, r1, rsi)
-    conf_txt, conf_type = confirmation_signal(p, s1, r1, rsi)
+    conf_txt, conf_type = confirmation_signal(p, s1, r1, rsi, v)
 
     rec = "انتظار"
     if conf_type == "buy":
@@ -193,10 +204,10 @@ def scanner():
             continue
 
         s1, s2, r1, r2 = pivots(p,h,l)
-        rsi = rsi_smart(p,h,l)
+        rsi = rsi_pro(p,h,l)
 
         score = smart_score(p, s1, r1, rsi, v)
-        if score < 40:
+        if score < 50:
             continue
 
         zone_low, zone_high = smart_entry_zone(p, s1, r1)
@@ -204,7 +215,6 @@ def scanner():
         results.append((score, f"{s} | السعر {p:.2f} | RSI {rsi:.1f} | Score {score} | 🎯 Zone {zone_low}-{zone_high}"))
 
     results.sort(reverse=True, key=lambda x: x[0])
-
     return [r[1] for r in results]
 
 # ================== UI ==================
