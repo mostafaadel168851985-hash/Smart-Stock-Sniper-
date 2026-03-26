@@ -3,32 +3,20 @@ import requests
 import pandas as pd
 import numpy as np
 
-# ================== CONFIG ==================
 st.set_page_config(page_title="EGX Sniper PRO", layout="wide")
 
-WATCHLIST = ["TMGH", "COMI", "ETEL", "SWDY", "EFIH", "ATQA", "ORAS"]
-
-# ================== STYLE (دارك مود ثابت) ==================
+# ================== STYLE ==================
 st.markdown("""
 <style>
-body, .stApp {
-    background-color: #0d1117;
-    color: #ffffff;
-}
-h1,h2,h3,h4,p,label,span {
-    color: #ffffff !important;
-}
+body, .stApp {background:#0d1117;color:white;}
 .card {
-    background: #161b22;
-    padding: 16px;
-    border-radius: 16px;
-    margin-bottom: 15px;
-    line-height: 1.6;
+    background:#161b22;
+    padding:18px;
+    border-radius:18px;
+    margin-top:15px;
+    line-height:1.8;
 }
-hr {
-    border: 0.5px solid #2c313a;
-    margin: 10px 0;
-}
+hr {border:0.5px solid #2c313a;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -38,15 +26,16 @@ def get_data(symbol):
     try:
         url = "https://scanner.tradingview.com/egypt/scan"
         payload = {
-            "symbols": {"tickers": [f"EGX:{symbol}"], "query": {"types": []}},
-            "columns": ["close", "high", "low", "volume"]
+            "symbols":{"tickers":[f"EGX:{symbol}"],"query":{"types":[]}},
+            "columns":["close","high","low","volume"]
         }
 
         r = requests.post(url, json=payload).json()
         d = r["data"][0]["d"]
 
-        p, h, l, v = float(d[0]), float(d[1]), float(d[2]), float(d[3])
+        p,h,l,v = float(d[0]),float(d[1]),float(d[2]),float(d[3])
 
+        # RSI + Indicators من TradingView
         try:
             from tradingview_ta import TA_Handler, Interval
 
@@ -58,135 +47,173 @@ def get_data(symbol):
             )
 
             analysis = handler.get_analysis()
-            rsi = analysis.indicators.get("RSI", 50)
+
+            rsi = analysis.indicators.get("RSI",50)
+            ema20 = analysis.indicators.get("EMA20",p)
+            ema50 = analysis.indicators.get("EMA50",p)
 
         except:
-            rsi = 50
+            rsi, ema20, ema50 = 50, p, p
 
-        hist = pd.Series([p]*100)
-
-        return p, h, l, v, hist, rsi
+        return p,h,l,v,rsi,ema20,ema50
 
     except:
-        return None, None, None, None, pd.Series([]), 50
+        return None,None,None,None,50,0,0
 
 # ================== INDICATORS ==================
-def pivots(p, h, l):
-    piv = (p + h + l) / 3
-    s1 = (2 * piv) - h
-    s2 = piv - (h - l)
-    r1 = (2 * piv) - l
-    r2 = piv + (h - l)
-    return s1, s2, r1, r2
+def pivots(p,h,l):
+    piv=(p+h+l)/3
+    s1=(2*piv)-h
+    s2=piv-(h-l)
+    r1=(2*piv)-l
+    r2=piv+(h-l)
+    return s1,s2,r1,r2
 
-def liquidity(v):
-    if v > 2_000_000:
-        return "سيولة عالية"
-    elif v > 500_000:
-        return "سيولة متوسطة"
-    return "سيولة ضعيفة"
+# ================== SIGNAL ENGINE ==================
+def analyze(p,s1,s2,r1,r2,rsi,volume,ema20,ema50):
 
-# ================== AI ==================
-def ai_calc(p, s1, s2, r1, r2, rsi):
-    trader_score = min(100, 50 + (20 if rsi < 35 else 0))
-    swing_score = min(100, 60 + (50 - abs(50 - rsi)))
-    invest_score = 70 if p > s1 else 50
+    near_support = abs(p - s1)/s1 < 0.03
+    breakout = p > r1
+    strong_volume = volume > 1_000_000
+    uptrend = p > ema20 > ema50
 
-    trader_entry = round(s1 + 0.05, 2)
-    trader_sl = round(s1 - 0.1, 2)
+    # ===== SCORE =====
+    score = 50
+    if rsi < 30: score += 20
+    if near_support: score += 15
+    if strong_volume: score += 10
+    if breakout: score += 10
+    if uptrend: score += 10
 
-    swing_entry = round((s1 + r1)/2, 2)
-    swing_sl = round(swing_entry - 0.2, 2)
+    score = min(100, score)
 
-    invest_entry = round((s1 + s2)/2, 2)
-    invest_sl = round(s2 - 0.2, 2)
+    # ===== RANK =====
+    if score >= 75:
+        rank = "🔥 قوية"
+    elif score >= 60:
+        rank = "⚠ متوسطة"
+    else:
+        rank = "❌ ضعيفة"
 
-    return {
-        "trader": (trader_score, trader_entry, trader_sl),
-        "swing": (swing_score, swing_entry, swing_sl),
-        "invest": (invest_score, invest_entry, invest_sl)
-    }
+    # ===== ENTRY =====
+    if breakout:
+        entry = r1
+        sl = r1 - 0.2
+        comment = "📈 اختراق مقاومة → فرصة قوية لاستكمال الصعود"
+    elif near_support:
+        entry = s1 + 0.05
+        sl = s1 - 0.1
+        comment = "🟢 ارتداد من الدعم → فرصة مضاربة جيدة"
+    else:
+        entry = (s1 + r1)/2
+        sl = entry - 0.3
+        comment = "⚠ لا توجد فرصة واضحة حالياً"
+
+    return score, rank, entry, sl, comment
 
 # ================== CARD ==================
-def show_card(code, p, h, l, v, rsi):
-    s1, s2, r1, r2 = pivots(p,h,l)
-    liq = liquidity(v)
-    ai = ai_calc(p, s1, s2, r1, r2, rsi)
+def show_card(code,p,h,l,v,rsi,ema20,ema50):
+
+    s1,s2,r1,r2 = pivots(p,h,l)
+    score, rank, entry, sl, comment = analyze(p,s1,s2,r1,r2,rsi,v,ema20,ema50)
 
     st.markdown(f"""
     <div class="card">
+
     <h3>{code}</h3>
 
-    💰 السعر: {p:.2f} | RSI: {rsi:.1f}<br><br>
+    💰 السعر: {p:.2f}<br>
+    📉 RSI: {rsi:.1f}<br>
 
-    🧱 دعم 1: {s1:.2f}<br>
-    🧱 دعم 2: {s2:.2f}<br>
+    🧱 الدعم: {s1:.2f} / {s2:.2f}<br>
+    🚧 المقاومة: {r1:.2f} / {r2:.2f}<br>
 
-    🚧 مقاومة 1: {r1:.2f}<br>
-    🚧 مقاومة 2: {r2:.2f}<br>
-
-    💧 {liq}
     <hr>
 
-    🎯 المضارب: {ai['trader'][0]}/100<br>
-    دخول: {ai['trader'][1]} | وقف خسارة: {ai['trader'][2]}<br><br>
+    🎯 التقييم: {rank} ({score}/100)<br>
+    💡 {comment}<br>
 
-    🔁 السوينج: {ai['swing'][0]}/100<br>
-    دخول: {ai['swing'][1]} | وقف خسارة: {ai['swing'][2]}<br><br>
+    <hr>
 
-    🏦 المستثمر: {ai['invest'][0]}/100<br>
-    دخول: {ai['invest'][1]} | وقف خسارة: {ai['invest'][2]}<br>
+    🎯 دخول: {entry:.2f}<br>
+    ❌ وقف خسارة: {sl:.2f}<br>
+
+    <hr>
+
+    📝 ملحوظة للمحبوس: أقرب دعم {s1:.2f} - الدعم الأقوى {s2:.2f}
 
     </div>
     """, unsafe_allow_html=True)
 
-# ================== OPPORTUNITIES ==================
-def get_opportunities():
-    results = []
+# ================== MARKET SCAN ==================
+def scan_market():
 
-    for s in WATCHLIST:
-        p,h,l,v,_,rsi = get_data(s)
-        if not p:
-            continue
+    url = "https://scanner.tradingview.com/egypt/scan"
 
-        s1, s2, r1, r2 = pivots(p,h,l)
+    payload = {
+        "symbols":{"query":{"types":[]},"tickers":[]},
+        "columns":["name","close","high","low","volume"]
+    }
 
-        if rsi < 35 or p < s1:
-            results.append({
-                "السهم": s,
-                "السعر": round(p,2),
-                "RSI": round(rsi,1),
-                "دخول": round(s1+0.05,2),
-                "وقف خسارة": round(s1-0.1,2),
-                "Score": int(70 + (35-rsi))
-            })
+    r = requests.post(url, json=payload).json()
 
-    return pd.DataFrame(results)
+    rows = []
+
+    for stock in r["data"]:
+
+        name = stock["d"][0]
+        p = stock["d"][1]
+        h = stock["d"][2]
+        l = stock["d"][3]
+        v = stock["d"][4]
+
+        s1,s2,r1,r2 = pivots(p,h,l)
+
+        rsi = ((p-l)/(h-l))*100 if h!=l else 50
+
+        score, rank, entry, sl, _ = analyze(p,s1,s2,r1,r2,rsi,v,p,p)
+
+        rows.append({
+            "السهم": name,
+            "السعر": round(p,2),
+            "RSI": round(rsi,1),
+            "دعم": round(s1,2),
+            "مقاومة": round(r1,2),
+            "التقييم": rank,
+            "دخول": round(entry,2),
+            "وقف": round(sl,2),
+            "Score": score
+        })
+
+    df = pd.DataFrame(rows)
+    df = df.sort_values(by="Score", ascending=False)
+
+    return df.head(20)
 
 # ================== UI ==================
 st.title("🏹 EGX Sniper PRO")
 
-tab1, tab2 = st.tabs(["📊 تحليل سهم", "🔥 فرص"])
+tab1, tab2 = st.tabs(["📊 تحليل سهم","🔥 أفضل الفرص"])
 
 # ===== تحليل =====
 with tab1:
     code = st.text_input("ادخل كود السهم").upper()
 
     if code:
-        p,h,l,v,_,rsi = get_data(code)
+        p,h,l,v,rsi,ema20,ema50 = get_data(code)
 
         if p:
-            show_card(code,p,h,l,v,rsi)
+            show_card(code,p,h,l,v,rsi,ema20,ema50)
         else:
             st.error("السهم غير متاح")
 
 # ===== فرص =====
 with tab2:
-    st.subheader("🔥 أفضل الفرص")
+    st.subheader("🔥 Top Opportunities")
 
-    df = get_opportunities()
+    df = scan_market()
 
     if not df.empty:
-        st.dataframe(df)
+        st.dataframe(df, use_container_width=True)
     else:
         st.warning("لا توجد فرص حالياً")
