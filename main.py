@@ -53,12 +53,8 @@ def get_data(symbol):
             "columns": ["close", "high", "low", "volume"]
         }
         r = requests.post(url, json=payload, timeout=10).json()
-        if "data" in r and len(r["data"]) > 0 and "d" in r["data"][0]:
-            d = r["data"][0]["d"]
-            close, high, low, volume = float(d[0]), float(d[1]), float(d[2]), float(d[3])
-            return close, high, low, volume
-        else:
-            return None, None, None, None
+        d = r["data"][0]["d"]
+        return float(d[0]), float(d[1]), float(d[2]), float(d[3])
     except:
         return None, None, None, None
 
@@ -101,15 +97,19 @@ def confirmation_signal(p, s1, r1, rsi):
 
 # ================== AI COMMENTS + SCORES ==================
 def ai_score_comment(p, s1, s2, r1, r2, rsi):
+    # المضارب
     trader_score = min(100, 50 + (20 if rsi < 30 else 0) + (15 if abs(p - s1)/s1 < 0.02 else 0))
     trader_comment = f"⚡ مناسب لمضاربة سريعة قرب الدعم {s1:.2f} مع الالتزام بوقف الخسارة."
 
+    # سوينج
     swing_score = min(100, 60 + (50 - abs(50 - rsi)))
     swing_comment = "🔁 السهم في حركة تصحيح داخل اتجاه عام، مراقبة الارتداد مطلوبة."
 
+    # مستثمر
     invest_score = 80 if p > (r1+r2)/2 else 55
     invest_comment = "🏦 الاتجاه طويل الأجل إيجابي طالما السعر أعلى المتوسط 50 يوم."
 
+    # دخول و وقف خسارة
     trader_entry, trader_sl = round(s1+0.1,2), round(s1-0.15,2)
     swing_entry, swing_sl = round((s1+r1)/2,2), round((s1+r1)/2-0.25,2)
     invest_entry, invest_sl = round((s1+s2)/2,2), round(s2-0.25,2)
@@ -120,43 +120,21 @@ def ai_score_comment(p, s1, s2, r1, r2, rsi):
         "invest": {"score": invest_score, "comment": invest_comment, "entry": invest_entry, "sl": invest_sl}
     }
 
-# ================== TECHNICAL INDICATORS ==================
-def compute_macd(df):
-    if len(df) < 26:
-        return None, None, None
-    ema12 = df['close'].ewm(span=12, adjust=False).mean()
-    ema26 = df['close'].ewm(span=26, adjust=False).mean()
-    macd = ema12 - ema26
-    signal = macd.ewm(span=9, adjust=False).mean()
-    hist = macd - signal
-    return macd.iloc[-1], signal.iloc[-1], hist.iloc[-1]
-
-def compute_sma_ema(df, period=20):
-    sma = df['close'].rolling(window=period).mean().iloc[-1]
-    ema = df['close'].ewm(span=period, adjust=False).mean().iloc[-1]
-    return sma, ema
-
-def compute_bollinger(df, period=20):
-    sma = df['close'].rolling(window=period).mean()
-    std = df['close'].rolling(window=period).std()
-    upper = sma + 2*std
-    lower = sma - 2*std
-    return upper.iloc[-1], lower.iloc[-1]
-
 # ================== REPORT ==================
 def show_report(code, p, h, l, v):
-    if not p:
-        st.error(f"البيانات غير متاحة للسهم {code}")
-        return
-
     s1, s2, r1, r2 = pivots(p, h, l)
     rsi = rsi_fake(p, h, l)
     liq = liquidity(v)
+
     rev_txt, rev_type = reversal_signal(p, s1, r1, rsi)
     conf_txt, conf_type = confirmation_signal(p, s1, r1, rsi)
+
     rec = "انتظار"
-    if conf_type == "buy": rec = "شراء"
-    elif conf_type == "sell": rec = "بيع"
+    if conf_type == "buy":
+        rec = "شراء"
+    elif conf_type == "sell":
+        rec = "بيع"
+
     ai = ai_score_comment(p, s1, s2, r1, r2, rsi)
 
     st.markdown(f"""
@@ -171,17 +149,38 @@ def show_report(code, p, h, l, v):
     🔄 {rev_txt}<br>
     ⚡ {conf_txt}<br>
     <hr>
-    🎯 <b>المضارب:</b> {ai['trader']['score']}/100<br>
-    {ai['trader']['comment']} | دخول: {ai['trader']['entry']}, وقف خسارة: {ai['trader']['sl']}<br>
-    🔁 <b>السوينج:</b> {ai['swing']['score']}/100<br>
+    🎯 **المضارب:** {ai['trader']['score']}/100<br>
+    ⚡ {ai['trader']['comment']} | دخول: {ai['trader']['entry']}, وقف خسارة: {ai['trader']['sl']}<br>
+    🔁 **السوينج:** {ai['swing']['score']}/100<br>
     {ai['swing']['comment']} | دخول: {ai['swing']['entry']}, وقف خسارة: {ai['swing']['sl']}<br>
-    🏦 <b>المستثمر:</b> {ai['invest']['score']}/100<br>
+    🏦 **المستثمر:** {ai['invest']['score']}/100<br>
     {ai['invest']['comment']} | دخول: {ai['invest']['entry']}, وقف خسارة: {ai['invest']['sl']}<br>
     <hr>
-    📌 التوصية: <b>{rec}</b>
+    📌 التوصية: <b>{rec}</b><br>
     📝 <b>ملحوظة للمحبوس:</b> أقرب دعم {s1:.2f}, دعم أقوى {s2:.2f}. متابعة الأسعار أمر مهم.
     </div>
     """, unsafe_allow_html=True)
+
+    wa_msg = f"""
+📊 تحليل سهم {code}
+💰 السعر: {p:.2f}
+📉 RSI: {rsi:.1f}
+🧱 الدعم: {s1:.2f} / {s2:.2f}
+🚧 المقاومة: {r1:.2f} / {r2:.2f}
+💧 السيولة: {liq}
+
+🔄 {rev_txt}
+⚡ {conf_txt}
+
+🎯 المضارب: {ai['trader']['score']}/100 | {ai['trader']['comment']} | دخول: {ai['trader']['entry']}, وقف خسارة: {ai['trader']['sl']}
+🔁 السوينج: {ai['swing']['score']}/100 | {ai['swing']['comment']} | دخول: {ai['swing']['entry']}, وقف خسارة: {ai['swing']['sl']}
+🏦 المستثمر: {ai['invest']['score']}/100 | {ai['invest']['comment']} | دخول: {ai['invest']['entry']}, وقف خسارة: {ai['invest']['sl']}
+
+📌 التوصية: {rec}
+📝 ملحوظة للمحبوس: أقرب دعم {s1:.2f}, دعم أقوى {s2:.2f}. متابعة الأسعار أمر مهم.
+"""
+    wa_url = "https://wa.me/?text=" + urllib.parse.quote(wa_msg)
+    st.markdown(f'<a href="{wa_url}" class="whatsapp-btn">📲 مشاركة التحليل على واتساب</a>', unsafe_allow_html=True)
 
 # ================== SCANNER ==================
 def scanner():
@@ -189,23 +188,18 @@ def scanner():
     for s in WATCHLIST:
         p,h,l,v = get_data(s)
         if not p:
-            results.append(f"{s} | البيانات غير متاحة")
             continue
-
         s1, s2, r1, r2 = pivots(p,h,l)
         rsi = rsi_fake(p,h,l)
         liq = liquidity(v)
+
         rev_txt, rev_type = reversal_signal(p, s1, r1, rsi)
         conf_txt, conf_type = confirmation_signal(p, s1, r1, rsi)
         ai = ai_score_comment(p, s1, s2, r1, r2, rsi)
 
-        result = (f"{s} | السعر {p:.2f} | دعم {s1:.2f}/{s2:.2f} | "
-                  f"مقاومة {r1:.2f}/{r2:.2f} | RSI {rsi:.1f} | سيولة {liq} | "
-                  f"{rev_txt} | {conf_txt} | "
-                  f"🎯 المضارب: دخول {ai['trader']['entry']}, وقف خسارة {ai['trader']['sl']} | "
-                  f"🔁 السوينج: دخول {ai['swing']['entry']}, وقف خسارة {ai['swing']['sl']} | "
-                  f"🏦 المستثمر: دخول {ai['invest']['entry']}, وقف خسارة {ai['invest']['sl']}")
+        result = f"{s} | السعر {p:.2f} | دعم {s1:.2f}/{s2:.2f} | مقاومة {r1:.2f}/{r2:.2f} | RSI {rsi:.1f} | سيولة {liq} | {rev_txt} | {conf_txt} | 🎯 المضارب: دخول {ai['trader']['entry']}, وقف خسارة {ai['trader']['sl']} | 🔁 السوينج: دخول {ai['swing']['entry']}, وقف خسارة {ai['swing']['sl']} | 🏦 المستثمر: دخول {ai['invest']['entry']}, وقف خسارة {ai['invest']['sl']}"
         results.append(result)
+
     return results
 
 # ================== UI ==================
@@ -217,7 +211,10 @@ with tab1:
     code = st.text_input("ادخل كود السهم").upper().strip()
     if code:
         p,h,l,v = get_data(code)
-        show_report(code,p,h,l,v)
+        if p:
+            show_report(code,p,h,l,v)
+        else:
+            st.error("البيانات غير متاحة")
 
 with tab2:
     p = st.number_input("السعر", format="%.2f")
@@ -230,5 +227,8 @@ with tab2:
 with tab3:
     st.subheader("🚨 إشارات الأسهم")
     res = scanner()
-    for r in res:
-        st.info(r)
+    if res:
+        for r in res:
+            st.info(r)
+    else:
+        st.success("لا توجد إشارات حالياً")
