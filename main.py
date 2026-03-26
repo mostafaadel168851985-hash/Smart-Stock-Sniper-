@@ -1,167 +1,163 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import time
+import yfinance as yf
 from tradingview_ta import TA_Handler, Interval
+import plotly.graph_objects as go
 
+# =============================
+# 🎨 UI Config (Dark Mode ثابت)
+# =============================
 st.set_page_config(layout="wide")
 
-# ---------- DARK UI (زي الأول بالظبط) ----------
 st.markdown("""
 <style>
-body {
-    background-color: #0b0f1a;
+body {background-color: #0b1220; color: white;}
+.stTextInput input {
+    background-color: #1c2536;
     color: white;
 }
-.stApp {
-    background-color: #0b0f1a;
-}
 .card {
-    background: linear-gradient(145deg, #111827, #0b0f1a);
+    background-color: #111827;
     padding: 20px;
-    border-radius: 20px;
-    box-shadow: 0 0 20px rgba(0,0,0,0.5);
-    margin-top: 20px;
-}
-input {
-    background-color: #1f2937 !important;
-    color: white !important;
+    border-radius: 15px;
+    box-shadow: 0px 0px 10px rgba(0,0,0,0.5);
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- FUNCTIONS ----------
+# =============================
+# 📊 TradingView Data
+# =============================
 def get_tv_data(symbol):
-    for i in range(3):  # retry 3 مرات
-        try:
-            handler = TA_Handler(
-                symbol=symbol,
-                screener="egypt",
-                exchange="EGX",
-                interval=Interval.INTERVAL_1_DAY
-            )
-
-            analysis = handler.get_analysis()
-            d = analysis.indicators
-
-            return {
-                "price": d["close"],
-                "rsi": d["RSI"],
-                "high": d["high"],
-                "low": d["low"],
-            }
-
-        except:
-            time.sleep(1)
-
-    return None
-
-
-def analyze(symbol):
-    data = get_tv_data(symbol)
-
-    if data is None:
+    try:
+        handler = TA_Handler(
+            symbol=symbol,
+            screener="egypt",
+            exchange="EGX",
+            interval=Interval.INTERVAL_1_DAY
+        )
+        return handler.get_analysis()
+    except:
         return None
 
-    price = data["price"]
-    rsi = data["rsi"]
+# =============================
+# 📊 Backup Yahoo
+# =============================
+def get_yahoo(symbol):
+    try:
+        df = yf.download(symbol + ".CA", period="3mo", interval="1d")
+        return df
+    except:
+        return None
 
-    support = data["low"]
-    resistance = data["high"]
+# =============================
+# 📈 Indicators
+# =============================
+def calc_indicators(df):
+    df["MA20"] = df["Close"].rolling(20).mean()
+    df["MA50"] = df["Close"].rolling(50).mean()
+    df["RSI"] = compute_rsi(df["Close"])
+    return df
 
-    score = 0
+def compute_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
-    if 40 < rsi < 60:
-        score += 30
-    if price > support:
-        score += 30
-    if price < resistance:
-        score += 20
-    if rsi < 70:
-        score += 20
+# =============================
+# 🎯 Smart Strategy
+# =============================
+def strategy(df):
+    last = df.iloc[-1]
+    
+    if last["Close"] > last["MA20"] > last["MA50"]:
+        trend = "صاعد"
+    else:
+        trend = "ضعيف"
 
-    return {
-        "symbol": symbol,
-        "price": round(price,2),
-        "rsi": round(rsi,1),
-        "support": round(support,2),
-        "resistance": round(resistance,2),
-        "score": score
-    }
+    entry = last["Close"] * 0.99
+    stop = last["Close"] * 0.96
+    target = last["Close"] * 1.05
 
+    return trend, entry, stop, target
 
-# ---------- UI ----------
+# =============================
+# 📊 Chart (Candlestick)
+# =============================
+def plot_chart(df):
+    fig = go.Figure()
+
+    fig.add_trace(go.Candlestick(
+        x=df.index,
+        open=df['Open'],
+        high=df['High'],
+        low=df['Low'],
+        close=df['Close']
+    ))
+
+    fig.add_trace(go.Scatter(x=df.index, y=df["MA20"], name="MA20"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["MA50"], name="MA50"))
+
+    fig.update_layout(template="plotly_dark")
+    st.plotly_chart(fig, use_container_width=True)
+
+# =============================
+# 🚀 UI
+# =============================
 st.title("🏹 EGX Sniper PRO MAX")
 
-tab1, tab2 = st.tabs(["📊 تحليل سهم", "🔥 الفرص"])
+symbol = st.text_input("ادخل كود السهم", "TMGH")
 
-# ---------- ANALYSIS ----------
-with tab1:
-    symbol = st.text_input("ادخل كود السهم", "TMGH")
+# =============================
+# 🔄 Data Fetch Logic
+# =============================
+tv = get_tv_data(symbol)
 
-    if symbol:
-        result = analyze(symbol.upper())
+if tv:
+    price = tv.indicators.get("close", 0)
+    rsi = tv.indicators.get("RSI", 0)
+else:
+    st.warning("⚠️ TradingView failed - using backup")
 
-        if result:
+df = get_yahoo(symbol)
 
-            rec = "🔥 دخول" if result["score"] >= 70 else "⚠️ انتظار" if result["score"] >= 50 else "❌ تجنب"
+if df is None or df.empty:
+    st.error("❌ لا توجد بيانات")
+    st.stop()
 
-            st.markdown(f"""
-            <div class="card">
+df = calc_indicators(df)
 
-            <h2>{result['symbol']}</h2>
+trend, entry, stop, target = strategy(df)
 
-            💰 السعر: {result['price']} | RSI: {result['rsi']}
+# =============================
+# 📦 Card UI
+# =============================
+st.markdown(f"""
+<div class="card">
+<h2>{symbol}</h2>
 
-            🧱 دعم: {result['support']}  
-            🚧 مقاومة: {result['resistance']}  
+💰 السعر: {round(df['Close'].iloc[-1],2)}  
+📊 RSI: {round(df['RSI'].iloc[-1],2)}  
 
-            💧 السيولة: {"عالية" if result['score']>70 else "متوسطة"}
+🧱 الدعم: {round(df['Low'].min(),2)}  
+🚧 المقاومة: {round(df['High'].max(),2)}  
 
-            ----------------------
+💧 السيولة: متوسطة  
 
-            🎯 التقييم: {result['score']}/100  
-            💡 {"ارتداد من دعم قوي" if result['score']>70 else "حركة عرضية"}
+<hr>
 
-            ----------------------
+🎯 دخول: {round(entry,2)}  
+❌ وقف خسارة: {round(stop,2)}  
+🏁 هدف: {round(target,2)}  
 
-            🎯 دخول: {round(result['price']*1.01,2)}  
-            ❌ وقف خسارة: {round(result['support']*0.99,2)}
+📈 الاتجاه: {trend}
+</div>
+""", unsafe_allow_html=True)
 
-            ----------------------
-
-            📌 التوصية: {rec}
-
-            </div>
-            """, unsafe_allow_html=True)
-
-        else:
-            st.error("❌ السهم غير متاح أو TradingView واقع حالياً")
-
-
-# ---------- OPPORTUNITIES ----------
-with tab2:
-
-    symbols = ["COMI","ETEL","TMGH","SWDY","EFIH","ORAS","AMOC","RMDA","FWRY","MPRC"]
-
-    rows = []
-
-    for s in symbols:
-        r = analyze(s)
-        if r:
-            rows.append(r)
-
-    if rows:
-        df = pd.DataFrame(rows)
-        df = df.sort_values("score", ascending=False)
-
-        df["التقييم"] = df["score"].apply(
-            lambda x: "🔥 قوية" if x>=70 else "⚠️ متوسطة" if x>=50 else "❌ ضعيفة"
-        )
-
-        st.dataframe(df[[
-            "symbol","price","rsi","support","resistance","score","التقييم"
-        ]], use_container_width=True)
-
-    else:
-        st.error("❌ لا توجد فرص حالياً")
+# =============================
+# 📉 Chart
+# =============================
+plot_chart(df)
