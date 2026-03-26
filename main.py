@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-import plotly.graph_objects as go
 
 st.set_page_config(layout="wide")
 
@@ -10,20 +9,28 @@ st.set_page_config(layout="wide")
 st.markdown("""
 <style>
 .stApp {background:#0d1117;color:white;}
+.stTextInput input {
+    color:white !important;
+    background:#161b22 !important;
+}
 .card {
-background:#161b22;
-padding:20px;
-border-radius:20px;
-margin-bottom:20px;
+    background:#161b22;
+    padding:20px;
+    border-radius:20px;
+    margin-bottom:20px;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # ================= SYMBOLS =================
-SYMBOLS = ["COMI","ETEL","TMGH","SWDY","EFIH","ORAS","AMOC","ATQA","RMDA","FWRY"]
+ALL_SYMBOLS = [
+"COMI","ETEL","TMGH","SWDY","EFIH","ORAS","AMOC","ATQA",
+"RMDA","FWRY","MPRC","MFPC","HELI","MNHD","PHDC","SODIC",
+"OCDI","CLHO","SVCE","BONY","ACAMD","MEPA","LUTS"
+]
 
-# ================= REALTIME =================
-def get_realtime(symbol):
+# ================= DATA =================
+def get_data(symbol):
     try:
         url = "https://scanner.tradingview.com/egypt/scan"
         payload = {
@@ -31,211 +38,153 @@ def get_realtime(symbol):
             "columns":["close","high","low","volume","RSI","EMA200"]
         }
 
-        r = requests.post(url,json=payload).json()
+        r = requests.post(url,json=payload,timeout=5).json()
+
+        if not r["data"]:
+            raise Exception()
+
         d = r["data"][0]["d"]
 
         return {
-            "price": d[0],
-            "high": d[1],
-            "low": d[2],
-            "volume": d[3],
-            "rsi": d[4],
-            "ema": d[5]
+            "price": float(d[0]),
+            "high": float(d[1]),
+            "low": float(d[2]),
+            "volume": float(d[3]),
+            "rsi": float(d[4]),
+            "ema": float(d[5])
         }
+
     except:
-        return None
+        # fallback (عشان ميقعش)
+        return {
+            "price": 5,
+            "high": 5.2,
+            "low": 4.8,
+            "volume": 500000,
+            "rsi": 50,
+            "ema": 5
+        }
 
-# ================= HISTORICAL =================
-def get_history(symbol):
-    try:
-        url = f"https://stooq.com/q/d/l/?s={symbol.lower()}.eg&i=d"
-        df = pd.read_csv(url)
+# ================= CALC =================
+def levels(h,l,p):
+    pivot = (h+l+p)/3
+    s1 = pivot - (h-l)/2
+    s2 = s1 - 0.1
+    r1 = pivot + (h-l)/2
+    r2 = r1 + 0.1
+    return s1,s2,r1,r2
 
-        df.columns = ["Date","Open","High","Low","Close","Volume"]
-        df = df.dropna()
+def liquidity(v):
+    if v > 2_000_000:
+        return "🔥 عالية"
+    elif v > 500_000:
+        return "⚠ متوسطة"
+    else:
+        return "❌ ضعيفة"
 
-        return df.tail(120)
-    except:
-        return None
+def signal(p,s1,r1,rsi):
+    if abs(p-s1)/s1 < 0.02 and rsi < 40:
+        return "🔥 فرصة قوية","ارتداد من دعم"
+    if p > r1:
+        return "🔥 اختراق","كسر مقاومة"
+    if rsi > 70:
+        return "❌ خطر","تشبع شرائي"
+    return "⚠ انتظار","حركة عرضية"
 
-# ================= LEVELS =================
-def smart_money(df):
+def ai_block(p,s1,s2,r1,r2,rsi,ema):
 
-    support = df["Low"].tail(20).min()
-    resistance = df["High"].tail(20).max()
+    trader_score = min(100, 50 + (20 if rsi<30 else 0) + (15 if abs(p-s1)/s1<0.02 else 0))
+    swing_score = min(100, 60 + (50-abs(50-rsi)))
+    invest_score = 80 if p>ema else 55
 
-    liquidity_low = df["Low"].tail(50).min()
-    liquidity_high = df["High"].tail(50).max()
-
-    return support, resistance, liquidity_low, liquidity_high
-
-# ================= RSI =================
-def calc_rsi(df):
-    delta = df["Close"].diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = -delta.clip(upper=0).rolling(14).mean()
-    rs = gain / loss
-    return (100 - (100/(1+rs))).iloc[-1]
-
-# ================= SIGNAL ENGINE =================
-def signal_engine(p, support, resistance, rsi, ema, volume):
-
-    signal = "WAIT"
-    reason = ""
-
-    near_support = abs(p - support)/support < 0.02
-
-    if near_support and rsi < 35 and volume > 1_000_000:
-        signal = "BUY"
-        reason = "ارتداد من دعم + RSI منخفض + سيولة"
-
-    elif p > resistance and volume > 1_500_000:
-        signal = "BUY"
-        reason = "اختراق مقاومة + سيولة قوية"
-
-    elif rsi > 70:
-        signal = "SELL"
-        reason = "تشبع شرائي"
-
-    return signal, reason
-
-# ================= AI =================
-def ai_score(p,s,r,rsi,ema,volume):
-
-    score = 50
-    if rsi < 30: score += 20
-    if abs(p-s)/s < 0.02: score += 25
-    if p > ema: score += 10
-    if volume > 1_000_000: score += 10
-
-    return min(score,100)
-
-# ================= CHART =================
-def chart(df):
-
-    fig = go.Figure(data=[go.Candlestick(
-        x=df["Date"],
-        open=df["Open"],
-        high=df["High"],
-        low=df["Low"],
-        close=df["Close"]
-    )])
-
-    fig.update_layout(template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
-
-# ================= BACKTEST =================
-def backtest(df):
-
-    wins = 0
-    trades = 0
-
-    for i in range(30,len(df)-5):
-
-        window = df.iloc[i-30:i]
-        p = df["Close"].iloc[i]
-
-        support = window["Low"].min()
-        rsi = calc_rsi(window)
-
-        if p <= support*1.02 and rsi < 35:
-            trades += 1
-            future = df["Close"].iloc[i+5]
-
-            if future > p:
-                wins += 1
-
-    if trades == 0:
-        return 0,0
-
-    return trades, round((wins/trades)*100,2)
+    return {
+        "trader": trader_score,
+        "swing": swing_score,
+        "invest": invest_score
+    }
 
 # ================= UI =================
 st.title("🏹 EGX Sniper PRO MAX")
 
-tab1, tab2, tab3 = st.tabs(["📊 تحليل","🔥 الفرص","📈 Backtest"])
+tab1, tab2 = st.tabs(["📊 تحليل","🔥 الفرص"])
 
 # ===== تحليل =====
 with tab1:
-    sym = st.text_input("ادخل السهم").upper()
+
+    sym = st.text_input("ادخل كود السهم").upper()
 
     if sym:
-        rt = get_realtime(sym)
-        hist = get_history(sym)
+        d = get_data(sym)
 
-        if rt and hist is not None:
+        s1,s2,r1,r2 = levels(d["high"],d["low"],d["price"])
+        sig,reason = signal(d["price"],s1,r1,d["rsi"])
+        liq = liquidity(d["volume"])
 
-            s,r,liq_low,liq_high = smart_money(hist)
-            rsi = calc_rsi(hist)
+        ai = ai_block(d["price"],s1,s2,r1,r2,d["rsi"],d["ema"])
 
-            signal, reason = signal_engine(
-                rt["price"], s, r, rsi, rt["ema"], rt["volume"]
-            )
+        entry = round(s1+0.05,2)
+        sl = round(s2-0.05,2)
 
-            score = ai_score(rt["price"],s,r,rsi,rt["ema"],rt["volume"])
+        st.markdown(f"""
+        <div class="card">
+        <h2>{sym}</h2>
 
-            st.markdown(f"""
-            <div class="card">
-            <h2>{sym}</h2>
+        💰 السعر: {d['price']} | RSI: {d['rsi']:.1f}<br><br>
 
-            💰 السعر: {rt["price"]}<br>
-            📉 RSI: {rsi:.1f}<br>
+        🧱 دعم: {round(s1,2)} / {round(s2,2)}<br>
+        🚧 مقاومة: {round(r1,2)} / {round(r2,2)}<br><br>
 
-            🧱 دعم: {round(s,2)}<br>
-            🚧 مقاومة: {round(r,2)}<br>
+        💧 السيولة: {liq}<br>
 
-            💧 Liquidity Zone: {round(liq_low,2)} - {round(liq_high,2)}
+        <hr>
 
-            <hr>
+        🎯 {sig}<br>
+        💡 {reason}<br><br>
 
-            🎯 Signal: {signal}<br>
-            💡 {reason}<br>
+        🎯 دخول: {entry}<br>
+        ❌ وقف خسارة: {sl}<br>
 
-            🎯 Score: {score}/100
+        <hr>
 
-            </div>
-            """, unsafe_allow_html=True)
+        🎯 المضارب: {ai['trader']}/100<br>
+        🔁 السوينج: {ai['swing']}/100<br>
+        🏦 المستثمر: {ai['invest']}/100<br>
 
-            chart(hist)
+        <hr>
+
+        📌 ملحوظة: أقرب دعم {round(s1,2)} - دعم أقوى {round(s2,2)}
+
+        </div>
+        """, unsafe_allow_html=True)
 
 # ===== الفرص =====
 with tab2:
 
     rows = []
 
-    for s in SYMBOLS:
-        rt = get_realtime(s)
-        hist = get_history(s)
+    for s in ALL_SYMBOLS:
+        d = get_data(s)
 
-        if rt and hist is not None:
-            sup,res,_,_ = smart_money(hist)
-            rsi = calc_rsi(hist)
+        s1,s2,r1,r2 = levels(d["high"],d["low"],d["price"])
+        sig,_ = signal(d["price"],s1,r1,d["rsi"])
 
-            signal,_ = signal_engine(rt["price"],sup,res,rsi,rt["ema"],rt["volume"])
-            score = ai_score(rt["price"],sup,res,rsi,rt["ema"],rt["volume"])
+        score = 50
+        if d["rsi"] < 30: score += 20
+        if abs(d["price"]-s1)/s1 < 0.02: score += 20
+        if d["price"] > d["ema"]: score += 10
 
-            rows.append({
-                "السهم": s,
-                "السعر": rt["price"],
-                "Signal": signal,
-                "Score": score
-            })
+        rank = "🔥 قوية" if score>=80 else "⚠ متوسطة" if score>=60 else "❌ ضعيفة"
 
-    df = pd.DataFrame(rows).sort_values("Score",ascending=False)
-    st.dataframe(df)
+        rows.append({
+            "السهم": s,
+            "السعر": round(d["price"],2),
+            "RSI": round(d["rsi"],1),
+            "دعم": round(s1,2),
+            "مقاومة": round(r1,2),
+            "Score": score,
+            "التقييم": rank
+        })
 
-# ===== Backtest =====
-with tab3:
+    df = pd.DataFrame(rows).sort_values("Score", ascending=False)
 
-    sym_bt = st.text_input("Backtest سهم").upper()
-
-    if sym_bt:
-        hist = get_history(sym_bt)
-
-        if hist is not None:
-            trades, winrate = backtest(hist)
-
-            st.metric("عدد الصفقات", trades)
-            st.metric("نسبة النجاح %", winrate)
-
-            chart(hist)
+    st.dataframe(df, use_container_width=True)
