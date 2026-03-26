@@ -59,25 +59,20 @@ def liquidity(vol):
     else:
         return "سيولة ضعيفة"
 
-# ================== TREND (SMART) ==================
+# ================== TREND ==================
 def trend_filter(p, s1, r1):
-    mid = (s1 + r1) / 2
     if p > r1:
-        return "صاعد قوي"
-    elif p > mid:
         return "صاعد"
     elif p < s1:
-        return "هابط قوي"
-    elif p < mid:
         return "هابط"
     return "عرضي"
 
 # ================== SMART ENTRY ==================
-def smart_entry_zone(p, s1, r1, trend):
-    if "صاعد" in trend:
-        return round(s1+0.02,2), round(s1+0.20,2)
-    elif "هابط" in trend:
-        return round(r1-0.20,2), round(r1-0.02,2)
+def smart_entry_zone(p, s1, r1):
+    if abs(p - s1)/s1 < 0.03:
+        return round(s1+0.05,2), round(s1+0.20,2)
+    elif p > r1:
+        return round(r1,2), round(r1+0.25,2)
     else:
         mid = (s1+r1)/2
         return round(mid-0.15,2), round(mid+0.15,2)
@@ -87,33 +82,29 @@ def volume_spike(vol):
     return vol > 1_000_000
 
 # ================== SCORE ==================
-def smart_score(p, s1, r1, rsi, vol, trend):
+def smart_score(p, s1, r1, rsi, vol):
     score = 0
 
-    # RSI
-    if 40 <= rsi <= 60:
+    if 30 <= rsi <= 60:
         score += 25
-    elif rsi < 40:
+    elif rsi < 30:
         score += 15
-    elif rsi > 75:
+    elif rsi > 70:
         score -= 10
 
-    # Volume
     if vol > 2_000_000:
         score += 25
     elif vol > 500_000:
         score += 15
 
-    # Near support
-    if abs(p - s1)/s1 < 0.04:
+    if abs(p - s1)/s1 < 0.05:
         score += 25
 
-    # Trend
-    if "صاعد" in trend:
-        score += 20
+    if p > r1:
+        score += 25
 
-    if "هابط قوي" in trend:
-        score -= 20
+    if volume_spike(vol):
+        score += 10
 
     return max(score, 0)
 
@@ -125,11 +116,11 @@ def reversal_signal(p, s1, r1, rsi):
         return "🔴 إشارة ارتداد هابط", "down"
     return "لا توجد إشارة ارتداد", None
 
-def confirmation_signal(trend, rsi, vol):
-    if "صاعد" in trend and rsi > 50 and volume_spike(vol):
-        return "🟢 اتجاه صاعد + فوليوم", "buy"
-    if "هابط قوي" in trend:
-        return "🔴 اتجاه هابط قوي", "sell"
+def confirmation_signal(p, s1, r1, rsi, vol):
+    if p > r1 and rsi > 55 and volume_spike(vol):
+        return "🟢 تأكيد قوي (اختراق + فوليوم)", "buy"
+    if p < s1 and rsi < 45:
+        return "🔴 تأكيد بيع", "sell"
     return "⚪ لا يوجد تأكيد", None
 
 # ================== AI ==================
@@ -166,10 +157,8 @@ def show_report(code, p, h, l, v):
     rsi = rsi_pro(p, h, l)
     liq = liquidity(v)
 
-    trend = trend_filter(p, s1, r1)
-
     rev_txt, _ = reversal_signal(p, s1, r1, rsi)
-    conf_txt, conf_type = confirmation_signal(trend, rsi, v)
+    conf_txt, conf_type = confirmation_signal(p, s1, r1, rsi, v)
 
     rec = "انتظار"
     if conf_type == "buy":
@@ -178,14 +167,13 @@ def show_report(code, p, h, l, v):
         rec = "بيع"
 
     ai = ai_score_comment(p, s1, s2, r1, r2, rsi)
-    zone_low, zone_high = smart_entry_zone(p, s1, r1, trend)
+    zone_low, zone_high = smart_entry_zone(p, s1, r1)
 
     st.markdown(f"""
     <div class="card">
     <h3>{code} - {COMPANIES.get(code,'')}</h3>
     💰 السعر الحالي: {p:.2f}<br>
     📉 RSI: {rsi:.1f}<br>
-    📊 الاتجاه: {trend}<br>
     🧱 الدعم: {s1:.2f} / {s2:.2f}<br>
     🚧 المقاومة: {r1:.2f} / {r2:.2f}<br>
     💧 السيولة: {liq}<br>
@@ -202,7 +190,7 @@ def show_report(code, p, h, l, v):
     {ai['invest']['comment']} | دخول: {ai['invest']['entry']}, وقف خسارة: {ai['invest']['sl']}<br>
     <hr>
     📌 التوصية: <b>{rec}</b><br>
-    📝 <b>ملحوظة للمحبوس:</b> أقرب دعم {s1:.2f}, دعم أقوى {s2:.2f}.
+    📝 <b>ملحوظة للمحبوس:</b> أقرب دعم {s1:.2f}, دعم أقوى {s2:.2f}. متابعة الأسعار أمر مهم.
     </div>
     """, unsafe_allow_html=True)
 
@@ -217,15 +205,14 @@ def scanner():
 
         s1, s2, r1, r2 = pivots(p,h,l)
         rsi = rsi_pro(p,h,l)
-        trend = trend_filter(p, s1, r1)
 
-        score = smart_score(p, s1, r1, rsi, v, trend)
-        if score < 60:
+        score = smart_score(p, s1, r1, rsi, v)
+        if score < 50:
             continue
 
-        zone_low, zone_high = smart_entry_zone(p, s1, r1, trend)
+        zone_low, zone_high = smart_entry_zone(p, s1, r1)
 
-        results.append((score, f"{s} | السعر {p:.2f} | RSI {rsi:.1f} | {trend} | Score {score} | 🎯 Zone {zone_low}-{zone_high}"))
+        results.append((score, f"{s} | السعر {p:.2f} | RSI {rsi:.1f} | Score {score} | 🎯 Zone {zone_low}-{zone_high}"))
 
     results.sort(reverse=True, key=lambda x: x[0])
     return [r[1] for r in results]
