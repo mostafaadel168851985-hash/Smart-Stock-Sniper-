@@ -1,23 +1,36 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from tradingview_ta import TA_Handler, Interval
 import plotly.graph_objects as go
+import yfinance as yf
+from tradingview_ta import TA_Handler, Interval
 
+# ------------------ SETTINGS ------------------
 st.set_page_config(layout="wide")
 
-# =========================
-# ⚙️ الأسهم
-# =========================
+# Dark Mode
+st.markdown("""
+<style>
+body {background-color:#0e1117;color:white;}
+.stApp {background-color:#0e1117;}
+.card {
+    background-color:#111827;
+    padding:20px;
+    border-radius:15px;
+    margin-top:20px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ------------------ SYMBOLS ------------------
 EGX_SYMBOLS = [
-    "COMI","ETEL","TMGH","SWDY","EFIH","ORAS","AMOC",
-    "RMDA","FWRY","MPRC","SIPC","MAAL","EKHO","JUFO"
+    "COMI","ETEL","TMGH","SWDY","EFIH",
+    "ORAS","AMOC","RMDA","FWRY","MPRC",
+    "MAAL"
 ]
 
-# =========================
-# 📊 TradingView Data
-# =========================
-def get_data(symbol):
+# ------------------ DATA ------------------
+def get_tv_data(symbol):
     try:
         handler = TA_Handler(
             symbol=symbol,
@@ -29,219 +42,135 @@ def get_data(symbol):
         d = analysis.indicators
 
         return {
-            "symbol": symbol,
-            "price": d.get("close", 0),
-            "rsi": d.get("RSI", 50),
-            "high": d.get("high", 0),
-            "low": d.get("low", 0),
-            "ema50": d.get("EMA50", 0),
-            "ema200": d.get("EMA200", 0),
+            "price": d["close"],
+            "rsi": d["RSI"],
+            "ema50": d.get("EMA50", d["close"]),
+            "ema200": d.get("EMA200", d["close"]),
         }
+
     except:
         return None
 
 
-# =========================
-# 🧠 Trend Detection
-# =========================
-def trend(d):
-    if d["price"] > d["ema50"] > d["ema200"]:
-        return "UP"
-    elif d["price"] < d["ema50"] < d["ema200"]:
-        return "DOWN"
-    else:
-        return "SIDE"
+def get_yf_data(symbol):
+    try:
+        df = yf.download(symbol + ".CA", period="3mo", interval="1d")
+        return df
+    except:
+        return None
 
 
-# =========================
-# 🔥 Breakout / Pullback
-# =========================
-def setup(d):
-    p, r1, s1 = d["price"], d["high"], d["low"]
+# ------------------ STRATEGY ------------------
+def analyze(symbol):
+    tv = get_tv_data(symbol)
+    yf_data = get_yf_data(symbol)
 
-    if p > r1 * 0.995:
-        return "BREAKOUT"
-    elif abs(p - s1)/s1 < 0.02:
-        return "PULLBACK"
-    else:
-        return "NONE"
+    if tv is None or yf_data is None or len(yf_data) == 0:
+        return None
 
+    price = tv["price"]
+    rsi = tv["rsi"]
 
-# =========================
-# 🎯 Smart Score
-# =========================
-def smart_score(d):
+    support = yf_data["Low"].rolling(20).min().iloc[-1]
+    resistance = yf_data["High"].rolling(20).max().iloc[-1]
+
     score = 0
 
-    if trend(d) == "UP":
+    if 40 < rsi < 60:
         score += 30
-
-    if setup(d) == "BREAKOUT":
+    if price > tv["ema50"]:
         score += 30
-    elif setup(d) == "PULLBACK":
+    if price > tv["ema200"]:
+        score += 20
+    if price > support:
         score += 20
 
-    if d["rsi"] < 40:
-        score += 20
-
-    return min(score,100)
-
-
-# =========================
-# 🎯 Smart Entry
-# =========================
-def strategy(d, score):
-    p, s1, r1 = d["price"], d["low"], d["high"]
-
-    if score < 60:
-        return None, None, None, None
-
-    # breakout
-    if setup(d) == "BREAKOUT":
-        entry = r1
-    else:
-        entry = s1
-
-    stop = round(entry * 0.97, 2)
-    target = round(entry * 1.05, 2)
-
-    rr = round((target-entry)/(entry-stop),2)
-
-    return entry, stop, target, rr
+    return {
+        "symbol": symbol,
+        "price": round(price,2),
+        "rsi": round(rsi,1),
+        "support": round(support,2),
+        "resistance": round(resistance,2),
+        "score": score,
+        "data": yf_data
+    }
 
 
-# =========================
-# 🤖 AI Recommendation
-# =========================
-def ai(d, score):
-    t = trend(d)
-    s = setup(d)
-
-    if score >= 80:
-        return f"🔥 اتجاه صاعد قوي + {s} — فرصة ممتازة"
-    elif score >= 60:
-        return f"✅ اتجاه {t} مع {s} — فرصة محتملة"
-    else:
-        return f"❌ لا يوجد اتجاه واضح — تجنب"
-
-
-# =========================
-# 📉 Candlestick Chart (Fake OHLC but realistic)
-# =========================
-def chart(price):
-    data = []
-
-    last = price
-
-    for _ in range(50):
-        open_p = last
-        close = open_p + np.random.normal(0, price*0.01)
-        high = max(open_p, close) + np.random.rand()*0.02*price
-        low = min(open_p, close) - np.random.rand()*0.02*price
-
-        data.append([open_p, high, low, close])
-        last = close
-
-    df = pd.DataFrame(data, columns=["Open","High","Low","Close"])
-
-    fig = go.Figure(data=[go.Candlestick(
-        open=df["Open"],
-        high=df["High"],
-        low=df["Low"],
-        close=df["Close"]
-    )])
-
-    fig.update_layout(height=400)
-    return fig
-
-
-# =========================
-# 📊 Scan
-# =========================
-def scan():
-    rows = []
-
-    for s in EGX_SYMBOLS:
-        d = get_data(s)
-        if not d:
-            continue
-
-        score = smart_score(d)
-
-        rows.append({
-            "السهم": s,
-            "السعر": round(d["price"],2),
-            "RSI": round(d["rsi"],1),
-            "Trend": trend(d),
-            "Setup": setup(d),
-            "Score": score
-        })
-
-    df = pd.DataFrame(rows)
-
-    if df.empty:
-        return df
-
-    return df.sort_values("Score", ascending=False)
-
-
-# =========================
-# UI
-# =========================
-st.title("🏹 EGX Sniper PRO MAX - Institutional Edition")
+# ------------------ UI ------------------
+st.title("🏹 EGX Sniper PRO MAX")
 
 tab1, tab2 = st.tabs(["📊 تحليل سهم", "🔥 الفرص"])
 
-# =========================
-# تحليل سهم
-# =========================
+# ------------------ ANALYSIS ------------------
 with tab1:
-    symbol = st.text_input("ادخل السهم").upper()
+    symbol = st.selectbox("ادخل السهم", EGX_SYMBOLS)
 
-    if symbol:
-        d = get_data(symbol)
+    result = analyze(symbol)
 
-        if d:
-            score = smart_score(d)
+    if result:
+        st.markdown(f"""
+        <div class="card">
+        <h2>{result['symbol']}</h2>
 
-            st.subheader(symbol)
+        💰 السعر الحالي: {result['price']}  
+        📊 RSI: {result['rsi']}  
 
-            st.write(f"💰 السعر: {d['price']}")
-            st.write(f"📊 RSI: {round(d['rsi'],1)}")
+        🧱 الدعم: {result['support']}  
+        🚧 المقاومة: {result['resistance']}  
 
-            st.write(f"📈 Trend: {trend(d)}")
-            st.write(f"🔥 Setup: {setup(d)}")
+        💧 السيولة: {"عالية" if result['score']>70 else "متوسطة"}  
 
-            st.write(f"🎯 Score: {score}")
+        ----------------------
 
-            st.info(ai(d, score))
+        🎯 المضارب: {result['score']}/100  
+        ⚡ مناسب مضاربة سريعة  
 
-            entry, stop, target, rr = strategy(d, score)
+        🔁 السوينج: {min(100, result['score']+10)}/100  
 
-            if entry:
-                st.success(f"🎯 دخول: {entry}")
-                st.write(f"❌ وقف خسارة: {stop}")
-                st.write(f"🏁 هدف: {target}")
-                st.write(f"📊 R/R: {rr}")
-            else:
-                st.warning("❌ لا يوجد دخول حالياً")
+        🏦 المستثمر: {min(100, result['score']+20)}/100  
 
-            st.plotly_chart(chart(d["price"]), use_container_width=True)
+        ----------------------
 
-        else:
-            st.warning("السهم غير متاح")
+        📌 التوصية: {"🔥 دخول" if result['score']>70 else "⚠️ انتظار"}
+        </div>
+        """, unsafe_allow_html=True)
 
+        # ----------- CHART -----------
+        df = result["data"]
 
-# =========================
-# الفرص
-# =========================
-with tab2:
-    df = scan()
+        fig = go.Figure(data=[go.Candlestick(
+            x=df.index,
+            open=df['Open'],
+            high=df['High'],
+            low=df['Low'],
+            close=df['Close']
+        )])
 
-    if df.empty:
-        st.warning("لا توجد بيانات")
+        st.plotly_chart(fig, use_container_width=True)
+
     else:
-        df = df[df["Score"] >= 60]
+        st.warning("❌ لا توجد بيانات")
 
-        st.subheader("🔥 أفضل الفرص")
-        st.dataframe(df.head(5))
+# ------------------ OPPORTUNITIES ------------------
+with tab2:
+    rows = []
+
+    for s in EGX_SYMBOLS:
+        r = analyze(s)
+        if r:
+            rows.append(r)
+
+    if rows:
+        df = pd.DataFrame(rows)
+        df = df.sort_values("score", ascending=False)
+
+        df["التقييم"] = df["score"].apply(
+            lambda x: "🔥 قوية" if x>=70 else "⚠️ متوسطة" if x>=50 else "❌ ضعيفة"
+        )
+
+        st.dataframe(df[[
+            "symbol","price","rsi","support","resistance","score","التقييم"
+        ]], use_container_width=True)
+
+    else:
+        st.warning("❌ لا توجد فرص")
