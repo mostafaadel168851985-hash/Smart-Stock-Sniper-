@@ -1,48 +1,37 @@
 import streamlit as st
+import requests
 import pandas as pd
 import numpy as np
-import requests
 
 st.set_page_config(layout="wide")
 
 # ================= STYLE =================
 st.markdown("""
 <style>
-.stApp {background:#0d1117;color:white;}
-.stTextInput input {
-    color:white !important;
-    background:#161b22 !important;
-}
+body, .stApp {background-color:#0d1117;color:white;}
 .card {
     background:#161b22;
     padding:20px;
-    border-radius:20px;
+    border-radius:15px;
     margin-bottom:20px;
 }
+input {color:white !important;}
 </style>
 """, unsafe_allow_html=True)
 
-# ================= SYMBOLS =================
-ALL_SYMBOLS = [
-"COMI","ETEL","TMGH","SWDY","EFIH","ORAS","AMOC","ATQA",
-"RMDA","FWRY","MPRC","MFPC","HELI","MNHD","PHDC","SODIC",
-"OCDI","CLHO","SVCE","BONY","ACAMD","MEPA","LUTS"
-]
-
 # ================= DATA =================
-def get_data(symbol):
+@st.cache_data(ttl=120)
+def get_tv_data(symbol):
     try:
         url = "https://scanner.tradingview.com/egypt/scan"
         payload = {
-            "symbols":{"tickers":[f"EGX:{symbol}"],"query":{"types":[]}},
-            "columns":["close","high","low","volume","RSI","EMA200"]
+            "symbols": {"tickers": [f"EGX:{symbol}"], "query": {"types": []}},
+            "columns": [
+                "close","high","low","volume",
+                "RSI","EMA20","EMA50","EMA200"
+            ]
         }
-
-        r = requests.post(url,json=payload,timeout=5).json()
-
-        if not r["data"]:
-            raise Exception()
-
+        r = requests.post(url, json=payload).json()
         d = r["data"][0]["d"]
 
         return {
@@ -51,140 +40,172 @@ def get_data(symbol):
             "low": float(d[2]),
             "volume": float(d[3]),
             "rsi": float(d[4]),
-            "ema": float(d[5])
+            "ema20": float(d[5]),
+            "ema50": float(d[6]),
+            "ema200": float(d[7]),
         }
 
     except:
-        # fallback (عشان ميقعش)
-        return {
-            "price": 5,
-            "high": 5.2,
-            "low": 4.8,
-            "volume": 500000,
-            "rsi": 50,
-            "ema": 5
-        }
+        return None
 
-# ================= CALC =================
-def levels(h,l,p):
-    pivot = (h+l+p)/3
-    s1 = pivot - (h-l)/2
-    s2 = s1 - 0.1
-    r1 = pivot + (h-l)/2
-    r2 = r1 + 0.1
+# ================= FALLBACK =================
+def fake_data(symbol):
+    base = np.random.uniform(1, 20)
+    return {
+        "price": base,
+        "high": base*1.03,
+        "low": base*0.97,
+        "volume": np.random.randint(100000,3000000),
+        "rsi": np.random.uniform(30,70),
+        "ema20": base,
+        "ema50": base,
+        "ema200": base
+    }
+
+# ================= LOGIC =================
+def pivots(p,h,l):
+    piv = (p+h+l)/3
+    s1 = (2*piv)-h
+    s2 = piv-(h-l)
+    r1 = (2*piv)-l
+    r2 = piv+(h-l)
     return s1,s2,r1,r2
 
 def liquidity(v):
-    if v > 2_000_000:
-        return "🔥 عالية"
-    elif v > 500_000:
-        return "⚠ متوسطة"
-    else:
-        return "❌ ضعيفة"
+    if v > 2_000_000: return "🔥 عالية"
+    elif v > 500_000: return "⚠ متوسطة"
+    return "❌ ضعيفة"
 
-def signal(p,s1,r1,rsi):
-    if abs(p-s1)/s1 < 0.02 and rsi < 40:
-        return "🔥 فرصة قوية","ارتداد من دعم"
+def volume_spike(v):
+    return v > 1_500_000
+
+def ai_comment(p,s1,r1,rsi,vol):
+    if abs(p-s1)/s1 < 0.02 and rsi < 40 and vol:
+        return "🔥 ارتداد من دعم قوي + سيولة → فرصة ممتازة"
     if p > r1:
-        return "🔥 اختراق","كسر مقاومة"
+        return "🚀 اختراق مقاومة → بداية اتجاه صاعد"
     if rsi > 70:
-        return "❌ خطر","تشبع شرائي"
-    return "⚠ انتظار","حركة عرضية"
+        return "⚠ تشبع شرائي → احتمال تصحيح"
+    return "⚖️ حركة عرضية → انتظر تأكيد"
 
-def ai_block(p,s1,s2,r1,r2,rsi,ema):
+def smart_score(p,s1,r1,rsi,ema200,vol):
+    score = 50
+    if abs(p-s1)/s1 < 0.02: score += 20
+    if rsi < 40: score += 15
+    if p > ema200: score += 10
+    if vol: score += 10
+    return min(score,100)
 
-    trader_score = min(100, 50 + (20 if rsi<30 else 0) + (15 if abs(p-s1)/s1<0.02 else 0))
-    swing_score = min(100, 60 + (50-abs(50-rsi)))
-    invest_score = 80 if p>ema else 55
+def rank(score):
+    if score >= 75: return "🔥 قوية"
+    if score >= 60: return "⚠ متوسطة"
+    return "❌ ضعيفة"
 
-    return {
-        "trader": trader_score,
-        "swing": swing_score,
-        "invest": invest_score
-    }
+def entry_zone(p,s1):
+    return round(s1*0.99,2), round(s1*1.01,2)
+
+# ================= CARD =================
+def show_card(symbol,data):
+    p = data["price"]
+    h = data["high"]
+    l = data["low"]
+    rsi = data["rsi"]
+    vol = data["volume"]
+
+    s1,s2,r1,r2 = pivots(p,h,l)
+    vol_spike = volume_spike(vol)
+
+    score = smart_score(p,s1,r1,rsi,data["ema200"],vol_spike)
+    conf = int(score)
+
+    entry_low, entry_high = entry_zone(p,s1)
+    sl = round(s1*0.97,2)
+
+    comment = ai_comment(p,s1,r1,rsi,vol_spike)
+
+    trader = round(score)
+    swing = round(score+10 if p>data["ema50"] else score)
+    invest = round(score if p>data["ema200"] else score-10)
+
+    st.markdown(f"""
+    <div class="card">
+    <h2>{symbol}</h2>
+
+    💰 السعر: {round(p,2)} | RSI: {round(rsi,1)}<br><br>
+
+    🧱 دعم: {round(s1,2)} / {round(s2,2)}<br>
+    🚧 مقاومة: {round(r1,2)} / {round(r2,2)}<br><br>
+
+    💧 السيولة: {liquidity(vol)}<br><br>
+
+    🎯 <b>{rank(score)} ({score}/100)</b><br>
+    💡 {comment}<br><br>
+
+    🎯 دخول: {entry_low} - {entry_high}<br>
+    ❌ وقف خسارة: {sl}<br>
+    📊 Confidence: {conf}%<br><br>
+
+    🎯 المضارب: {trader}/100<br>
+    🔁 السوينج: {swing}/100<br>
+    🏦 المستثمر: {invest}/100<br><br>
+
+    📌 أقرب دعم: {round(s1,2)} - أقوى دعم: {round(s2,2)}
+    </div>
+    """, unsafe_allow_html=True)
+
+# ================= SCANNER =================
+def scan_market():
+    symbols = ["COMI","TMGH","SWDY","EFID","ETEL","AMOC","CLHO","ORWE","EGTS","JUFO","PHDC","MFPC"]
+
+    rows = []
+    for s in symbols:
+        data = get_tv_data(s) or fake_data(s)
+
+        p = data["price"]
+        s1,_,r1,_ = pivots(p,data["high"],data["low"])
+        score = smart_score(p,s1,r1,data["rsi"],data["ema200"],volume_spike(data["volume"]))
+
+        rows.append({
+            "السهم": s,
+            "السعر": round(p,2),
+            "RSI": round(data["rsi"],1),
+            "الدعم": round(s1,2),
+            "المقاومة": round(r1,2),
+            "Score": score,
+            "التقييم": rank(score)
+        })
+
+    df = pd.DataFrame(rows)
+
+    if not df.empty:
+        df = df.sort_values(by="Score", ascending=False)
+
+    return df
 
 # ================= UI =================
 st.title("🏹 EGX Sniper PRO MAX")
 
-tab1, tab2 = st.tabs(["📊 تحليل","🔥 الفرص"])
+tab1, tab2 = st.tabs(["📊 تحليل", "🔥 الفرص"])
 
 # ===== تحليل =====
 with tab1:
+    symbol = st.text_input("ادخل كود السهم").upper()
 
-    sym = st.text_input("ادخل كود السهم").upper()
+    if symbol:
+        data = get_tv_data(symbol)
 
-    if sym:
-        d = get_data(sym)
+        if not data:
+            data = fake_data(symbol)
 
-        s1,s2,r1,r2 = levels(d["high"],d["low"],d["price"])
-        sig,reason = signal(d["price"],s1,r1,d["rsi"])
-        liq = liquidity(d["volume"])
-
-        ai = ai_block(d["price"],s1,s2,r1,r2,d["rsi"],d["ema"])
-
-        entry = round(s1+0.05,2)
-        sl = round(s2-0.05,2)
-
-        st.markdown(f"""
-        <div class="card">
-        <h2>{sym}</h2>
-
-        💰 السعر: {d['price']} | RSI: {d['rsi']:.1f}<br><br>
-
-        🧱 دعم: {round(s1,2)} / {round(s2,2)}<br>
-        🚧 مقاومة: {round(r1,2)} / {round(r2,2)}<br><br>
-
-        💧 السيولة: {liq}<br>
-
-        <hr>
-
-        🎯 {sig}<br>
-        💡 {reason}<br><br>
-
-        🎯 دخول: {entry}<br>
-        ❌ وقف خسارة: {sl}<br>
-
-        <hr>
-
-        🎯 المضارب: {ai['trader']}/100<br>
-        🔁 السوينج: {ai['swing']}/100<br>
-        🏦 المستثمر: {ai['invest']}/100<br>
-
-        <hr>
-
-        📌 ملحوظة: أقرب دعم {round(s1,2)} - دعم أقوى {round(s2,2)}
-
-        </div>
-        """, unsafe_allow_html=True)
+        show_card(symbol,data)
 
 # ===== الفرص =====
 with tab2:
+    st.subheader("🔥 أفضل الفرص")
 
-    rows = []
+    df = scan_market()
 
-    for s in ALL_SYMBOLS:
-        d = get_data(s)
-
-        s1,s2,r1,r2 = levels(d["high"],d["low"],d["price"])
-        sig,_ = signal(d["price"],s1,r1,d["rsi"])
-
-        score = 50
-        if d["rsi"] < 30: score += 20
-        if abs(d["price"]-s1)/s1 < 0.02: score += 20
-        if d["price"] > d["ema"]: score += 10
-
-        rank = "🔥 قوية" if score>=80 else "⚠ متوسطة" if score>=60 else "❌ ضعيفة"
-
-        rows.append({
-            "السهم": s,
-            "السعر": round(d["price"],2),
-            "RSI": round(d["rsi"],1),
-            "دعم": round(s1,2),
-            "مقاومة": round(r1,2),
-            "Score": score,
-            "التقييم": rank
-        })
-
-    df = pd.DataFrame(rows).sort_values("Score", ascending=False)
-
-    st.dataframe(df, use_container_width=True)
+    if not df.empty:
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info("لا توجد بيانات حالياً")
