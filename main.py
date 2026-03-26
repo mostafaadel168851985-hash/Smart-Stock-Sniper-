@@ -1,158 +1,220 @@
 import streamlit as st
 import requests
 
+# ================== CONFIG ==================
 st.set_page_config(page_title="EGX Sniper PRO", layout="wide")
 
-WATCHLIST = ["TMGH","COMI","ETEL","SWDY","EFID","ATQA","ALCN","RMDA"]
+WATCHLIST = ["TMGH", "COMI", "ETEL", "SWDY", "EFID", "ATQA", "ALCN", "RMDA"]
 
 COMPANIES = {
-    "TMGH":"طلعت مصطفى","COMI":"البنك التجاري الدولي","ETEL":"المصرية للاتصالات",
-    "SWDY":"السويدي إليكتريك","EFID":"إيديتا","ATQA":"عتاقة","ALCN":"ألكون","RMDA":"رمادا"
+    "TMGH": "طلعت مصطفى",
+    "COMI": "البنك التجاري الدولي",
+    "ETEL": "المصرية للاتصالات",
+    "SWDY": "السويدي إليكتريك",
+    "EFID": "إيديتا",
+    "ATQA": "عتاقة",
+    "ALCN": "ألكون",
+    "RMDA": "رمادا"
 }
 
-st.markdown("""
-<style>
-body,.stApp{background:#0d1117;color:white;}
-.card{background:#161b22;padding:20px;border-radius:15px;margin-bottom:20px;}
-</style>
-""", unsafe_allow_html=True)
-
-# ================= DATA =================
+# ================== DATA ==================
 @st.cache_data(ttl=120)
 def get_data(symbol):
     try:
-        url="https://scanner.tradingview.com/egypt/scan"
-        payload={
-            "symbols":{"tickers":[f"EGX:{symbol}"],"query":{"types":[]}},
-            "columns":["close","high","low","volume"]
+        url = "https://scanner.tradingview.com/egypt/scan"
+        payload = {
+            "symbols": {"tickers": [f"EGX:{symbol.upper()}"], "query": {"types": []}},
+            "columns": ["close", "high", "low", "volume"]
         }
-        r=requests.post(url,json=payload,timeout=10).json()
-        d=r["data"][0]["d"]
-        return float(d[0]),float(d[1]),float(d[2]),float(d[3])
+        r = requests.post(url, json=payload, timeout=10).json()
+        if not r.get("data"):
+            return None, None, None, None
+        d = r["data"][0]["d"]
+        return float(d[0]), float(d[1]), float(d[2]), float(d[3])
     except:
-        return None,None,None,None
+        return None, None, None, None
 
-# ================= LOGIC =================
-def pivots(p,h,l):
-    piv=(p+h+l)/3
-    s1=(2*piv)-h
-    s2=piv-(h-l)
-    r1=(2*piv)-l
-    r2=piv+(h-l)
-    return s1,s2,r1,r2
+# ================== INDICATORS ==================
+def pivots(p, h, l):
+    piv = (p + h + l) / 3
+    s1 = (2 * piv) - h
+    s2 = piv - (h - l)
+    r1 = (2 * piv) - l
+    r2 = piv + (h - l)
+    return s1, s2, r1, r2
 
-def rsi(p,h,l):
-    if h==l:return 50
-    return ((p-l)/(h-l))*100
+def rsi_smart(p, h, l):
+    if h == l:
+        return 50
+    base = ((p - l) / (h - l)) * 100
+    if base > 80: return base - 5
+    if base < 20: return base + 5
+    return base
 
-def smart_score(p,s1,r1,rsi):
-    score=50
+def liquidity(vol):
+    if vol > 2_000_000:
+        return "سيولة عالية"
+    elif vol > 500_000:
+        return "سيولة متوسطة"
+    else:
+        return "سيولة ضعيفة"
 
-    if rsi<30: score+=20
-    elif rsi<40: score+=10
-    elif rsi>70: score-=15
+# ================== SMART ENTRY ==================
+def smart_entry_zone(p, s1, r1):
+    if abs(p - s1)/s1 < 0.03:
+        return round(s1+0.05,2), round(s1+0.20,2)
+    elif p > r1:
+        return round(r1,2), round(r1+0.25,2)
+    else:
+        mid = (s1+r1)/2
+        return round(mid-0.15,2), round(mid+0.15,2)
 
-    if abs(p-s1)/s1<0.02: score+=20
-    if p>r1: score+=15
+# ================== SIGNALS ==================
+def reversal_signal(p, s1, r1, rsi):
+    if p <= s1 * 1.02 and rsi < 35:
+        return "🟢 إشارة ارتداد صاعد", "up"
+    if p >= r1 * 0.98 and rsi > 70:
+        return "🔴 إشارة ارتداد هابط", "down"
+    return "لا توجد إشارة ارتداد", None
 
-    return max(min(score,100),0)
+def confirmation_signal(p, s1, r1, rsi):
+    if p > r1 and rsi > 55:
+        return "🟢 تأكيد شراء بعد كسر مقاومة", "buy"
+    if p < s1 and rsi < 45:
+        return "🔴 تأكيد بيع بعد كسر دعم", "sell"
+    return "⚪ لا يوجد تأكيد", None
 
-def rank(score):
-    if score>=80: return "🔥 قوية"
-    elif score>=60: return "⚠ متوسطة"
-    else: return "❌ ضعيفة"
+# ================== AI ==================
+def ai_score_comment(p, s1, s2, r1, r2, rsi):
+    trader_score = 50
+    if rsi < 35: trader_score += 20
+    if abs(p - s1)/s1 < 0.02: trader_score += 20
+    if p > r1: trader_score += 10
+    if rsi > 70: trader_score -= 20
 
-def ai_comment(p,s1,r1,rsi):
-    if abs(p-s1)/s1<0.02 and rsi<40:
-        return "🔥 ارتداد من دعم قوي"
-    if p>r1:
-        return "🚀 اختراق مقاومة"
-    if rsi>70:
-        return "⚠ تشبع شرائي"
-    return "⚖ حركة عرضية"
+    trader_score = max(min(trader_score,100),0)
 
-# ================= REPORT =================
-def show_report(code,p,h,l,v):
-    s1,s2,r1,r2=pivots(p,h,l)
-    r=rsi(p,h,l)
+    trader_comment = f"⚡ مناسب لمضاربة قرب الدعم {s1:.2f}"
 
-    score=smart_score(p,s1,r1,r)
-    comment=ai_comment(p,s1,r1,r)
+    swing_score = 60 + (50 - abs(50 - rsi))
+    swing_score = max(min(swing_score,100),0)
+    swing_comment = "🔁 حركة تصحيح داخل اتجاه عام"
 
-    entry=round(s1+0.05,2)
-    sl=round(s1-0.15,2)
+    invest_score = 80 if p > (r1+r2)/2 else 55
+    invest_comment = "🏦 الاتجاه طويل الأجل إيجابي"
+
+    trader_entry, trader_sl = round(s1+0.1,2), round(s1-0.15,2)
+    swing_entry, swing_sl = round((s1+r1)/2,2), round((s1+r1)/2-0.25,2)
+    invest_entry, invest_sl = round((s1+s2)/2,2), round(s2-0.25,2)
+
+    return {
+        "trader": {"score": trader_score, "comment": trader_comment, "entry": trader_entry, "sl": trader_sl},
+        "swing": {"score": swing_score, "comment": swing_comment, "entry": swing_entry, "sl": swing_sl},
+        "invest": {"score": invest_score, "comment": invest_comment, "entry": invest_entry, "sl": invest_sl}
+    }
+
+# ================== FILTER ==================
+def is_valid_trade(p, s1, r1, rsi, vol):
+    if rsi < 30 or rsi > 70:
+        return False
+    if liquidity(vol) == "سيولة ضعيفة":
+        return False
+    if abs(p - s1)/s1 < 0.03:
+        return True
+    if p > r1:
+        return True
+    return False
+
+# ================== REPORT ==================
+def show_report(code, p, h, l, v):
+    s1, s2, r1, r2 = pivots(p, h, l)
+    rsi = rsi_smart(p, h, l)
+    liq = liquidity(v)
+
+    rev_txt, _ = reversal_signal(p, s1, r1, rsi)
+    conf_txt, conf_type = confirmation_signal(p, s1, r1, rsi)
+
+    rec = "انتظار"
+    if conf_type == "buy":
+        rec = "شراء"
+    elif conf_type == "sell":
+        rec = "بيع"
+
+    ai = ai_score_comment(p, s1, s2, r1, r2, rsi)
+    zone_low, zone_high = smart_entry_zone(p, s1, r1)
 
     st.markdown(f"""
     <div class="card">
     <h3>{code} - {COMPANIES.get(code,'')}</h3>
-
-    💰 السعر: {p:.2f} | RSI: {r:.1f}<br>
-    🧱 دعم: {s1:.2f} / {s2:.2f}<br>
-    🚧 مقاومة: {r1:.2f} / {r2:.2f}<br>
-
+    💰 السعر الحالي: {p:.2f}<br>
+    📉 RSI: {rsi:.1f}<br>
+    🧱 الدعم: {s1:.2f} / {s2:.2f}<br>
+    🚧 المقاومة: {r1:.2f} / {r2:.2f}<br>
+    💧 السيولة: {liq}<br>
     <hr>
-
-    🎯 Score: {score}/100 ({rank(score)})<br>
-    💡 {comment}<br>
-
-    🎯 دخول: {entry}<br>
-    ❌ وقف خسارة: {sl}<br>
-
+    🔄 {rev_txt}<br>
+    ⚡ {conf_txt}<br>
     <hr>
-
-    📊 Confidence: {score}%<br>
-
+    🎯 <b>المضارب:</b> {ai['trader']['score']}/100<br>
+    {ai['trader']['comment']} | دخول: {ai['trader']['entry']}, وقف خسارة: {ai['trader']['sl']}<br>
+    🎯 منطقة الدخول الذكية: {zone_low} - {zone_high}<br>
+    🔁 <b>السوينج:</b> {ai['swing']['score']}/100<br>
+    {ai['swing']['comment']} | دخول: {ai['swing']['entry']}, وقف خسارة: {ai['swing']['sl']}<br>
+    🏦 <b>المستثمر:</b> {ai['invest']['score']}/100<br>
+    {ai['invest']['comment']} | دخول: {ai['invest']['entry']}, وقف خسارة: {ai['invest']['sl']}<br>
+    <hr>
+    📌 التوصية: <b>{rec}</b><br>
+    📝 <b>ملحوظة للمحبوس:</b> أقرب دعم {s1:.2f}, دعم أقوى {s2:.2f}. متابعة الأسعار أمر مهم.
     </div>
     """, unsafe_allow_html=True)
 
-# ================= SCANNER =================
+# ================== SCANNER ==================
 def scanner():
-    rows=[]
+    results = []
     for s in WATCHLIST:
-        p,h,l,v=get_data(s)
-        if not p:continue
+        p,h,l,v = get_data(s)
+        if not p:
+            continue
 
-        s1,_,r1,_=pivots(p,h,l)
-        r=rsi(p,h,l)
+        s1, s2, r1, r2 = pivots(p,h,l)
+        rsi = rsi_smart(p,h,l)
 
-        score=smart_score(p,s1,r1,r)
+        if not is_valid_trade(p, s1, r1, rsi, v):
+            continue
 
-        rows.append({
-            "السهم":s,
-            "السعر":round(p,2),
-            "RSI":round(r,1),
-            "Score":score,
-            "التقييم":rank(score)
-        })
-    return rows
+        zone_low, zone_high = smart_entry_zone(p, s1, r1)
 
-# ================= UI =================
+        results.append(f"{s} | السعر {p:.2f} | RSI {rsi:.1f} | 🎯 Zone {zone_low}-{zone_high}")
+
+    return results
+
+# ================== UI ==================
 st.title("🏹 EGX Sniper PRO")
 
-tab1,tab2,tab3=st.tabs(["📡 التحليل","🛠️ يدوي","🚨 الفرص"])
+tab1, tab2, tab3 = st.tabs(["📡 التحليل الآلي", "🛠️ التحليل اليدوي", "🚨 Scanner"])
 
 with tab1:
-    code=st.text_input("ادخل كود السهم").upper().strip()
+    code = st.text_input("ادخل كود السهم").upper().strip()
     if code:
-        p,h,l,v=get_data(code)
+        p,h,l,v = get_data(code)
         if p:
             show_report(code,p,h,l,v)
         else:
-            st.error("لا توجد بيانات")
+            st.error("البيانات غير متاحة")
 
 with tab2:
-    p=st.number_input("السعر",format="%.2f")
-    h=st.number_input("أعلى",format="%.2f")
-    l=st.number_input("أقل",format="%.2f")
-    v=st.number_input("السيولة")
-
-    if p>0:
+    p = st.number_input("السعر", format="%.2f")
+    h = st.number_input("أعلى سعر", format="%.2f")
+    l = st.number_input("أقل سعر", format="%.2f")
+    v = st.number_input("السيولة")
+    if p > 0:
         show_report("MANUAL",p,h,l,v)
 
 with tab3:
-    data=scanner()
-    if data:
-        for d in data:
-            st.info(d)
+    st.subheader("🚨 إشارات الأسهم (Filtered)")
+    res = scanner()
+    if res:
+        for r in res:
+            st.info(r)
     else:
         st.success("لا توجد فرص حالياً")
