@@ -1,29 +1,31 @@
 import streamlit as st
 import requests
-import pandas as pd
 
 # ================== CONFIG ==================
-st.set_page_config(page_title="EGX Sniper Elite", layout="wide")
+st.set_page_config(page_title="EGX Sniper Elite v3", layout="wide")
 
-# ================== DATA ENGINE (FULL MARKET) ==================
+# ================== DATA ENGINE ==================
 @st.cache_data(ttl=300)
-def get_market_data(symbol=None, scan_all=False):
+def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
     
-    # فلتر المسح الشامل لكل البورصة
+    # فلتر المسح الشامل لكل البورصة مع استبعاد الأسهم الضعيفة
     if scan_all:
         payload = {
-            "filter": [{"left": "RSI", "operation": "less", "right": 50}],
+            "filter": [
+                {"left": "volume", "operation": "greater", "right": 100000}, # الأسهم النشطة فقط
+                {"left": "close", "operation": "greater", "right": 0.5}      # استبعاد أسهم القروش المتلاعبة
+            ],
             "options": {"lang": "en"},
             "symbols": {"query": {"types": []}, "tickers": []},
-            "columns": ["name", "close", "RSI", "volume", "average_volume_10d_calc", "high", "low", "change"],
-            "sort": {"sortBy": "volume", "sortOrder": "desc"},
-            "range": [0, 100]
+            "columns": ["name", "close", "RSI", "volume", "average_volume_10d_calc", "high", "low", "change", "description"],
+            "sort": {"sortBy": "change", "sortOrder": "desc"},
+            "range": [0, 50]
         }
     else:
         payload = {
             "symbols": {"tickers": [f"EGX:{symbol.upper()}"], "query": {"types": []}},
-            "columns": ["close", "high", "low", "volume", "RSI", "average_volume_10d_calc", "change"]
+            "columns": ["close", "high", "low", "volume", "RSI", "average_volume_10d_calc", "change", "description"]
         }
 
     try:
@@ -32,106 +34,86 @@ def get_market_data(symbol=None, scan_all=False):
     except:
         return []
 
-# ================== LOGIC & CALCULATIONS ==================
-def analyze_stock(d_row, is_scan=False):
-    # ترتيب البيانات بناءً على نوع الطلب
+# ================== LOGIC ==================
+def calculate_metrics(d_row, is_scan=False):
     if is_scan:
-        name, p, rsi, v, avg_v, h, l, chg = d_row['d']
+        name, p, rsi, v, avg_v, h, l, chg, desc = d_row['d']
     else:
-        p, h, l, v, rsi, avg_v, chg = d_row['d']
+        p, h, l, v, rsi, avg_v, chg, desc = d_row['d']
         name = ""
 
-    # Pivot Points
+    # Pivot Points (Real Technical Levels)
     pp = (p + h + l) / 3
     s1, s2 = (2*pp)-h, pp-(h-l)
     r1, r2 = (2*pp)-l, pp+(h-l)
     
-    # Liquidity
+    # Liquidity Analysis
     ratio = v / (avg_v or 1)
-    liq_status = "🔥 انفجارية" if ratio > 1.5 else "✅ جيدة" if ratio > 0.8 else "⚠️ ضعيفة"
-    
-    # Scores & Entries
-    t_score = 90 if rsi < 35 else 70 if rsi < 50 else 40
-    t_entry = round(s1, 2)
-    t_target = round(r1, 2)
-    
-    s_score = 85 if (v > avg_v and 40 < rsi < 60) else 55
-    s_entry = round((s1+r1)/2, 2)
-    s_target = round(r2, 2)
+    if ratio > 1.8: liq, l_col, l_msg = "🔥 انفجارية", "green", "دخول سيولة ضخمة غير معتادة"
+    elif ratio > 0.9: liq, l_col, l_msg = "✅ جيدة", "#58a6ff", "تداول طبيعي ونشط"
+    else: liq, l_col, l_msg = "⚠️ ضعيفة", "orange", "حذر.. السهم يفتقد للزخم حالياً"
+
+    # AI Comment Logic (Improved)
+    if rsi < 35 and ratio > 1: ai_msg = "💎 فرصة ذهبية: تشبع بيعي مع بداية دخول سيولة."
+    elif rsi > 70: ai_msg = "🛑 حذر: السهم في منطقة شراء مفرط، انتظر تصحيح."
+    elif 45 < rsi < 55 and ratio > 1.2: ai_msg = "📈 انطلاقة: السهم يجمع سيولة للاختراق."
+    else: ai_msg = "⚖️ استقرار: السهم في منطقة تداول عرضية."
 
     return {
-        "name": name, "p": p, "rsi": rsi, "v": v, "avg_v": avg_v, "chg": chg,
-        "s1": s1, "s2": s2, "r1": r1, "r2": r2, "liq": liq_status,
-        "t_score": t_score, "t_entry": t_entry, "t_target": t_target,
-        "s_score": s_score, "s_entry": s_entry, "s_target": s_target
+        "name": name, "desc": desc, "p": p, "rsi": rsi, "v": v, "avg_v": avg_v, "chg": chg,
+        "s1": s1, "s2": s2, "r1": r1, "r2": r2, "liq": liq, "l_col": l_col, 
+        "ai_msg": ai_msg, "ratio": ratio
     }
 
-# ================== UI COMPONENTS ==================
-def show_analysis(code, data_row):
-    res = analyze_stock(data_row)
+# ================== UI DISPLAY ==================
+def show_details(code, row):
+    res = calculate_metrics(row)
+    st.title(f"🔍 {code} - {res['desc']}")
     
-    with st.container(border=True):
-        st.title(f"📊 {code}")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
-        col2.metric("RSI", f"{res['rsi']:.1f}")
-        col3.metric("السيولة", res['liq'])
-        col4.metric("فوليوم/متوسط", f"{res['v']/res['avg_v']:.1f}x")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
+    m2.metric("RSI", f"{res['rsi']:.1f}")
+    m3.metric("حالة السيولة", res['liq'])
+    m4.metric("قوة الزخم", f"{res['ratio']:.1f}x")
 
-        st.write(f"🧱 **الدعم:** {res['s1']:.2f} | {res['s2']:.2f}  ---  🚧 **المقاومة:** {res['r1']:.2f} | {res['r2']:.2f}")
-        
-        st.divider()
-        
-        # تحليل المضارب
-        t_col, s_col = st.columns(2)
-        with t_col:
-            st.subheader(f"🎯 المضارب ({res['t_score']}/100)")
-            st.info("💡 **تعليق AI:** " + ("فرصة ارتداد سريعة" if res['rsi'] < 40 else "انتظر تهدئة السعر"))
-            st.write(f"✅ **دخول:** {res['t_entry']}")
-            st.write(f"🚀 **مستهدف:** {res['t_target']}")
-            st.write(f"🚫 **وقف:** {round(res['s1']*0.98, 2)}")
+    st.info(f"🤖 **تحليل الذكاء الاصطناعي:** {res['ai_msg']}")
+    
+    st.divider()
+    t_col, s_col = st.columns(2)
+    with t_col:
+        st.subheader("🎯 منطقة المضارب (Trader)")
+        st.success(f"✅ دخول: {res['s1']:.2f}")
+        st.write(f"🚀 مستهدف: {res['r1']:.2f}")
+        st.error(f"🚫 وقف: {res['s1']*0.98:.2f}")
 
-        with s_col:
-            st.subheader(f"🔁 السوينج ({res['s_score']}/100)")
-            st.info("💡 **تعليق AI:** " + ("تجميع مثالي لبناء مركز" if res['s_score'] > 70 else "السهم يحتاج سيولة إضافية"))
-            st.write(f"✅ **دخول:** {res['s_entry']}")
-            st.write(f"🚀 **مستهدف:** {res['s_target']}")
-            st.write(f"🚫 **وقف:** {res['s2']:.2f}")
-
-        st.divider()
-        st.warning(f"📝 **ملحوظة للمحبوس:** السهم حالياً يختبر {res['s1']:.2f}. التعديل (Average) يكون ناجحاً عند ارتداد RSI من مستوى 30 أو عند لمس {res['s2']:.2f}.")
+    with s_col:
+        st.subheader("🔁 منطقة السوينج (Swing)")
+        st.success(f"✅ دخول: {(res['s1']+res['r1'])/2:.2f}")
+        st.write(f"🚀 مستهدف: {res['r2']:.2f}")
+        st.error(f"🚫 وقف: {res['s2']:.2f}")
 
 # ================== MAIN APP ==================
 st.title("🏹 EGX Sniper Elite")
 
-tab1, tab2 = st.tabs(["📡 رادار الأسهم", "🚨 الماسح الشامل للبورصة"])
+t1, t2 = st.tabs(["📡 رادار الأسهم", "🚨 الماسح الشامل للبورصة"])
 
-with tab1:
-    code = st.text_input("كود السهم (مثال: TMGH)").upper().strip()
+with t1:
+    code = st.text_input("كود السهم").upper().strip()
     if code:
-        data = get_market_data(symbol=code)
-        if data:
-            show_analysis(code, data[0])
-        else:
-            st.error("السهم غير موجود")
+        data = fetch_egx_data(symbol=code)
+        if data: show_details(code, data[0])
+        else: st.error("بيانات السهم غير متوفرة حالياً")
 
-with tab2:
-    st.write("سيقوم النظام بمسح **كامل السوق المصري** لاختيار أفضل الفرص بناءً على السيولة والـ RSI.")
-    if st.button("بدء المسح الشامل 🔍"):
-        all_data = get_market_data(scan_all=True)
-        if all_data:
-            found_count = 0
-            for row in all_data:
-                res = analyze_stock(row, is_scan=True)
-                # فلتر الفرص القوية
-                if res['t_score'] >= 80 or res['s_score'] >= 80:
-                    with st.expander(f"🚀 {res['name']} - سعر: {res['p']} | RSI: {res['rsi']:.1f}"):
-                        st.write(f"💧 **السيولة:** {res['liq']}")
-                        st.write(f"🎯 **دخول مضارب:** {res['t_entry']} | **هدف:** {res['t_target']}")
-                        st.write(f"🔁 **دخول سوينج:** {res['s_entry']} | **هدف:** {res['s_target']}")
-                    found_count += 1
-            if found_count == 0:
-                st.warning("لا توجد فرص انفجارية حالياً، السوق في منطقة انتظار.")
-        else:
-            st.error("فشل الاتصال ببيانات البورصة.")
-
+with t2:
+    if st.button("بدء المسح الشامل للسوق المصري 🔍"):
+        all_stocks = fetch_egx_data(scan_all=True)
+        if all_stocks:
+            for row in all_stocks:
+                res = calculate_metrics(row, is_scan=True)
+                # إظهار الفرص التي لديها RSI تحت 50 (في بداية صعود)
+                if res['rsi'] < 55:
+                    with st.expander(f"🚀 {res['name']} - سعر: {res['p']} | RSI: {res['rsi']:.1f} | سيولة: {res['liq']}"):
+                        st.write(f"📝 {res['ai_msg']}")
+                        st.write(f"🎯 **دخول مضارب:** {res['s1']:.2f} | **هدف:** {res['r1']:.2f}")
+                        st.write(f"🔁 **دخول سوينج:** {(res['s1']+res['r1'])/2:.2f} | **هدف:** {res['r2']:.2f}")
+        else: st.warning("لم يتم العثور على فرص تطابق الشروط حالياً.")
