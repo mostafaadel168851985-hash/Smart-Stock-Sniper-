@@ -2,17 +2,17 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Elite v5", layout="wide")
+st.set_page_config(page_title="EGX Sniper Elite v6", layout="wide")
 
-# CSS مكثف لضغط الواجهة وتصغير الكروت
+# CSS متوازن: كروت مضغوطة لكن بخطوط واضحة للأرقام
 st.markdown("""
     <style>
-    .reportview-container .main .block-container { padding-top: 1rem; }
-    .stock-header { font-size: 18px !important; font-weight: bold; color: #58a6ff; margin: 0; }
-    .rec-badge { padding: 2px 8px; border-radius: 5px; font-size: 14px; font-weight: bold; }
-    .stMetric { padding: 5px !important; border: 1px solid #30363d !important; border-radius: 8px !important; }
-    .compact-text { font-size: 13px !important; color: #8b949e; line-height: 1.2; }
-    hr { margin: 10px 0 !important; }
+    .stock-header { font-size: 20px !important; font-weight: bold; color: #58a6ff; }
+    .price-callout { font-size: 18px !important; font-weight: bold; color: #3fb950; }
+    .stoploss-callout { font-size: 16px !important; font-weight: bold; color: #f85149; }
+    .info-text { font-size: 14px; color: #8b949e; }
+    .stMetric { background-color: #161b22; border: 1px solid #30363d !important; }
+    div[data-testid="stExpander"] { border: 1px solid #30363d; background-color: #0d1117; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -22,9 +22,12 @@ def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
     if scan_all:
         payload = {
-            "filter": [{"left": "volume", "operation": "greater", "right": 100000}, {"left": "close", "operation": "greater", "right": 0.5}],
+            "filter": [
+                {"left": "volume", "operation": "greater", "right": 50000}, # وسعنا الفلتر شوية
+                {"left": "close", "operation": "greater", "right": 0.4}
+            ],
             "columns": ["name", "close", "RSI", "volume", "average_volume_10d_calc", "high", "low", "change", "description"],
-            "sort": {"sortBy": "change", "sortOrder": "desc"}, "range": [0, 50]
+            "sort": {"sortBy": "change", "sortOrder": "desc"}, "range": [0, 40]
         }
     else:
         payload = {
@@ -42,47 +45,45 @@ def analyze_stock(d_row, is_scan=False):
     if is_scan: name, p, rsi, v, avg_v, h, l, chg, desc = d
     else: p, h, l, v, rsi, avg_v, chg, desc = d; name = ""
     
+    # المعادلات الفنية
     pp = (p + h + l) / 3
     s1, r1 = (2 * pp) - h, (2 * pp) - l
-    r2 = pp + (h - l)
+    s2, r2 = pp - (h - l), pp + (h - l)
     
+    # الزخم والسيولة
     ratio = v / (avg_v or 1)
-    if ratio > 1.5: liq_msg = "🔥 زخم انفجاري"
-    elif ratio > 0.8: liq_msg = "✅ سيولة جيدة"
-    else: liq_msg = "⚠️ سيولة ضعيفة"
+    liq_msg = "🔥 قوي" if ratio > 1.4 else "✅ مستقر" if ratio > 0.7 else "⚠️ ضعيف"
+    
+    # الأهداف والوقف
+    t_entry, t_target, t_stop = s1, r1, s1 * 0.98
+    s_entry, s_target, s_stop = p, r2, s2
 
-    t_score = int(90 if rsi < 38 else 75 if rsi < 50 else 40)
-    s_score = int(85 if (ratio > 1.1 and 40 < rsi < 62) else 55)
+    t_score = int(90 if rsi < 40 else 70 if rsi < 55 else 45)
+    s_score = int(85 if (ratio > 1.1 and 40 < rsi < 62) else 50)
 
-    if t_score >= 80 or s_score >= 80: rec, col = "شراء قوي", "#00ff00"
-    elif t_score > 60: rec, col = "مراقبة", "#58a6ff"
-    else: rec, col = "انتظار/بيع", "#ff4b4b"
+    if t_score >= 80 or s_score >= 80: rec, col = "🚀 شراء", "#00ff00"
+    elif t_score > 60: rec, col = "⚖️ مراقبة", "#58a6ff"
+    else: rec, col = "🛑 انتظار", "#ff4b4b"
 
     return {
-        "name": name, "desc": desc, "p": p, "rsi": rsi, "chg": chg, "ratio": ratio,
-        "s1": s1, "r1": r1, "r2": r2, "liq": liq_msg, "t_s": t_score, "s_s": s_score,
+        "name": name, "desc": desc, "p": p, "rsi": rsi, "chg": chg, "ratio": ratio, "liq": liq_msg,
+        "t_e": t_entry, "t_t": t_target, "t_s": t_stop, "t_score": t_score,
+        "s_e": s_entry, "s_t": s_target, "s_s": s_stop, "s_score": s_score,
         "rec": rec, "col": col
     }
 
-# ================== UI DISPLAY ==================
-def show_details(code, row):
-    res = analyze_stock(row)
+# ================== COMPONENT: STOCK CARD ==================
+def render_stock_ui(res, budget=10000):
+    shares = int(budget / res['p'])
     
-    # رأس الكارت (مضغوط)
+    #Header
     st.markdown(f"""
         <div style='display: flex; justify-content: space-between; align-items: center;'>
-            <span class='stock-header'>{code} - {res['desc'][:20]}</span>
-            <span class='rec-badge' style='background-color: {res['col']}; color: black;'>{res['rec']}</span>
+            <span class='stock-header'>{res['name'] if res['name'] else ''} {res['desc'][:25]}</span>
+            <span style='color:{res['col']}; font-weight:bold; border:1px solid {res['col']}; padding:2px 10px; border-radius:5px;'>{res['rec']}</span>
         </div>
     """, unsafe_allow_html=True)
-    
-    # حاسبة الميزانية (في الوسط بدل الـ Sidebar)
-    with st.expander("💰 ميزانية الصفقة وحساب الأرباح", expanded=True):
-        budget = st.number_input("المبلغ (ج.م)", value=10000, step=1000)
-        num_shares = int(budget / res['p'])
-        st.caption(f"عدد الأسهم المتوقع: {num_shares}")
 
-    # المؤشرات في سطر واحد
     c1, c2, c3 = st.columns(3)
     c1.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
     c2.metric("RSI", f"{res['rsi']:.1f}")
@@ -90,34 +91,46 @@ def show_details(code, row):
 
     st.divider()
 
-    # التحليل الفني (مضغوط)
     col_t, col_s = st.columns(2)
     with col_t:
-        st.markdown(f"**🎯 مضارب ({res['t_s']})**")
-        st.markdown(f"<p class='compact-text'>دخول: {res['s1']:.2f}<br>هدف: {res['r1']:.2f}<br>ربح: <span style='color:#00ff00'>{(res['r1']-res['s1'])*num_shares:,.0f} ج.م</span></p>", unsafe_allow_html=True)
-        st.caption("💡 ارتداد من الدعم")
+        st.markdown(f"**🎯 مضارب ({res['t_score']}/100)**")
+        st.markdown(f"دخول: <span class='price-callout'>{res['t_e']:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"هدف: <span class='price-callout'>{res['t_t']:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"وقف: <span class='stoploss-callout'>{res['t_s']:.2f}</span>", unsafe_allow_html=True)
+        st.write(f"💵 ربح: :green[+{(res['t_t']-res['t_e'])*shares:,.0f} ج]")
 
     with col_s:
-        st.markdown(f"**🔁 سوينج ({res['s_s']})**")
-        st.markdown(f"<p class='compact-text'>دخول: {res['p']:.2f}<br>هدف: {res['r2']:.2f}<br>ربح: <span style='color:#00ff00'>{(res['r2']-res['p'])*num_shares:,.0f} ج.م</span></p>", unsafe_allow_html=True)
-        st.caption("💡 اختراق مقاومة")
+        st.markdown(f"**🔁 سوينج ({res['s_score']}/100)**")
+        st.markdown(f"دخول: <span class='price-callout'>{res['s_e']:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"هدف: <span class='price-callout'>{res['s_t']:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
+        st.write(f"💵 ربح: :green[+{(res['s_t']-res['s_e'])*shares:,.0f} ج]")
 
-# ================== APP MAIN ==================
-st.markdown("<h3 style='margin:0;'>🏹 EGX Sniper v5</h3>", unsafe_allow_html=True)
-t1, t2 = st.tabs(["📡 رادار", "🚨 ماسح السوق"])
+# ================== MAIN APP ==================
+st.title("🏹 EGX Sniper Elite v6")
 
-with t1:
-    sym = st.text_input("كود السهم").upper().strip()
+tab1, tab2 = st.tabs(["📡 رادار الأسهم", "🚨 الماسح الذكي للفرص"])
+
+with tab1:
+    sym = st.text_input("كود السهم (مثال: TMGH, ATQA)").upper().strip()
     if sym:
         data = fetch_egx_data(symbol=sym)
-        if data: show_details(sym, data[0])
-        else: st.error("غير موجود")
+        if data:
+            with st.container(border=True):
+                budget_val = st.number_input("💰 ميزانية الصفقة (ج.م)", value=10000, step=1000, key="radar_budget")
+                render_stock_ui(analyze_stock(data[0]), budget=budget_val)
+        else: st.error("لم نجد بيانات لهذا الكود")
 
-with t2:
-    if st.button("فحص شامل"):
-        all_d = fetch_egx_data(scan_all=True)
-        for s in all_d:
-            a = analyze_stock(s, is_scan=True)
-            if a['t_s'] >= 80:
-                with st.expander(f"🚀 {a['name']} | {a['p']} | RSI:{a['rsi']:.0f}"):
-                    st.write(f"دخول: {a['s1']:.2f} | هدف: {a['r1']:.2f}")
+with tab2:
+    st.write("بيتم فحص أقوى 40 سهم في البورصة حالياً...")
+    if st.button("بدء الفحص الشامل 🔍"):
+        all_data = fetch_egx_data(scan_all=True)
+        found = False
+        for s_row in all_data:
+            analysis = analyze_stock(s_row, is_scan=True)
+            if analysis['t_score'] >= 78 or analysis['s_score'] >= 78:
+                found = True
+                with st.expander(f"🚀 {analysis['name']} | السعر: {analysis['p']} | Score: {max(analysis['t_score'], analysis['s_score'])}"):
+                    render_stock_ui(analysis)
+        if not found: st.warning("السوق حالياً مستقر، لا توجد فرص انفجارية مطابقة للشروط.")
+
