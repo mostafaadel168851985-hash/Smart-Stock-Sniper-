@@ -4,6 +4,7 @@ import requests
 # ================== CONFIG ==================
 st.set_page_config(page_title="EGX Sniper PRO", layout="wide")
 
+# قائمة المتابعة الخاصة بك
 WATCHLIST = ["TMGH", "COMI", "ETEL", "SWDY", "EFID", "ATQA", "ALCN", "RMDA"]
 
 COMPANIES = {
@@ -12,143 +13,136 @@ COMPANIES = {
     "ALCN": "الأسكندرية لتداول الحاويات", "RMDA": "العاشر من رمضان - راميدا"
 }
 
-# ================== DATA ENGINE (RSI 14 FIX) ==================
-@st.cache_data(ttl=120)
-def get_data(symbol):
+# ================== DATA ENGINE (TRADINGVIEW REAL-TIME) ==================
+@st.cache_data(ttl=300) # كاش لمدة 5 دقائق للحفاظ على السرعة
+def get_real_data(symbol):
     try:
         url = "https://scanner.tradingview.com/egypt/scan"
         payload = {
             "symbols": {"tickers": [f"EGX:{symbol.upper()}"], "query": {"types": []}},
-            # طلبنا الـ RSI 14 الحقيقي من السيرفر مباشرة
-            "columns": ["close", "high", "low", "volume", "RSI", "change"]
+            "columns": ["close", "high", "low", "volume", "RSI", "Pivot.M.Classic.S1", "Pivot.M.Classic.R1"]
         }
         r = requests.post(url, json=payload, timeout=10).json()
-        if not r.get("data"):
-            return None
+        if not r.get("data"): return None
         d = r["data"][0]["d"]
         return {
             "p": float(d[0]), "h": float(d[1]), "l": float(d[2]),
-            "v": float(d[3]), "rsi": float(d[4]), "chg": float(d[5])
+            "v": float(d[3]), "rsi": float(d[4]), "s1": float(d[5]), "r1": float(d[6])
         }
     except:
         return None
 
-# ================== MATH INDICATORS ==================
+# ================== INDICATORS & LOGIC ==================
 def calculate_pivots(p, h, l):
-    piv = (p + h + l) / 3
-    s1 = (2 * piv) - h
-    s2 = piv - (h - l)
-    r1 = (2 * piv) - l
-    r2 = piv + (h - l)
+    pp = (p + h + l) / 3
+    s1 = (2 * pp) - h
+    s2 = pp - (h - l)
+    r1 = (2 * pp) - l
+    r2 = pp + (h - l)
     return s1, s2, r1, r2
 
-def liquidity_status(vol):
-    if vol > 2_000_000: return "🔥 سيولة عالية جداً"
-    if vol > 500_000: return "✅ سيولة جيدة"
-    return "⚠️ سيولة ضعيفة"
+def get_ai_analysis(p, s1, s2, r1, r2, rsi, v):
+    # 1. تحليل المضارب (قصير جداً - لحظي)
+    trader_score = 50
+    if rsi < 35: trader_score += 30
+    if abs(p - s1)/s1 < 0.02: trader_score += 20
+    trader_entry = round(s1 + 0.02, 2)
+    trader_sl = round(s1 - (s1 * 0.02), 2)
+    
+    # 2. تحليل السوينج (أيام لأسابيع)
+    swing_score = 60
+    if 40 <= rsi <= 60: swing_score += 20
+    if v > 1_000_000: swing_score += 10
+    swing_entry = round((s1 + r1) / 2, 2)
+    swing_sl = round(s2, 2)
 
-# ================== SMART ENTRY LOGIC ==================
-def get_entry_zone(p, s1, r1, rsi):
-    # الدخول الذكي يعتمد على قرب السعر من الدعم مع RSI منخفض
-    if rsi < 40:
-        return round(s1, 2), round(s1 * 1.015, 2), "تجميع (قرب الدعم)"
-    elif 40 <= rsi <= 60:
-        mid = (s1 + r1) / 2
-        return round(mid, 2), round(mid * 1.01, 2), "اختراق منتصف القناة"
-    else:
-        return round(r1, 2), round(r1 * 1.02, 2), "اختراق مقاومة (مخاطرة)"
+    # 3. تحليل المستثمر (طويل الأمد)
+    invest_score = 70 if p > s1 else 50
+    if rsi < 50: invest_score += 10
+    invest_entry = round(s2, 2)
+    invest_sl = round(s2 * 0.95, 2)
 
-# ================== SCORING SYSTEM ==================
-def calculate_score(data, s1, r1):
-    p, rsi, vol = data['p'], data['rsi'], data['v']
-    score = 0
-    # RSI Score (الأفضل بين 35 و 55 للدخول)
-    if 30 <= rsi <= 50: score += 35
-    elif 50 < rsi <= 65: score += 20
-    
-    # Volume Score
-    if vol > 1_000_000: score += 25
-    
-    # Position Score (قربه من الدعم ميزة)
-    dist_to_s1 = (p - s1) / s1
-    if 0 <= dist_to_s1 <= 0.03: score += 40
-    
-    return min(score, 100)
+    return {
+        "trader": {"score": min(trader_score, 100), "entry": trader_entry, "sl": trader_sl, "comment": "🎯 قناص: دخول قرب الدعم لارتداد سريع"},
+        "swing": {"score": min(swing_score, 100), "entry": swing_entry, "sl": swing_sl, "comment": "🔁 موجة: انتظار تأكيد الاختراق للفوليوم"},
+        "invest": {"score": min(invest_score, 100), "entry": invest_entry, "sl": invest_sl, "comment": "🏦 استثمار: تجميع هادئ عند مناطق الدعم القوية"}
+    }
 
 # ================== REPORT UI ==================
-def show_report(code, data):
+def show_full_report(code, data):
     p, h, l, v, rsi = data['p'], data['h'], data['l'], data['v'], data['rsi']
     s1, s2, r1, r2 = calculate_pivots(p, h, l)
-    liq = liquidity_status(v)
-    z_low, z_high, z_type = get_entry_zone(p, s1, r1, rsi)
-    score = calculate_score(data, s1, r1)
-
-    # تحديد التوصية بناءً على القوة
-    rec = "مراقبة"
-    if score >= 75: rec = "⚡ شراء قوي"
-    elif score >= 50: rec = "✅ دخول تدريجي"
-    elif rsi > 75: rec = "🚫 تشبع شراء - بيع"
+    ai = get_ai_analysis(p, s1, s2, r1, r2, rsi, v)
+    
+    # التوصية النهائية
+    final_rec = "مراقبة"
+    if ai['trader']['score'] > 80 or ai['swing']['score'] > 80: final_rec = "🔥 شراء مؤكد"
+    elif rsi > 75: final_rec = "⚠️ تشبع شراء (بيع)"
 
     st.markdown(f"""
-    <div style="border:1px solid #4CAF50; padding:20px; border-radius:10px; background-color:#0e1117;">
-        <h2 style="color:#4CAF50;">{code} - {COMPANIES.get(code,'')}</h2>
-        <table style="width:100%">
-            <tr><td>💰 السعر الحالي: <b>{p:.2f}</b></td><td>📉 RSI الحقيقي: <b>{rsi:.1f}</b></td></tr>
-            <tr><td>🧱 دعم 1: <b>{s1:.2f}</b></td><td>🚧 مقاومة 1: <b>{r1:.2f}</b></td></tr>
-            <tr><td>💧 السيولة: {liq}</td><td>📊 Score: <b>{score}/100</b></td></tr>
-        </table>
+    <div style="border: 1px solid #464b5d; padding: 20px; border-radius: 10px; background-color: #161b22;">
+        <h2 style="color: #58a6ff;">{code} - {COMPANIES.get(code,'')}</h2>
+        <p>💰 السعر: <b>{p:.2f}</b> | 📉 RSI: <b>{rsi:.1f}</b> | 💧 فوليوم: <b>{v:,.0f}</b></p>
+        <p>🧱 دعم: {s1:.2f} / {s2:.2f} | 🚧 مقاومة: {r1:.2f} / {r2:.2f}</p>
         <hr>
-        <h4 style="margin-bottom:5px;">🎯 منطقة الدخول المقترحة: <span style="color:#f63366;">{z_low} - {z_high}</span></h4>
-        <small>النوع: {z_type}</small>
+        <h4>🎯 تحليل المضارب (Trader)</h4>
+        <b>القوة: {ai['trader']['score']}/100</b><br>
+        {ai['trader']['comment']}<br>
+        دخول: <span style="color:#238636">{ai['trader']['entry']}</span> | وقف: <span style="color:#da3633">{ai['trader']['sl']}</span>
+        <br><br>
+        <h4>🔁 تحليل السوينج (Swing)</h4>
+        <b>القوة: {ai['swing']['score']}/100</b><br>
+        {ai['swing']['comment']}<br>
+        دخول: <span style="color:#238636">{ai['swing']['entry']}</span> | وقف: <span style="color:#da3633">{ai['swing']['sl']}</span>
+        <br><br>
+        <h4>🏦 تحليل المستثمر (Investor)</h4>
+        <b>القوة: {ai['invest']['score']}/100</b><br>
+        {ai['invest']['comment']}<br>
+        دخول: <span style="color:#238636">{ai['invest']['entry']}</span> | وقف: <span style="color:#da3633">{ai['invest']['sl']}</span>
         <hr>
-        <h4>📌 التوصية الحالية: <span style="font-size:24px;">{rec}</span></h4>
-        <p style="color:#888;">وقف الخسارة: كسر {s2:.2f} بإغلاق | المستهدف: {r1:.2f} ثم {r2:.2f}</p>
+        <h3>📌 التوصية: {final_rec}</h3>
+        <p style="background-color: #30363d; padding: 10px; border-radius: 5px;">
+        📝 <b>ملحوظة للمحبوس:</b> السهم حالياً يختبر منطقة {s1:.2f}. لو معاك السهم لا تبيع تحت {s2:.2f}. التعديل الأفضل يكون عند ارتداد الـ RSI من مستويات الـ 30.
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
-# ================== MAIN UI ==================
+# ================== MAIN APP ==================
 st.title("🏹 EGX Sniper PRO")
-st.caption("نسخة مطورة: RSI 14 حقيقي + فلتر الدخول الذكي")
+st.caption("التحليل مبني على بيانات TradingView الحقيقية ومعادلات RSI 14")
 
-tab1, tab2, tab3 = st.tabs(["📡 التحليل الآلي", "🛠️ التحليل اليدوي", "🚨 Scanner"])
+tab1, tab2, tab3 = st.tabs(["📡 رادار الأسهم", "🛠️ إدخال يدوي", "🚨 الماسح الذكي"])
 
 with tab1:
-    code = st.text_input("ادخل كود السهم (مثال: ATQA, ALCN)").upper().strip()
+    code = st.text_input("كود السهم (مثال: ATQA)").upper().strip()
     if code:
-        data = get_data(code)
-        if data:
-            show_report(code, data)
-        else:
-            st.error("السهم غير موجود أو لا توجد بيانات حالياً")
+        with st.spinner('جاري سحب البيانات الحقيقية...'):
+            data = get_real_data(code)
+            if data:
+                show_full_report(code, data)
+            else:
+                st.error("بيانات السهم غير متوفرة حالياً")
 
 with tab2:
     col1, col2 = st.columns(2)
     with col1:
-        p_manual = st.number_input("السعر الحالي", step=0.01)
-        h_manual = st.number_input("أعلى سعر (اليوم)", step=0.01)
+        pm = st.number_input("السعر الحالي", format="%.2f")
+        hm = st.number_input("أعلى سعر", format="%.2f")
     with col2:
-        l_manual = st.number_input("أقل سعر (اليوم)", step=0.01)
-        v_manual = st.number_input("فوليوم التداول", step=1000)
-    
-    # هنا الـ RSI لازم يدوي لأننا في Mode يدوي
-    rsi_manual = st.slider("قيمة RSI (لو مش عارفها سيبها 50)", 0, 100, 50)
-    
-    if p_manual > 0:
-        manual_data = {"p": p_manual, "h": h_manual, "l": l_manual, "v": v_manual, "rsi": rsi_manual}
-        show_report("MANUAL", manual_data)
+        lm = st.number_input("أقل سعر", format="%.2f")
+        vm = st.number_input("الفوليوم", step=1000)
+    rsim = st.slider("RSI الحقيقي", 0, 100, 50)
+    if pm > 0:
+        manual_data = {"p": pm, "h": hm, "l": lm, "v": vm, "rsi": rsim}
+        show_full_report("MANUAL", manual_data)
 
 with tab3:
-    if st.button("تشغيل الماسح الذكي"):
-        with st.spinner("جاري فحص قائمة المتابعة..."):
-            found = False
-            for s in WATCHLIST:
-                data = get_data(s)
-                if data:
-                    s1, _, r1, _ = calculate_pivots(data['p'], data['h'], data['l'])
-                    score = calculate_score(data, s1, r1)
-                    if score >= 60:
-                        st.success(f"🚀 فرصة قوية: {s} | Score: {score} | RSI: {data['rsi']:.1f}")
-                        found = True
-            if not found:
-                st.warning("لا توجد فرص مثالية حالياً حسب الشروط.")
+    if st.button("فحص قائمة المتابعة لبكرة 🔍"):
+        for s in WATCHLIST:
+            d = get_real_data(s)
+            if d:
+                s1, _, r1, _ = calculate_pivots(d['p'], d['h'], d['l'])
+                scores = get_ai_analysis(d['p'], s1, 0, r1, 0, d['rsi'], d['v'])
+                if scores['trader']['score'] > 70 or scores['swing']['score'] > 70:
+                    st.success(f"🚀 {s}: فرصة دخول جيدة | RSI: {d['rsi']:.1f} | القوة: {max(scores['trader']['score'], scores['swing']['score'])}")
 
