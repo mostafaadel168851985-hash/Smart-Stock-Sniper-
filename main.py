@@ -4,139 +4,134 @@ import requests
 # ================== CONFIG ==================
 st.set_page_config(page_title="EGX Sniper PRO", layout="wide")
 
+# قائمة المتابعة
 WATCHLIST = ["TMGH", "COMI", "ETEL", "SWDY", "EFID", "ATQA", "ALCN", "RMDA", "MAAL"]
 
 COMPANIES = {
     "TMGH": "طلعت مصطفى", "COMI": "البنك التجاري الدولي", "ETEL": "المصرية للاتصالات",
-    "SWDY": "السويدي إليكتريك", "EFID": "إيديتا", "ATQA": "مصر الوطنية للصلب - عتاقة",
-    "ALCN": "الأسكندرية لتداول الحاويات", "RMDA": "راميدا", "MAAL": "عبر المحيطات للملاحة"
+    "SWDY": "السويدي إليكتريك", "EFID": "إيديتا", "ATQA": "عتاقة (الصلب)",
+    "ALCN": "الأسكندرية للحاويات", "RMDA": "راميدا", "MAAL": "عبر المحيطات"
 }
 
-# ================== DATA ENGINE (HISTORICAL CONTEXT) ==================
+# ================== DATA ENGINE ==================
 @st.cache_data(ttl=300)
 def get_market_data(symbol):
     try:
         url = "https://scanner.tradingview.com/egypt/scan"
         payload = {
             "symbols": {"tickers": [f"EGX:{symbol.upper()}"], "query": {"types": []}},
-            "columns": [
-                "close", "high", "low", "volume", 
-                "RSI", "average_volume_10d_calc", "change"
-            ]
+            "columns": ["close", "high", "low", "volume", "RSI", "average_volume_10d_calc"]
         }
         r = requests.post(url, json=payload, timeout=10).json()
         if not r.get("data"): return None
         d = r["data"][0]["d"]
         return {
             "p": float(d[0]), "h": float(d[1]), "l": float(d[2]),
-            "v": float(d[3]), "rsi": float(d[4]), "avg_v": float(d[5]), "chg": float(d[6])
+            "v": float(d[3]), "rsi": float(d[4]), "avg_v": float(d[5]) or 1
         }
     except: return None
 
-# ================== ANALYSIS LOGIC ==================
-def calculate_pivots(p, h, l):
+# ================== ANALYTICS ==================
+def get_logic(p, h, l, rsi, v, avg_v):
+    # حساب الدعوم والمقاومات
     pp = (p + h + l) / 3
-    return (2*pp)-h, pp-(h-l), (2*pp)-l, pp+(h-l)
-
-def get_liquidity_status(v, avg_v):
-    # مقارنة الفوليوم الحالي بمتوسط 10 أيام (بيانات تاريخية حقيقية)
-    ratio = v / avg_v if avg_v > 0 else 1
-    if ratio > 1.5: return "🔥 انفجار سيولة (أعلى من المتوسط)", "#3fb950"
-    if ratio > 0.8: return "✅ سيولة طبيعية", "#58a6ff"
-    return "⚠️ سيولة ضعيفة جداً", "#f85149"
-
-def get_ai_logic(p, s1, s2, r1, r2, rsi, v, avg_v):
-    # تحليل المضارب
-    t_score = 80 if (rsi < 40 and p <= s1*1.01) else 50
-    if rsi > 70: t_score = 20
+    s1, s2 = (2*pp)-h, pp-(h-l)
+    r1, r2 = (2*pp)-l, pp+(h-l)
     
-    # تحليل السوينج (يعتمد على السيولة التاريخية)
-    s_score = 60
-    if v > avg_v and 45 < rsi < 60: s_score = 90
+    # نسبة السيولة
+    liq_ratio = v / avg_v
+    if liq_ratio > 1.5: liq_txt, liq_col = "🔥 انفجارية", "#00ff00"
+    elif liq_ratio > 0.8: liq_txt, liq_col = "✅ جيدة", "#58a6ff"
+    else: liq_txt, liq_col = "⚠️ ضعيفة", "#ff4b4b"
+
+    # تحليل المستويات
+    scores = {}
+    # 1. المضارب
+    scores['trader'] = 85 if rsi < 40 else 50
+    t_entry = round(s1, 2)
+    
+    # 2. السوينج
+    scores['swing'] = 90 if (v > avg_v and 45 < rsi < 60) else 60
+    s_entry = round((s1+r1)/2, 2)
     
     return {
-        "trader": {"score": t_score, "entry": round(s1, 2), "sl": round(s1*0.98, 2), "cmnt": "قناص: الدخول المثالي قرب الدعم لارتداد سريع."},
-        "swing": {"score": s_score, "entry": round((s1+r1)/2, 2), "sl": round(s2, 2), "cmnt": "سوينج: انتظار اختراق المقاومة بفوليوم عالي."},
-        "invest": {"score": 75 if rsi < 50 else 50, "entry": round(s2, 2), "sl": round(s2*0.95, 2), "cmnt": "مستثمر: تجميع هادئ في مناطق الدعوم التاريخية."}
+        "s1": s1, "s2": s2, "r1": r1, "r2": r2,
+        "liq_txt": liq_txt, "liq_col": liq_col,
+        "scores": scores, "t_entry": t_entry, "s_entry": s_entry
     }
 
-# ================== UI DISPLAY (FIXED HTML) ==================
-def show_full_report(code, d):
-    s1, s2, r1, r2 = calculate_pivots(d['p'], d['h'], d['l'])
-    liq_txt, liq_col = get_liquidity_status(d['v'], d['avg_v'])
-    ai = get_ai_logic(d['p'], s1, s2, r1, r2, d['rsi'], d['v'], d['avg_v'])
-    
-    # إصلاح عرض الـ HTML لضمان عدم ظهور الأكواد
-    report_html = f"""
-    <div style="border: 1px solid #30363d; padding: 20px; border-radius: 10px; background-color: #0d1117; color: #c9d1d9; font-family: sans-serif;">
-        <h2 style="color: #58a6ff; margin-bottom:5px;">{code} - {COMPANIES.get(code, 'سهم جديد')}</h2>
-        <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
-            <span>💰 السعر: <b>{d['p']:.2f}</b></span>
-            <span>📉 RSI: <b>{d['rsi']:.1f}</b></span>
-        </div>
-        <div style="margin-bottom: 15px;">
-            💧 السيولة: <span style="color: {liq_col}; font-weight: bold;">{liq_txt}</span><br>
-            📊 فوليوم اليوم: {d['v']:,.0f} (المتوسط: {d['avg_v']:,.0f})
-        </div>
-        <p style="font-size: 0.9em; color: #8b949e;">🧱 دعم: {s1:.2f} / {s2:.2f} | 🚧 مقاومة: {r1:.2f} / {r2:.2f}</p>
-        <hr style="border: 0.5px solid #30363d;">
+# ================== UI DISPLAY ==================
+def render_card(code, d, res):
+    # استخدمنا st.container بدل الـ HTML المعقد لتجنب المشاكل السابقة
+    with st.container(border=True):
+        st.subheader(f"{code} - {COMPANIES.get(code, '')}")
         
-        <div style="margin-bottom: 15px;">
-            <h4 style="color: #ff7b72; margin-bottom:5px;">🎯 تحليل المضارب | {ai['trader']['score']}/100</h4>
-            <p style="margin:0;">{ai['trader']['cmnt']}</p>
-            <p style="margin:5px 0;">دخول: <span style="color:#3fb950">{ai['trader']['entry']}</span> | وقف: <span style="color:#f85149">{ai['trader']['sl']}</span></p>
-        </div>
+        c1, c2, c3 = st.columns(3)
+        c1.metric("السعر الحالي", f"{d['p']:.2f}")
+        c2.metric("RSI (14)", f"{d['rsi']:.1f}")
+        c3.markdown(f"**السيولة:** <span style='color:{res['liq_col']}'>{res['liq_txt']}</span>", unsafe_allow_html=True)
+        
+        st.write(f"🧱 **الدعم:** {res['s1']:.2f} / {res['s2']:.2f} | 🚧 **المقاومة:** {res['r1']:.2f} / {res['r2']:.2f}")
+        st.divider()
+        
+        # تحليل المضارب
+        col_t, col_s, col_i = st.columns(3)
+        with col_t:
+            st.write("🎯 **المضارب**")
+            st.write(f"القوة: {res['scores']['trader']}/100")
+            st.write(f"دخول: :green[{res['t_entry']}]")
+            st.write(f"وقف: :red[{round(res['s1']*0.98, 2)}]")
+            
+        with col_s:
+            st.write("🔁 **السوينج**")
+            st.write(f"القوة: {res['scores']['swing']}/100")
+            st.write(f"دخول: :green[{res['s_entry']}]")
+            st.write(f"وقف: :red[{round(res['s2'], 2)}]")
+            
+        with col_i:
+            st.write("🏦 **المستثمر**")
+            st.write("القوة: 70/100")
+            st.write(f"دخول: :green[{round(res['s2'], 2)}]")
+            
+        st.divider()
+        st.info(f"📝 **ملحوظة للمحبوس:** لا تبيع بخسارة طالما السهم فوق {res['s2']:.2f}. التعديل الأفضل عند {res['s2']:.2f}.")
 
-        <div style="margin-bottom: 15px;">
-            <h4 style="color: #d2a8ff; margin-bottom:5px;">🔁 تحليل السوينج | {ai['swing']['score']}/100</h4>
-            <p style="margin:0;">{ai['swing']['cmnt']}</p>
-            <p style="margin:5px 0;">دخول: <span style="color:#3fb950">{ai['swing']['entry']}</span> | وقف: <span style="color:#f85149">{ai['swing']['sl']}</span></p>
-        </div>
-
-        <div style="margin-bottom: 15px;">
-            <h4 style="color: #79c0ff; margin-bottom:5px;">🏦 تحليل المستثمر | {ai['invest']['score']}/100</h4>
-            <p style="margin:0;">{ai['invest']['cmnt']}</p>
-            <p style="margin:5px 0;">دخول: <span style="color:#3fb950">{ai['invest']['entry']}</span> | وقف: <span style="color:#f85149">{ai['invest']['sl']}</span></p>
-        </div>
-
-        <div style="background-color: #161b22; padding: 15px; border-radius: 8px; border-left: 4px solid #f85149;">
-            <b>📝 ملحوظة للمحبوس:</b> أفضل منطقة للتبريد حالياً هي قرب <b>{s2:.2f}</b>. لا تقم بالبيع بخسارة طالما السعر يحافظ على إغلاق فوق {s1:.2f} والسيولة في تحسن.
-        </div>
-    </div>
-    """
-    st.markdown(report_html, unsafe_allow_html=True)
-
-# ================== MAIN APP UI ==================
+# ================== MAIN APP ==================
 st.title("🏹 EGX Sniper PRO")
 
 t1, t2, t3 = st.tabs(["📡 رادار الأسهم", "🛠️ تحليل يدوي", "🚨 الماسح الذكي"])
 
 with t1:
-    code = st.text_input("كود السهم (مثال: MAAL, ATQA)").upper().strip()
+    code = st.text_input("ادخل كود السهم").upper().strip()
     if code:
-        res = get_market_data(code)
-        if res: show_full_report(code, res)
-        else: st.error("عذراً، لم نتمكن من جلب بيانات هذا السهم.")
+        data = get_market_data(code)
+        if data:
+            res = get_logic(data['p'], data['h'], data['l'], data['rsi'], data['v'], data['avg_v'])
+            render_card(code, data, res)
+        else:
+            st.error("السهم غير موجود")
 
 with t2:
-    st.info("استخدم هذا القسم إذا كان لديك بيانات من مصدر خارجي")
     p_m = st.number_input("السعر", value=0.0)
     h_m = st.number_input("أعلى سعر", value=0.0)
     l_m = st.number_input("أقل سعر", value=0.0)
-    v_m = st.number_input("الفوليوم", value=0)
+    v_m = st.number_input("الفوليوم", value=1)
     rsi_m = st.slider("RSI", 0, 100, 50)
     if p_m > 0:
-        manual = {"p": p_m, "h": h_m, "l": l_m, "v": v_m, "rsi": rsi_m, "avg_v": v_m}
-        show_full_report("MANUAL", manual)
+        res_m = get_logic(p_m, h_m, l_m, rsi_m, v_m, v_m)
+        render_card("MANUAL", {"p":p_m, "rsi":rsi_m}, res_m)
 
 with t3:
-    if st.button("فحص أسهم المتابعة لبكرة 🔍"):
+    if st.button("فحص قائمة المتابعة لبكرة 🔍"):
         for s in WATCHLIST:
             d = get_market_data(s)
             if d:
-                s1, s2, r1, r2 = calculate_pivots(d['p'], d['h'], d['l'])
-                ai = get_ai_logic(d['p'], s1, s2, r1, r2, d['rsi'], d['v'], d['avg_v'])
-                if max(ai['trader']['score'], ai['swing']['score']) >= 75:
-                    st.success(f"🚀 {s} | فرصة قوية (Score: {max(ai['trader']['score'], ai['swing']['score'])}) | RSI: {d['rsi']:.1f}")
+                res = get_logic(d['p'], d['h'], d['l'], d['rsi'], d['v'], d['avg_v'])
+                score = max(res['scores'].values())
+                
+                # إظهار سعر الدخول مباشرة في الـ Scanner
+                if score >= 75:
+                    st.success(f"🚀 {s} | القوة: {score} | دخول مضارب: {res['t_entry']} | دخول سوينج: {res['s_entry']}")
                 else:
-                    st.info(f"⚪ {s} | مراقبة (Score: {max(ai['trader']['score'], ai['swing']['score'])})")
+                    st.info(f"⚪ {s} | القوة: {score} | سعر الدخول المقترح: {res['t_entry']}")
+
