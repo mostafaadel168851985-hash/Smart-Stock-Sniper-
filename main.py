@@ -4,6 +4,7 @@ import requests
 # ================== CONFIG & STYLE ==================
 st.set_page_config(page_title="EGX Sniper Elite v8.2.6", layout="wide")
 
+# تصميم الواجهة: توازن بين ضغط العناصر ووضوح الأرقام المهمة
 st.markdown("""
     <style>
     .stock-header { font-size: 20px !important; font-weight: bold; color: #58a6ff; }
@@ -16,7 +17,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# ================== DATA ENGINE ==================
+# ================== DATA ENGINE (TradingView Connection) ==================
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
@@ -153,31 +154,31 @@ with tab3:
     st.write("استخدم هذه الحاسبة لتعرف كيف سيؤثر الشراء الجديد على متوسط سعرك في السهم.")
     
     col_input1, col_input2, col_input3 = st.columns(3)
-    old_price = col_input1.number_input("سعرك القديم (المتوسط الحالي)", value=0.0, step=0.01)
-    old_qty = col_input2.number_input("الكمية التي تملكها حالياً", value=0, step=10)
-    new_price = col_input3.number_input("السعر الجديد الذي ستشتري به", value=0.0, step=0.01)
+    old_p = col_input1.number_input("سعرك القديم (المتوسط الحالي)", value=0.0, step=0.01)
+    old_q = col_input2.number_input("الكمية التي تملكها حالياً", value=0, step=10)
+    new_p = col_input3.number_input("السعر الجديد الذي ستشتري به", value=0.0, step=0.01)
     
-    if old_price > 0 and old_qty > 0 and new_price > 0:
-        current_total = old_price * old_qty
+    if old_p > 0 and old_q > 0 and new_p > 0:
+        current_total = old_p * old_q
         
         st.divider()
         st.markdown("#### 💡 اقتراحات تعديل المتوسط التقليدية:")
         
         scenarios = [
-            {"label": "تعديل بسيط (شراء نصف كميتك)", "add_qty": int(old_qty * 0.5)},
-            {"label": "تعديل متوسط (مضاعفة الكمية - 1:1)", "add_qty": old_qty},
-            {"label": "تعديل جذري (شراء ضعف كميتك - 2:1)", "add_qty": old_qty * 2}
+            {"label": "تعديل بسيط (شراء نصف كميتك)", "add_qty": int(old_q * 0.5)},
+            {"label": "تعديل متوسط (مضاعفة الكمية - 1:1)", "add_qty": old_q},
+            {"label": "تعديل جذري (شراء ضعف كميتك - 2:1)", "add_qty": old_q * 2}
         ]
         
         for sc in scenarios:
-            new_total_qty = old_qty + sc['add_qty']
-            new_avg = (current_total + (new_price * sc['add_qty'])) / new_total_qty
-            reduction = ((old_price - new_avg) / old_price) * 100
+            new_total_qty = old_q + sc['add_qty']
+            new_avg = (current_total + (new_p * sc['add_qty'])) / new_total_qty
+            reduction = ((old_p - new_avg) / old_p) * 100
             
             st.markdown(f"""
             <div class='avg-card'>
                 <b style='color:#58a6ff;'>{sc['label']}</b><br>
-                شراء عدد <span style='color:#3fb950;'>{sc['add_qty']}</span> سهم جديد بتكلفة <span style='color:#3fb950;'>{(sc['add_qty']*new_price):,.2f} ج</span><br>
+                شراء عدد <span style='color:#3fb950;'>{sc['add_qty']}</span> سهم جديد بتكلفة <span style='color:#3fb950;'>{(sc['add_qty']*new_p):,.2f} ج</span><br>
                 متوسط سعرك الجديد سيكون: <span style='color:#3fb950; font-size:18px;'>{new_avg:.3f} ج</span><br>
                 <small style='color:#8b949e;'>نسبة تخفيض التكلفة: {reduction:.1f}%</small>
             </div>
@@ -185,19 +186,19 @@ with tab3:
 
         st.divider()
 
-        # --- الإضافة الجديدة والمطلوبة ---
+        # --- الإضافة الجديدة والمطلوبة (حاسبة المستهدف) ---
         with st.expander("🎯 ميزة إضافية: احسب لي كمية الشراء لمتوسط محدد"):
-            target_avg = st.number_input("ادخل المتوسط الذي ترغب في الوصول إليه", value=old_price-0.05, step=0.01)
+            target_avg = st.number_input("ادخل المتوسط الذي ترغب في الوصول إليه", value=old_p-0.05, step=0.01)
             
             if target_avg > 0:
-                if target_avg <= new_price:
-                    st.error(f"❌ رياضياً مستحيل! المتوسط لا يمكن أن يصل لـ {target_avg} طالما تشتري بسعر {new_price}.")
-                elif target_avg >= old_price:
+                if target_avg <= new_p:
+                    st.error(f"❌ رياضياً مستحيل! المتوسط لا يمكن أن يصل لـ {target_avg} طالما تشتري بسعر {new_p}.")
+                elif target_avg >= old_p:
                     st.warning("⚠️ هذا السعر أعلى من متوسطك الحالي!")
                 else:
-                    # المعادلة العكسية لحساب الكمية المطلوبة بناءً على السعر المستهدف
-                    needed_q = (old_qty * (old_price - target_avg)) / (target_avg - new_price)
-                    total_cash = needed_q * new_price
+                    # المعادلة العكسية: الكمية المطلوبة = (القديمة * (القديم - المستهدف)) / (المستهدف - الجديد)
+                    needed_q = (old_q * (old_p - target_avg)) / (target_avg - new_p)
+                    total_cash = needed_q * new_p
                     
                     st.markdown(f"""
                     <div class='target-box'>
@@ -205,6 +206,6 @@ with tab3:
                         للوصول لمتوسط <span style='color:#3fb950;'>{target_avg:.3f} ج</span>:<br><br>
                         ✅ يجب شراء عدد: <b style='font-size:22px; color:#3fb950;'>{int(needed_q):,}</b> سهم جديد<br>
                         ✅ إجمالي المبلغ المطلوب: <b style='font-size:22px; color:#3fb950;'>{total_cash:,.2f} ج.م</b><br>
-                        <p style='font-size:13px; color:#8b949e; margin-top:10px;'>سيصبح إجمالي عدد أسهمك: {int(old_qty + needed_q):,} سهم.</p>
+                        <p style='font-size:13px; color:#8b949e; margin-top:10px;'>سيصبح إجمالي عدد أسهمك بعد التنفيذ: {int(old_q + needed_q):,} سهم.</p>
                     </div>
                     """, unsafe_allow_html=True)
