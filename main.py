@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Elite v8.1", layout="wide")
+st.set_page_config(page_title="EGX Sniper Elite v8.2", layout="wide")
 
 # تصميم الواجهة: توازن بين ضغط العناصر ووضوح الأرقام المهمة
 st.markdown("""
@@ -12,6 +12,7 @@ st.markdown("""
     .stoploss-callout { font-size: 16px !important; font-weight: bold; color: #f85149; }
     .stMetric { background-color: #161b22; border: 1px solid #30363d !important; border-radius: 8px; }
     div[data-testid="stExpander"] { border: 1px solid #30363d; background-color: #0d1117; }
+    .avg-card { background-color: #1c2128; border: 1px solid #444c56; border-radius: 10px; padding: 15px; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -43,39 +44,29 @@ def analyze_stock(d_row, is_scan=False):
     try:
         d = d_row['d']
         if is_scan: 
-            # في حالة الماسح الشامل
             name, p, rsi, v, avg_v, h, l, chg, desc = d
         else: 
-            # في حالة البحث الفردي
             p, h, l, v, rsi, avg_v, chg, desc = d; name = ""
         
-        # --- حماية من البيانات الفارغة (NaN/None) ---
-        # هذا التعديل يمنع توقف التطبيق في حالة وجود بيانات ناقصة للسهم
         if p is None or h is None or l is None: return None
         
-        # حساب نقط الارتكاز والدعوم
         pp = (p + h + l) / 3
         s1, r1 = (2 * pp) - h, (2 * pp) - l
         s2, r2 = pp - (h - l), pp + (h - l)
         
-        # حساب وترجمة الزخم (Momentum)
         ratio = v / (avg_v or 1)
         if ratio > 1.8: mom_label = "🔥 سيولة ضخمة"
         elif ratio > 1.1: mom_label = "✅ زخم متصاعد"
         elif ratio > 0.7: mom_label = "🆗 مستقر"
         else: mom_label = "⚠️ ضعيف جداً"
 
-        # --- إصلاح مشكلة الـ RSI (TypeError Fix) ---
-        # التحقق من أن RSI ليس فارغاً قبل المقارنة الرقمية
         if rsi is not None:
             t_score = int(90 if rsi < 38 else 75 if rsi < 55 else 40)
         else:
-            t_score = 0 # سكور صفر للأسهم التي لا تملك بيانات RSI
-            rsi = 0 # قيمة افتراضية للعرض
+            t_score, rsi = 0, 0
         
         s_score = int(85 if (ratio > 1.1 and 40 < rsi < 65) else 50)
         
-        # منطق التوصية (Recommendation Logic)
         if rsi > 70: 
             rec, col = "🛑 تشبع شراء", "#ff4b4b"
         elif t_score >= 80 or s_score >= 80: 
@@ -89,9 +80,7 @@ def analyze_stock(d_row, is_scan=False):
             "s_e": p, "s_t": r2, "s_s": s2, "s_score": s_score,
             "rec": rec, "col": col
         }
-    except:
-        # في حالة حدوث أي خطأ غير متوقع في سهم معين، نتخطاه بسلام
-        return None
+    except: return None
 
 # ================== UI COMPONENTS ==================
 def render_stock_ui(res, budget=10000):
@@ -132,9 +121,9 @@ def render_stock_ui(res, budget=10000):
             st.write(f"📉 مخاطرة (لو ضرب وقف): :red[{(res['s_e']-res['s_s'])*shares:,.0f} ج]")
 
 # ================== MAIN APP STRUCTURE ==================
-st.title("🏹 EGX Sniper Elite v8.1")
+st.title("🏹 EGX Sniper Elite v8.2")
 
-tab1, tab2 = st.tabs(["📡 رادار البحث", "🚨 الماسح الشامل للفرص"])
+tab1, tab2, tab3 = st.tabs(["📡 رادار البحث", "🚨 الماسح الشامل", "🧮 حاسبة المتوسطات"])
 
 with tab1:
     sym = st.text_input("ادخل كود السهم (مثال: TMGH, ATQA)").upper().strip()
@@ -146,10 +135,8 @@ with tab1:
                 with st.container(border=True):
                     b = st.number_input("💰 ميزانية الصفقة (ج.م)", value=10000, step=1000)
                     render_stock_ui(analysis, budget=b)
-            else:
-                st.error("بيانات السهم غير مكتملة للتحليل.")
-        else:
-            st.error("لم يتم العثور على بيانات لهذا السهم. تأكد من الكود.")
+            else: st.error("بيانات السهم غير مكتملة.")
+        else: st.error("لم يتم العثور على بيانات.")
 
 with tab2:
     if st.button("بدء فحص أقوى فرص السوق 🔍"):
@@ -157,12 +144,46 @@ with tab2:
         found = False
         for r in all_d:
             an = analyze_stock(r, is_scan=True)
-            # تخطي الأسهم التي فشل تحليلها
             if an is None: continue
-            
             if an['t_score'] >= 75 or an['s_score'] >= 75:
                 found = True
                 with st.expander(f"🚀 {an['name']} | السعر: {an['p']} | Score: {max(an['t_score'], an['s_score'])}"):
                     render_stock_ui(an)
-        if not found:
-            st.warning("لا توجد فرص انفجارية حالياً. السوق في حالة استقرار.")
+        if not found: st.warning("لا توجد فرص انفجارية حالياً.")
+
+with tab3:
+    st.subheader("🧮 حاسبة متوسط التكلفة الذكية")
+    st.write("استخدم هذه الحاسبة لتعرف كيف سيؤثر الشراء الجديد على متوسط سعرك في السهم.")
+    
+    col_input1, col_input2, col_input3 = st.columns(3)
+    old_price = col_input1.number_input("سعرك القديم (المتوسط الحالي)", value=0.0, step=0.01)
+    old_qty = col_input2.number_input("الكمية التي تملكها حالياً", value=0, step=10)
+    new_price = col_input3.number_input("السعر الجديد الذي ستشتري به", value=0.0, step=0.01)
+    
+    if old_price > 0 and old_qty > 0 and new_price > 0:
+        current_total = old_price * old_qty
+        
+        st.divider()
+        st.markdown("#### 💡 اقتراحات تعديل المتوسط:")
+        
+        # سيناريوهات الشراء (50%، 100%، 200% من الكمية القديمة)
+        scenarios = [
+            {"label": "تعديل بسيط (شراء نصف كميتك)", "add_qty": int(old_qty * 0.5)},
+            {"label": "تعديل متوسط (مضاعفة الكمية - 1:1)", "add_qty": old_qty},
+            {"label": "تعديل جذري (شراء ضعف كميتك - 2:1)", "add_qty": old_qty * 2}
+        ]
+        
+        for sc in scenarios:
+            new_total_qty = old_qty + sc['add_qty']
+            new_avg = (current_total + (new_price * sc['add_qty'])) / new_total_qty
+            reduction = ((old_price - new_avg) / old_price) * 100
+            
+            with st.container():
+                st.markdown(f"""
+                <div class='avg-card'>
+                    <b style='color:#58a6ff;'>{sc['label']}</b><br>
+                    شراء عدد <span style='color:#3fb950;'>{sc['add_qty']}</span> سهم جديد بتكلفة <span style='color:#3fb950;'>{(sc['add_qty']*new_price):,.2f} ج</span><br>
+                    متوسط سعرك الجديد سيكون: <span style='color:#3fb950; font-size:18px;'>{new_avg:.3f} ج</span><br>
+                    <small style='color:#8b949e;'>نسبة تخفيض التكلفة: {reduction:.1f}%</small>
+                </div>
+                """, unsafe_allow_html=True)
