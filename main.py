@@ -2,9 +2,8 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Elite v8.2", layout="wide")
+st.set_page_config(page_title="EGX Sniper Elite v8.2.6", layout="wide")
 
-# تصميم الواجهة: توازن بين ضغط العناصر ووضوح الأرقام المهمة
 st.markdown("""
     <style>
     .stock-header { font-size: 20px !important; font-weight: bold; color: #58a6ff; }
@@ -13,10 +12,11 @@ st.markdown("""
     .stMetric { background-color: #161b22; border: 1px solid #30363d !important; border-radius: 8px; }
     div[data-testid="stExpander"] { border: 1px solid #30363d; background-color: #0d1117; }
     .avg-card { background-color: #1c2128; border: 1px solid #444c56; border-radius: 10px; padding: 15px; margin-bottom: 10px; }
+    .target-box { background-color: #0d1117; border: 2px solid #58a6ff; border-radius: 10px; padding: 20px; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# ================== DATA ENGINE (TradingView Connection) ==================
+# ================== DATA ENGINE ==================
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
@@ -60,14 +60,11 @@ def analyze_stock(d_row, is_scan=False):
         elif ratio > 0.7: mom_label = "🆗 مستقر"
         else: mom_label = "⚠️ ضعيف جداً"
 
-        if rsi is not None:
-            t_score = int(90 if rsi < 38 else 75 if rsi < 55 else 40)
-        else:
-            t_score, rsi = 0, 0
+        rsi_val = rsi if rsi is not None else 0
+        t_score = int(90 if rsi_val < 38 else 75 if rsi_val < 55 else 40)
+        s_score = int(85 if (ratio > 1.1 and 40 < rsi_val < 65) else 50)
         
-        s_score = int(85 if (ratio > 1.1 and 40 < rsi < 65) else 50)
-        
-        if rsi > 70: 
+        if rsi_val > 70: 
             rec, col = "🛑 تشبع شراء", "#ff4b4b"
         elif t_score >= 80 or s_score >= 80: 
             rec, col = "🚀 شراء قوي", "#00ff00"
@@ -75,7 +72,7 @@ def analyze_stock(d_row, is_scan=False):
             rec, col = "⚖️ انتظار", "#58a6ff"
 
         return {
-            "name": name, "desc": desc, "p": p, "rsi": rsi, "chg": chg, "ratio": ratio, "mom_l": mom_label,
+            "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio, "mom_l": mom_label,
             "t_e": s1, "t_t": r1, "t_s": s1 * 0.98, "t_score": t_score,
             "s_e": p, "s_t": r2, "s_s": s2, "s_score": s_score,
             "rec": rec, "col": col
@@ -121,7 +118,7 @@ def render_stock_ui(res, budget=10000):
             st.write(f"📉 مخاطرة (لو ضرب وقف): :red[{(res['s_e']-res['s_s'])*shares:,.0f} ج]")
 
 # ================== MAIN APP STRUCTURE ==================
-st.title("🏹 EGX Sniper Elite v8.2")
+st.title("🏹 EGX Sniper Elite v8.2.6")
 
 tab1, tab2, tab3 = st.tabs(["📡 رادار البحث", "🚨 الماسح الشامل", "🧮 حاسبة المتوسطات"])
 
@@ -164,9 +161,8 @@ with tab3:
         current_total = old_price * old_qty
         
         st.divider()
-        st.markdown("#### 💡 اقتراحات تعديل المتوسط:")
+        st.markdown("#### 💡 اقتراحات تعديل المتوسط التقليدية:")
         
-        # سيناريوهات الشراء (50%، 100%، 200% من الكمية القديمة)
         scenarios = [
             {"label": "تعديل بسيط (شراء نصف كميتك)", "add_qty": int(old_qty * 0.5)},
             {"label": "تعديل متوسط (مضاعفة الكمية - 1:1)", "add_qty": old_qty},
@@ -178,12 +174,37 @@ with tab3:
             new_avg = (current_total + (new_price * sc['add_qty'])) / new_total_qty
             reduction = ((old_price - new_avg) / old_price) * 100
             
-            with st.container():
-                st.markdown(f"""
-                <div class='avg-card'>
-                    <b style='color:#58a6ff;'>{sc['label']}</b><br>
-                    شراء عدد <span style='color:#3fb950;'>{sc['add_qty']}</span> سهم جديد بتكلفة <span style='color:#3fb950;'>{(sc['add_qty']*new_price):,.2f} ج</span><br>
-                    متوسط سعرك الجديد سيكون: <span style='color:#3fb950; font-size:18px;'>{new_avg:.3f} ج</span><br>
-                    <small style='color:#8b949e;'>نسبة تخفيض التكلفة: {reduction:.1f}%</small>
-                </div>
-                """, unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class='avg-card'>
+                <b style='color:#58a6ff;'>{sc['label']}</b><br>
+                شراء عدد <span style='color:#3fb950;'>{sc['add_qty']}</span> سهم جديد بتكلفة <span style='color:#3fb950;'>{(sc['add_qty']*new_price):,.2f} ج</span><br>
+                متوسط سعرك الجديد سيكون: <span style='color:#3fb950; font-size:18px;'>{new_avg:.3f} ج</span><br>
+                <small style='color:#8b949e;'>نسبة تخفيض التكلفة: {reduction:.1f}%</small>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.divider()
+
+        # --- الإضافة الجديدة والمطلوبة ---
+        with st.expander("🎯 ميزة إضافية: احسب لي كمية الشراء لمتوسط محدد"):
+            target_avg = st.number_input("ادخل المتوسط الذي ترغب في الوصول إليه", value=old_price-0.05, step=0.01)
+            
+            if target_avg > 0:
+                if target_avg <= new_price:
+                    st.error(f"❌ رياضياً مستحيل! المتوسط لا يمكن أن يصل لـ {target_avg} طالما تشتري بسعر {new_price}.")
+                elif target_avg >= old_price:
+                    st.warning("⚠️ هذا السعر أعلى من متوسطك الحالي!")
+                else:
+                    # المعادلة العكسية لحساب الكمية المطلوبة بناءً على السعر المستهدف
+                    needed_q = (old_qty * (old_price - target_avg)) / (target_avg - new_price)
+                    total_cash = needed_q * new_price
+                    
+                    st.markdown(f"""
+                    <div class='target-box'>
+                        <h4 style='color:#58a6ff; margin-top:0;'>الخطة المطلوبة للوصول لهدفك:</h4>
+                        للوصول لمتوسط <span style='color:#3fb950;'>{target_avg:.3f} ج</span>:<br><br>
+                        ✅ يجب شراء عدد: <b style='font-size:22px; color:#3fb950;'>{int(needed_q):,}</b> سهم جديد<br>
+                        ✅ إجمالي المبلغ المطلوب: <b style='font-size:22px; color:#3fb950;'>{total_cash:,.2f} ج.م</b><br>
+                        <p style='font-size:13px; color:#8b949e; margin-top:10px;'>سيصبح إجمالي عدد أسهمك: {int(old_qty + needed_q):,} سهم.</p>
+                    </div>
+                    """, unsafe_allow_html=True)
