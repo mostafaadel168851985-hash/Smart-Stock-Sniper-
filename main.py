@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Elite v8.2", layout="wide")
+st.set_page_config(page_title="EGX Sniper Elite v8.3", layout="wide")
 
 # تصميم الواجهة: توازن بين ضغط العناصر ووضوح الأرقام المهمة
 st.markdown("""
@@ -13,6 +13,7 @@ st.markdown("""
     .stMetric { background-color: #161b22; border: 1px solid #30363d !important; border-radius: 8px; }
     div[data-testid="stExpander"] { border: 1px solid #30363d; background-color: #0d1117; }
     .avg-card { background-color: #1c2128; border: 1px solid #444c56; border-radius: 10px; padding: 15px; margin-bottom: 10px; }
+    .investor-range { background-color: #0d1117; border: 1px dashed #30363d; padding: 5px 15px; border-radius: 5px; margin-bottom: 10px; font-size: 14px; color: #8b949e; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -20,19 +21,22 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
+    # طلب بيانات إضافية للدعوم التاريخية والمستثمر
+    extra_cols = ["high_log_52w", "low_log_52w", "Pivot.M.Support.1", "Pivot.M.Resistance.1"]
+    
     if scan_all:
         payload = {
             "filter": [
                 {"left": "volume", "operation": "greater", "right": 50000},
                 {"left": "close", "operation": "greater", "right": 0.4}
             ],
-            "columns": ["name", "close", "RSI", "volume", "average_volume_10d_calc", "high", "low", "change", "description"],
+            "columns": ["name", "close", "RSI", "volume", "average_volume_10d_calc", "high", "low", "change", "description"] + extra_cols,
             "sort": {"sortBy": "change", "sortOrder": "desc"}, "range": [0, 50]
         }
     else:
         payload = {
             "symbols": {"tickers": [f"EGX:{symbol.upper()}"], "query": {"types": []}},
-            "columns": ["close", "high", "low", "volume", "RSI", "average_volume_10d_calc", "change", "description"]
+            "columns": ["close", "high", "low", "volume", "RSI", "average_volume_10d_calc", "change", "description"] + extra_cols
         }
     try:
         r = requests.post(url, json=payload, timeout=10).json()
@@ -44,12 +48,13 @@ def analyze_stock(d_row, is_scan=False):
     try:
         d = d_row['d']
         if is_scan: 
-            name, p, rsi, v, avg_v, h, l, chg, desc = d
+            name, p, rsi, v, avg_v, h, l, chg, desc, h_52, l_52, s_month, r_month = d
         else: 
-            p, h, l, v, rsi, avg_v, chg, desc = d; name = ""
+            p, h, l, v, rsi, avg_v, chg, desc, h_52, l_52, s_month, r_month = d; name = ""
         
         if p is None or h is None or l is None: return None
         
+        # حساب مستويات فيبوناتشي ونقاط الارتكاز
         pp = (p + h + l) / 3
         s1, r1 = (2 * pp) - h, (2 * pp) - l
         s2, r2 = pp - (h - l), pp + (h - l)
@@ -76,8 +81,9 @@ def analyze_stock(d_row, is_scan=False):
 
         return {
             "name": name, "desc": desc, "p": p, "rsi": rsi, "chg": chg, "ratio": ratio, "mom_l": mom_label,
-            "t_e": s1, "t_t": r1, "t_s": s1 * 0.98, "t_score": t_score,
-            "s_e": p, "s_t": r2, "s_s": s2, "s_score": s_score,
+            "t_e": s1, "t_t": r1, "t_t2": r2, "t_s": s1 * 0.98, "t_score": t_score,
+            "s_e": p, "s_t": r2, "s_t2": r_month if r_month else r2*1.1, "s_s": s2, "s_score": s_score,
+            "s_strong": s_month if s_month else s2, "h_52": h_52, "l_52": l_52,
             "rec": rec, "col": col
         }
     except: return None
@@ -98,6 +104,15 @@ def render_stock_ui(res, budget=10000):
     c1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
     c2.metric("مؤشر RSI", f"{res['rsi']:.1f}")
     c3.metric("الزخم", f"{res['ratio']:.1f}x", res['mom_l'])
+
+    # --- إضافة نطاق المستثمر التاريخي ---
+    st.markdown(f"""
+        <div class='investor-range'>
+            🏗️ <b>نطاق الـ 52 أسبوع:</b> 
+            قاع تاريخي: <span style='color:#f85149'>{res['l_52']:.2f}</span> | 
+            قمة تاريخية: <span style='color:#3fb950'>{res['h_52']:.2f}</span>
+        </div>
+    """, unsafe_allow_html=True)
     
     st.divider()
 
@@ -105,23 +120,23 @@ def render_stock_ui(res, budget=10000):
     with col_t:
         st.markdown(f"**🎯 مضارب يومي ({res['t_score']})**")
         st.markdown(f"دخول: <span class='price-callout'>{res['t_e']:.2f}</span>", unsafe_allow_html=True)
-        st.markdown(f"هدف: <span class='price-callout'>{res['t_t']:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"أهداف: <span class='price-callout'>{res['t_t']:.2f}</span> → <span class='price-callout' style='color:#70e000'>{res['t_t2']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['t_s']:.2f}</span>", unsafe_allow_html=True)
         if shares > 0:
             st.write(f"💵 ربح متوقع: :green[+{(res['t_t']-res['t_e'])*shares:,.0f} ج]")
-            st.write(f"📉 مخاطرة (لو ضرب وقف): :red[{(res['t_e']-res['t_s'])*shares:,.0f} ج]")
+            st.write(f"📉 مخاطرة: :red[{(res['t_e']-res['t_s'])*shares:,.0f} ج]")
 
     with col_s:
         st.markdown(f"**🔁 سوينج أسبوعي ({res['s_score']})**")
         st.markdown(f"دخول: <span class='price-callout'>{res['s_e']:.2f}</span>", unsafe_allow_html=True)
-        st.markdown(f"هدف: <span class='price-callout'>{res['s_t']:.2f}</span>", unsafe_allow_html=True)
-        st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"أهداف: <span class='price-callout'>{res['s_t']:.2f}</span> → <span class='price-callout' style='color:#70e000'>{res['s_t2']:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"الدعم القوي: <span class='stoploss-callout' style='color:#ff9f1c'>{res['s_strong']:.2f}</span>", unsafe_allow_html=True)
         if shares > 0:
             st.write(f"💵 ربح متوقع: :green[+{(res['s_t']-res['s_e'])*shares:,.0f} ج]")
-            st.write(f"📉 مخاطرة (لو ضرب وقف): :red[{(res['s_e']-res['s_s'])*shares:,.0f} ج]")
+            st.write(f"🛑 وقف نهائي: :red[{res['s_s']:.2f}]")
 
 # ================== MAIN APP STRUCTURE ==================
-st.title("🏹 EGX Sniper Elite v8.2")
+st.title("🏹 EGX Sniper Elite v8.3")
 
 tab1, tab2, tab3 = st.tabs(["📡 رادار البحث", "🚨 الماسح الشامل", "🧮 حاسبة المتوسطات"])
 
@@ -162,22 +177,17 @@ with tab3:
     
     if old_price > 0 and old_qty > 0 and new_price > 0:
         current_total = old_price * old_qty
-        
         st.divider()
         st.markdown("#### 💡 اقتراحات تعديل المتوسط:")
-        
-        # سيناريوهات الشراء (50%، 100%، 200% من الكمية القديمة)
         scenarios = [
             {"label": "تعديل بسيط (شراء نصف كميتك)", "add_qty": int(old_qty * 0.5)},
             {"label": "تعديل متوسط (مضاعفة الكمية - 1:1)", "add_qty": old_qty},
             {"label": "تعديل جذري (شراء ضعف كميتك - 2:1)", "add_qty": old_qty * 2}
         ]
-        
         for sc in scenarios:
             new_total_qty = old_qty + sc['add_qty']
             new_avg = (current_total + (new_price * sc['add_qty'])) / new_total_qty
             reduction = ((old_price - new_avg) / old_price) * 100
-            
             with st.container():
                 st.markdown(f"""
                 <div class='avg-card'>
