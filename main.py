@@ -2,9 +2,8 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Elite v8.2.6", layout="wide")
+st.set_page_config(page_title="EGX Sniper Elite v8.3", layout="wide")
 
-# تصميم الواجهة: توازن بين ضغط العناصر ووضوح الأرقام المهمة
 st.markdown("""
     <style>
     .stock-header { font-size: 20px !important; font-weight: bold; color: #58a6ff; }
@@ -17,7 +16,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# ================== DATA ENGINE (TradingView Connection) ==================
+# ================== DATA ENGINE ==================
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
@@ -119,7 +118,7 @@ def render_stock_ui(res, budget=10000):
             st.write(f"📉 مخاطرة (لو ضرب وقف): :red[{(res['s_e']-res['s_s'])*shares:,.0f} ج]")
 
 # ================== MAIN APP STRUCTURE ==================
-st.title("🏹 EGX Sniper Elite v8.2.6")
+st.title("🏹 EGX Sniper Elite v8.3")
 
 tab1, tab2, tab3 = st.tabs(["📡 رادار البحث", "🚨 الماسح الشامل", "🧮 حاسبة المتوسطات"])
 
@@ -158,6 +157,7 @@ with tab3:
     old_q = col_input2.number_input("الكمية التي تملكها حالياً", value=0, step=10)
     new_p = col_input3.number_input("السعر الجديد الذي ستشتري به", value=0.0, step=0.01)
     
+    # التحقق من أن البيانات الأساسية موجودة قبل عرض الاقتراحات والحاسبة الذكية
     if old_p > 0 and old_q > 0 and new_p > 0:
         current_total = old_p * old_q
         
@@ -186,26 +186,28 @@ with tab3:
 
         st.divider()
 
-        # --- الإضافة الجديدة والمطلوبة (حاسبة المستهدف) ---
-        with st.expander("🎯 ميزة إضافية: احسب لي كمية الشراء لمتوسط محدد"):
-            target_avg = st.number_input("ادخل المتوسط الذي ترغب في الوصول إليه", value=old_p-0.05, step=0.01)
-            
-            if target_avg > 0:
-                if target_avg <= new_p:
-                    st.error(f"❌ رياضياً مستحيل! المتوسط لا يمكن أن يصل لـ {target_avg} طالما تشتري بسعر {new_p}.")
-                elif target_avg >= old_p:
-                    st.warning("⚠️ هذا السعر أعلى من متوسطك الحالي!")
-                else:
-                    # المعادلة العكسية: الكمية المطلوبة = (القديمة * (القديم - المستهدف)) / (المستهدف - الجديد)
-                    needed_q = (old_q * (old_p - target_avg)) / (target_avg - new_p)
-                    total_cash = needed_q * new_p
-                    
-                    st.markdown(f"""
-                    <div class='target-box'>
-                        <h4 style='color:#58a6ff; margin-top:0;'>الخطة المطلوبة للوصول لهدفك:</h4>
-                        للوصول لمتوسط <span style='color:#3fb950;'>{target_avg:.3f} ج</span>:<br><br>
-                        ✅ يجب شراء عدد: <b style='font-size:22px; color:#3fb950;'>{int(needed_q):,}</b> سهم جديد<br>
-                        ✅ إجمالي المبلغ المطلوب: <b style='font-size:22px; color:#3fb950;'>{total_cash:,.2f} ج.م</b><br>
-                        <p style='font-size:13px; color:#8b949e; margin-top:10px;'>سيصبح إجمالي عدد أسهمك بعد التنفيذ: {int(old_q + needed_q):,} سهم.</p>
-                    </div>
-                    """, unsafe_allow_html=True)
+        # الحساب للمتوسط المستهدف (Target Average Calculator)
+        st.markdown("### 🎯 حاسبة الهدف المحدد (Target Average)")
+        target_avg = st.number_input("ادخل المتوسط الذي ترغب في الوصول إليه", value=old_p-0.01, step=0.01)
+        
+        if target_avg > 0:
+            if target_avg <= new_p:
+                st.error(f"❌ مستحيل! المتوسط لا يمكن أن يكون أقل من سعر الشراء الجديد ({new_p}).")
+            elif target_avg >= old_p:
+                st.warning("⚠️ هذا السعر أعلى من متوسطك الحالي، لا داعي للتعديل.")
+            else:
+                # المعادلة: الكمية المطلوبة = (الكمية القديمة * (السعر القديم - المستهدف)) / (المستهدف - السعر الجديد)
+                needed_q = (old_q * (old_p - target_avg)) / (target_avg - new_p)
+                total_cash = needed_q * new_p
+                
+                st.markdown(f"""
+                <div class='target-box'>
+                    <h4 style='color:#58a6ff; margin-top:0;'>الخطة المطلوبة للوصول لهدفك:</h4>
+                    للوصول لمتوسط <span style='color:#3fb950;'>{target_avg:.3f} ج</span>:<br><br>
+                    ✅ يجب شراء عدد: <b style='font-size:22px; color:#3fb950;'>{int(needed_q):,}</b> سهم جديد<br>
+                    ✅ إجمالي المبلغ المطلوب: <b style='font-size:22px; color:#3fb950;'>{total_cash:,.2f} ج.م</b><br>
+                    <p style='font-size:13px; color:#8b949e; margin-top:10px;'>إجمالي عدد أسهمك سيصبح: {int(old_q + needed_q):,} سهم.</p>
+                </div>
+                """, unsafe_allow_html=True)
+    else:
+        st.info("ℹ️ يرجى إدخال السعر القديم والكمية وسعر الشراء الجديد لتفعيل الحاسبة والاقتراحات.")
