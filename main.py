@@ -2,18 +2,29 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Elite v8.6", layout="wide")
+st.set_page_config(page_title="EGX Sniper Elite v8.7", layout="wide")
 
 st.markdown("""
     <style>
+    /* 1. ضغط التابات لأقصى درجة ممكنة للموبايل */
+    button[data-baseweb="tab"] { 
+        padding-left: 2px !important; 
+        padding-right: 2px !important; 
+        margin-right: 2px !important;
+        font-size: 11px !important; /* تصغير الخط قليلاً لضمان ظهور الـ 4 تابات */
+    }
+    .stTabs [data-baseweb="tab-list"] { gap: 2px !important; }
+
+    /* 2. تحسينات الواجهة */
     .stock-header { font-size: 18px !important; font-weight: bold; color: #58a6ff; }
     .price-callout { font-size: 18px !important; font-weight: bold; color: #3fb950; }
     .stoploss-callout { font-size: 16px !important; font-weight: bold; color: #f85149; }
     .stMetric { background-color: #161b22; border: 1px solid #30363d !important; border-radius: 8px; }
     div[data-testid="stExpander"] { border: 1px solid #30363d; background-color: #0d1117; }
     .gold-deal { border: 2px solid #ffd700 !important; background-color: #1c1c10 !important; border-radius: 12px; padding: 15px; margin-bottom: 20px; }
-    .warning-box { background-color: #2e2a0b; border: 1px solid #ffd700; color: #ffd700; padding: 10px; border-radius: 5px; margin-top: 10px; font-weight: bold; }
-    button[data-baseweb="tab"] { padding: 5px 8px !important; font-size: 14px !important; }
+    
+    /* 3. صندوق التنبيه المطور */
+    .warning-box { background-color: #2e2a0b; border: 1px solid #ffd700; color: #ffd700; padding: 12px; border-radius: 8px; margin: 10px 0; font-weight: bold; border-left: 5px solid #ffd700; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -86,32 +97,39 @@ def render_stock_ui(res):
     c2.metric("RSI", f"{res['rsi']:.1f}")
     c3.metric("الزخم", f"{res['ratio']:.1f}x")
     
-    # --- نظام التنبيه الذكي الجديد ---
-    # لو السعر الحالي أعلى من سقف نطاق الدخول بـ 1.5% يظهر التنبيه
-    buy_limit = res['t_e'] * 1.015
-    if res['p'] > buy_limit:
-        st.markdown(f"<div class='warning-box'>⚠️ السعر ابتعد عن نطاق الدخول (الحالي {res['p']:.2f} > الحد {buy_limit:.2f}).. لا تطارد السهم!</div>", unsafe_allow_html=True)
+    # --- نظام التنبيه الذكي المطور ---
+    # السماحية 1% فوق الحد العلوي لنطاق الدخول اليومي لمنع المطاردة
+    daily_entry_top = res['t_e'] * 1.008
+    safety_limit = daily_entry_top * 1.01 
+    
+    if res['p'] > safety_limit:
+        st.markdown(f"""
+            <div class='warning-box'>
+                ⚠️ تنبيه: السعر ({res['p']:.2f}) أعلى من نطاق الدخول الآمن ({daily_entry_top:.2f}). 
+                دخولك الآن يعتبر "مطاردة للسهم" بمخاطرة عالية!
+            </div>
+        """, unsafe_allow_html=True)
     
     st.divider()
 
     col_t, col_s = st.columns(2)
     with col_t:
         st.write("**🎯 مضارب يومي**")
-        # تعديل المسمى إلى "نطاق دخول" كما طلبت
-        st.markdown(f"نطاق دخول: <span class='price-callout'>{res['t_e']:.2f}-{res['t_e']*1.008:.2f}</span>", unsafe_allow_html=True)
+        # تعديل المسمى وسقف النطاق للوضوح
+        st.markdown(f"نطاق دخول: <span class='price-callout'>{res['t_e']:.2f} - {daily_entry_top:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['t_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['t_s']:.2f}</span>", unsafe_allow_html=True)
 
     with col_s:
         st.write("**🔁 سوينج أسبوعي**")
-        st.markdown(f"نطاق دخول: <span class='price-callout'>{res['s_e']:.2f}-{res['s_e']*1.008:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"نطاق دخول: <span class='price-callout'>{res['s_e']:.2f} - {res['s_e']*1.008:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['s_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
 
 # ================== MAIN APP STRUCTURE ==================
-st.title("🏹 EGX Sniper Elite v8.6")
+st.title("🏹 EGX Sniper Elite v8.7")
 
-# المسميات الجديدة الواضحة والمختصرة للموبايل
+# تابات مضغوطة جداً لتناسب الموبايل وتظهر في صف واحد
 tab1, tab2, tab3, tab4 = st.tabs(["📡 تحليل سهم", "🔭 للمراقبة", "🧮 حساب المتوسط", "💎 قنص الذهب"])
 
 with tab1:
