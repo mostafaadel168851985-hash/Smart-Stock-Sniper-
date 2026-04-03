@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (V11.0 DASHBOARD MODE) ==================
-st.set_page_config(page_title="EGX Sniper Elite v11.0", layout="wide")
+# ================== CONFIG & STYLE (V11.1 FIXED NAVIGATION) ==================
+st.set_page_config(page_title="EGX Sniper Elite v11.1", layout="wide")
 
 st.markdown("""
     <style>
@@ -47,6 +47,7 @@ if 'page' not in st.session_state:
 
 def go_to(page_name):
     st.session_state.page = page_name
+    st.rerun() # هذا السطر يحل مشكلة الضغطة الثانية ويحدث الصفحة فوراً
 
 # ================== DATA ENGINE (UNTOUCHED) ==================
 @st.cache_data(ttl=300)
@@ -156,7 +157,7 @@ def render_stock_ui(res, is_break=False):
 
 # --- 1. HOME PAGE ---
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Elite v11.0")
+    st.title("🏹 EGX Sniper Elite v11.1")
     st.markdown("### اختر الأداة المطلوبة:")
     
     if st.button("📡 تحليل سهم"): go_to('analyze')
