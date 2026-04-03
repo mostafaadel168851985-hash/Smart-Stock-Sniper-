@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Elite v8.5", layout="wide")
+st.set_page_config(page_title="EGX Sniper Elite v8.6", layout="wide")
 
 st.markdown("""
     <style>
@@ -11,11 +11,9 @@ st.markdown("""
     .stoploss-callout { font-size: 16px !important; font-weight: bold; color: #f85149; }
     .stMetric { background-color: #161b22; border: 1px solid #30363d !important; border-radius: 8px; }
     div[data-testid="stExpander"] { border: 1px solid #30363d; background-color: #0d1117; }
-    .avg-card { background-color: #1c2128; border: 1px solid #444c56; border-radius: 10px; padding: 15px; margin-bottom: 10px; }
-    .target-box { background-color: #0d1117; border: 2px solid #58a6ff; border-radius: 10px; padding: 20px; margin-top: 10px; }
     .gold-deal { border: 2px solid #ffd700 !important; background-color: #1c1c10 !important; border-radius: 12px; padding: 15px; margin-bottom: 20px; }
-    /* تحسين عرض التابات للموبايل */
-    button[data-baseweb="tab"] { padding: 5px 10px !important; }
+    .warning-box { background-color: #2e2a0b; border: 1px solid #ffd700; color: #ffd700; padding: 10px; border-radius: 5px; margin-top: 10px; font-weight: bold; }
+    button[data-baseweb="tab"] { padding: 5px 8px !important; font-size: 14px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -25,10 +23,7 @@ def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
     if scan_all:
         payload = {
-            "filter": [
-                {"left": "volume", "operation": "greater", "right": 50000},
-                {"left": "close", "operation": "greater", "right": 0.4}
-            ],
+            "filter": [{"left": "volume", "operation": "greater", "right": 50000}, {"left": "close", "operation": "greater", "right": 0.4}],
             "columns": ["name", "close", "RSI", "volume", "average_volume_10d_calc", "high", "low", "change", "description"],
             "sort": {"sortBy": "change", "sortOrder": "desc"}, "range": [0, 65]
         }
@@ -46,10 +41,8 @@ def fetch_egx_data(symbol=None, scan_all=False):
 def analyze_stock(d_row, is_scan=False):
     try:
         d = d_row['d']
-        if is_scan: 
-            name, p, rsi, v, avg_v, h, l, chg, desc = d
-        else: 
-            p, h, l, v, rsi, avg_v, chg, desc = d; name = ""
+        if is_scan: name, p, rsi, v, avg_v, h, l, chg, desc = d
+        else: p, h, l, v, rsi, avg_v, chg, desc = d; name = ""
         
         if p is None or h is None or l is None: return None
         
@@ -59,16 +52,7 @@ def analyze_stock(d_row, is_scan=False):
         
         ratio = v / (avg_v or 1)
         rsi_val = rsi if rsi is not None else 0
-        
-        # فلتر الذهب المطور لتقليل المصايد السعرية
-        is_gold = False
-        if ratio > 1.6 and 48 < rsi_val < 66 and chg > 0.5:
-            if p > ((h + l) / 2): # التأكد أن السعر يغلق في المنطقة الإيجابية لليوم
-                is_gold = True
-
-        if ratio > 1.8: mom_label = "🔥 سيولة ضخمة"
-        elif ratio > 1.1: mom_label = "✅ زخم متصاعد"
-        else: mom_label = "🆗 مستقر"
+        is_gold = (ratio > 1.6 and 48 < rsi_val < 66 and chg > 0.5 and p > ((h + l) / 2))
 
         t_score = int(90 if rsi_val < 38 else 75 if rsi_val < 55 else 40)
         s_score = int(85 if (ratio > 1.1 and 40 < rsi_val < 65) else 50)
@@ -79,7 +63,7 @@ def analyze_stock(d_row, is_scan=False):
         else: rec, col = "⚖️ انتظار", "#58a6ff"
 
         return {
-            "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio, "mom_l": mom_label,
+            "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio,
             "t_e": s1, "t_t": r1, "t_s": s1 * 0.98, "t_score": t_score,
             "s_e": p, "s_t": r2, "s_s": s2, "s_score": s_score,
             "rec": rec, "col": col, "is_gold": is_gold
@@ -102,36 +86,42 @@ def render_stock_ui(res):
     c2.metric("RSI", f"{res['rsi']:.1f}")
     c3.metric("الزخم", f"{res['ratio']:.1f}x")
     
+    # --- نظام التنبيه الذكي الجديد ---
+    # لو السعر الحالي أعلى من سقف نطاق الدخول بـ 1.5% يظهر التنبيه
+    buy_limit = res['t_e'] * 1.015
+    if res['p'] > buy_limit:
+        st.markdown(f"<div class='warning-box'>⚠️ السعر ابتعد عن نطاق الدخول (الحالي {res['p']:.2f} > الحد {buy_limit:.2f}).. لا تطارد السهم!</div>", unsafe_allow_html=True)
+    
     st.divider()
 
     col_t, col_s = st.columns(2)
     with col_t:
-        st.write("**🎯 يومي**")
-        # تحويل سعر الدخول لـ "نطاق شراء" لزيادة الأمان
-        st.markdown(f"منطقة: <span class='price-callout'>{res['t_e']:.2f}-{res['t_e']*1.008:.2f}</span>", unsafe_allow_html=True)
+        st.write("**🎯 مضارب يومي**")
+        # تعديل المسمى إلى "نطاق دخول" كما طلبت
+        st.markdown(f"نطاق دخول: <span class='price-callout'>{res['t_e']:.2f}-{res['t_e']*1.008:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['t_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['t_s']:.2f}</span>", unsafe_allow_html=True)
 
     with col_s:
-        st.write("**🔁 أسبوعي**")
-        st.markdown(f"منطقة: <span class='price-callout'>{res['s_e']:.2f}-{res['s_e']*1.008:.2f}</span>", unsafe_allow_html=True)
+        st.write("**🔁 سوينج أسبوعي**")
+        st.markdown(f"نطاق دخول: <span class='price-callout'>{res['s_e']:.2f}-{res['s_e']*1.008:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['s_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
 
 # ================== MAIN APP STRUCTURE ==================
-st.title("🏹 EGX Sniper Elite v8.5")
+st.title("🏹 EGX Sniper Elite v8.6")
 
-# تابات مختصرة جداً لتناسب شاشة الموبايل
-tab1, tab2, tab3, tab4 = st.tabs(["📡بحث", "🚨ماسح", "🧮حساب", "💎ذهبية"])
+# المسميات الجديدة الواضحة والمختصرة للموبايل
+tab1, tab2, tab3, tab4 = st.tabs(["📡 تحليل سهم", "🔭 للمراقبة", "🧮 حساب المتوسط", "💎 قنص الذهب"])
 
 with tab1:
     sym = st.text_input("ادخل كود السهم").upper().strip()
     if sym:
         data = fetch_egx_data(symbol=sym)
         if data:
-            analysis = analyze_stock(data[0])
-            if analysis: render_stock_ui(analysis)
-        else: st.error("لم يتم العثور")
+            an = analyze_stock(data[0])
+            if an: render_stock_ui(an)
+        else: st.error("غير موجود")
 
 with tab2:
     if st.button("بدء الفحص السريع 🔍"):
@@ -139,32 +129,29 @@ with tab2:
         for r in all_d:
             an = analyze_stock(r, is_scan=True)
             if an and (an['t_score'] >= 75 or an['s_score'] >= 75):
-                with st.expander(f"🚀 {an['name']} | {an['p']}"):
-                    render_stock_ui(an)
+                with st.expander(f"🚀 {an['name']} | {an['p']}"): render_stock_ui(an)
 
 with tab3:
-    st.subheader("🧮 حاسبة المتوسط")
-    col_input1, col_input2, col_input3 = st.columns(3)
-    old_p = col_input1.number_input("سعرك", value=0.0)
-    old_q = col_input2.number_input("كميتك", value=0)
-    new_p = col_input3.number_input("جديد", value=0.0)
-    
+    st.subheader("🧮 حاسبة متوسط التكلفة")
+    col1, col2, col3 = st.columns(3)
+    old_p = col1.number_input("سعرك", value=0.0)
+    old_q = col2.number_input("كميتك", value=0)
+    new_p = col3.number_input("جديد", value=0.0)
     if old_p > 0 and old_q > 0 and new_p > 0:
-        target_avg = st.number_input("المستهدف؟", value=old_p-0.01)
-        if target_avg < old_p and target_avg > new_p:
-            needed_q = (old_q * (old_p - target_avg)) / (target_avg - new_p)
-            st.success(f"اشتري {int(needed_q):,} سهم")
+        target = st.number_input("المستهدف؟", value=old_p-0.01)
+        if target < old_p and target > new_p:
+            needed = (old_q * (old_p - target)) / (target - new_p)
+            st.success(f"للوصول لـ {target:.3f}: اشتري {int(needed):,} سهم")
 
 with tab4:
-    st.subheader("💎 قناص الفرص الجاهزة")
-    if st.button("استخراج الصفقات الذهبية الآن 🏹"):
+    st.subheader("💎 قناص الصفقات الذهبية")
+    if st.button("صيد الذهب الآن 🏹"):
         all_d = fetch_egx_data(scan_all=True)
-        gold_found = False
+        found = False
         for r in all_d:
             an = analyze_stock(r, is_scan=True)
             if an and an['is_gold']:
-                gold_found = True
-                st.markdown(f"<div class='gold-deal'><b>💎 {an['name']}</b>: اختراق حقيقي بسيولة {an['ratio']:.1f}x</div>", unsafe_allow_html=True)
+                found = True
+                st.markdown(f"<div class='gold-deal'><b>💎 {an['name']}</b>: اختراق فني بسيولة {an['ratio']:.1f}x</div>", unsafe_allow_html=True)
                 render_stock_ui(an)
-        if not gold_found:
-            st.warning("لا توجد فرص مكتملة الشروط حالياً.")
+        if not found: st.warning("لا يوجد حالياً.")
