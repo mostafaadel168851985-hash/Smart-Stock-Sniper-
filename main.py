@@ -6,7 +6,12 @@ st.set_page_config(page_title="EGX Sniper Elite v10.0", layout="wide")
 
 st.markdown("""
     <style>
-    button[data-baseweb="tab"] { padding-left: 5px !important; padding-right: 5px !important; font-size: 14px !important; }
+    /* تقليل المسافات بين التابات لتظهر في سطر واحد */
+    button[data-baseweb="tab"] { 
+        padding-left: 8px !important; 
+        padding-right: 8px !important; 
+        font-size: 13px !important; 
+    }
     .stock-header { font-size: 20px !important; font-weight: bold; color: #58a6ff; }
     .price-callout { font-size: 18px !important; font-weight: bold; color: #3fb950; }
     .stoploss-callout { font-size: 16px !important; font-weight: bold; color: #f85149; }
@@ -15,7 +20,6 @@ st.markdown("""
     .avg-card { background-color: #1c2128; border: 1px solid #444c56; border-radius: 10px; padding: 15px; margin-bottom: 10px; }
     .target-box { background-color: #0d1117; border: 2px solid #58a6ff; border-radius: 10px; padding: 20px; margin-top: 10px; }
     
-    /* تنسيق مربع الزخم المطور مع الرموز */
     .vol-container {
         background-color: #161b22;
         border: 1px solid #30363d;
@@ -27,7 +31,6 @@ st.markdown("""
     .vol-value { font-size: 24px; font-weight: bold; color: white; }
     .vol-status { font-size: 13px; font-weight: bold; margin-top: 2px; }
     
-    /* تنبيه الذهب والاختراق */
     .gold-deal { border: 2px solid #ffd700 !important; background-color: #1c1c10 !important; border-radius: 12px; padding: 15px; margin-bottom: 20px; border-left: 8px solid #ffd700; }
     .breakout-card { border: 2px solid #00ffcc !important; background-color: #0a1a1a !important; border-radius: 12px; padding: 10px; margin-bottom: 10px; }
     .warning-box { background-color: #2e2a0b; border: 1px solid #ffd700; color: #ffd700; padding: 12px; border-radius: 8px; margin: 10px 0; font-weight: bold; border-left: 5px solid #ffd700; }
@@ -70,13 +73,11 @@ def analyze_stock(d_row, is_scan=False):
         ratio = v / (avg_v or 1)
         rsi_val = rsi if rsi is not None else 0
         
-        # --- الزخم مع الرموز التعبيرية ---
         if ratio < 0.7: vol_txt, vol_col = "🔴 سيولة غائبة", "#ff4b4b"
         elif 0.7 <= ratio < 1.3: vol_txt, vol_col = "⚪ تداول هادئ", "#8b949e"
         elif 1.3 <= ratio < 1.9: vol_txt, vol_col = "🟢 دخول سيولة", "#3fb950"
         else: vol_txt, vol_col = "🔥 زخم انفجاري", "#ffd700"
 
-        # معادلات الذهب والاختراق
         is_gold = (ratio > 1.6 and 48 < rsi_val < 66 and chg > 0.5 and p > ((h + l) / 2))
         is_breakout = (p > r1 * 0.998 and ratio > 1.2 and rsi_val > 50)
 
@@ -124,7 +125,6 @@ def render_stock_ui(res, is_break=False):
             </div>
         """, unsafe_allow_html=True)
     
-    # تنبيه المطاردة (v9.5 style)
     daily_entry_top = res['t_e'] * 1.008
     if res['p'] > daily_entry_top * 1.01:
         st.markdown(f"<div class='warning-box'>⚠️ تنبيه: السعر ({res['p']:.2f}) أعلى من نطاق الدخول الآمن ({daily_entry_top:.2f}). مطاردة!</div>", unsafe_allow_html=True)
@@ -147,7 +147,8 @@ def render_stock_ui(res, is_break=False):
 # ================== MAIN APP STRUCTURE ==================
 st.title("🏹 EGX Sniper Elite v10.0")
 
-tab1, tab2, tab3, tab4 = st.tabs(["📡 رادار البحث", "🔭 الماسح الشامل", "🧮 حاسبة المتوسطات", "💎 قنص الذهب"])
+# --- تفعيل التسميات الجديدة والمختصرة ---
+tab1, tab2, tab3, tab4 = st.tabs(["📡 تحليل سهم", "🔭 للمراقبة", "🧮 حساب متوسط", "💎 قنص الذهب"])
 
 with tab1:
     sym = st.text_input("ادخل كود السهم").upper().strip()
@@ -180,7 +181,6 @@ with tab2:
         if not found: st.warning("لا توجد اختراقات مؤكدة حالياً.")
 
 with tab3:
-    # --- حاسبة المتوسطات (V8.3 ORIGINAL STYLE) ---
     st.subheader("🧮 حاسبة متوسط التكلفة الذكية")
     col_input1, col_input2, col_input3 = st.columns(3)
     old_p = col_input1.number_input("سعرك القديم", value=0.0, step=0.01)
