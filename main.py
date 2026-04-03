@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (V11.3 ELITE SNIPER) ==================
-st.set_page_config(page_title="EGX Sniper Elite v11.3", layout="wide")
+# ================== CONFIG & STYLE (V11.4 ELITE SNIPER) ==================
+st.set_page_config(page_title="EGX Sniper Elite v11.4", layout="wide")
 
 st.markdown("""
     <style>
@@ -44,7 +44,7 @@ def go_to(page_name):
     st.session_state.page = page_name
     st.rerun()
 
-# ================== DATA ENGINE (UNTOUCHED) ==================
+# ================== DATA ENGINE ==================
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
@@ -64,7 +64,7 @@ def fetch_egx_data(symbol=None, scan_all=False):
         return r.get("data", [])
     except: return []
 
-# ================== ANALYSIS LOGIC (UNTOUCHED) ==================
+# ================== ANALYSIS LOGIC ==================
 def analyze_stock(d_row, is_scan=False):
     try:
         d = d_row['d']
@@ -105,7 +105,7 @@ def analyze_stock(d_row, is_scan=False):
         }
     except: return None
 
-# ================== UI COMPONENTS (UNTOUCHED) ==================
+# ================== UI COMPONENTS ==================
 def render_stock_ui(res, is_break=False):
     if not res: return
     if is_break:
@@ -152,7 +152,7 @@ def render_stock_ui(res, is_break=False):
 
 # --- 1. HOME PAGE ---
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Elite v11.3")
+    st.title("🏹 EGX Sniper Elite v11.4")
     st.markdown("### اختر الأداة المطلوبة:")
     if st.button("📡 تحليل سهم"): go_to('analyze')
     if st.button("🔭 كشاف السوق"): go_to('scanner')
@@ -171,7 +171,7 @@ elif st.session_state.page == 'analyze':
             an = analyze_stock(data[0])
             if an: render_stock_ui(an)
 
-# --- 3. SCANNER PAGE (MODIFIED FOR SMART SORTING) ---
+# --- 3. SCANNER PAGE ---
 elif st.session_state.page == 'scanner':
     if st.button("⬅️ عودة للرئيسية"): go_to('home')
     st.subheader("🔭 كشاف السوق (الأقوى فنياً فقط)")
@@ -180,19 +180,14 @@ elif st.session_state.page == 'scanner':
         results = []
         for r in all_d:
             an = analyze_stock(r, is_scan=True)
-            # فلترة: فقط السكور 70 فأكثر (لإبعاد الـ 40 الضعيف)
             if an and an['t_score'] >= 70:
                 results.append(an)
-        
-        # الترتيب حسب السكور من الأعلى للأقل
         results.sort(key=lambda x: x['t_score'], reverse=True)
-        
         if results:
             for an in results:
                 with st.expander(f"⭐ Score: {an['t_score']} | {an['name']} | P: {an['p']}"):
                     render_stock_ui(an)
-        else:
-            st.warning("لا توجد أسهم قوية حالياً تحقق الشروط.")
+        else: st.warning("لا توجد أسهم قوية حالياً.")
 
 # --- 4. BREAKOUT PAGE ---
 elif st.session_state.page == 'breakout':
@@ -208,7 +203,7 @@ elif st.session_state.page == 'breakout':
                 render_stock_ui(an, is_break=True)
         if not found: st.warning("لا توجد اختراقات حالياً.")
 
-# --- 5. AVERAGE PAGE (STABLE V11.2) ---
+# --- 5. AVERAGE PAGE ---
 elif st.session_state.page == 'average':
     if st.button("⬅️ عودة للرئيسية"): go_to('home')
     st.subheader("🧮 مساعد متوسط التكلفة")
@@ -221,57 +216,33 @@ elif st.session_state.page == 'average':
         current_total = old_p * old_q
         st.divider()
         st.markdown("#### 💡 اقتراحات تعديل المتوسط:")
-        scenarios = [
-            {"label": "تعديل بسيط (نصف)", "add_qty": int(old_q * 0.5)},
-            {"label": "تعديل متوسط (1:1)", "add_qty": old_q},
-            {"label": "تعديل جذري (2:1)", "add_qty": old_q * 2}
-        ]
+        scenarios = [{"label": "تعديل بسيط (نصف)", "add_qty": int(old_q * 0.5)}, {"label": "تعديل متوسط (1:1)", "add_qty": old_q}, {"label": "تعديل جذري (2:1)", "add_qty": old_q * 2}]
         for sc in scenarios:
             cost = sc['add_qty'] * new_p
             new_avg = (current_total + cost) / (old_q + sc['add_qty'])
-            st.markdown(f"""
-                <div class='avg-card'>
-                    <b style='color:#58a6ff;'>{sc['label']}</b>: شراء <span style='color:#3fb950;'>{sc['add_qty']:,}</span> سهم. 
-                    بتكلفة: <span style='color:#3fb950;'>{cost:,.2f} ج</span><br>
-                    المتوسط الجديد: <b style='color:#3fb950;'>{new_avg:.3f} ج</b>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"<div class='avg-card'><b style='color:#58a6ff;'>{sc['label']}</b>: شراء <span style='color:#3fb950;'>{sc['add_qty']:,}</span> سهم. بتكلفة: <span style='color:#3fb950;'>{cost:,.2f} ج</span><br>المتوسط الجديد: <b style='color:#3fb950;'>{new_avg:.3f} ج</b></div>", unsafe_allow_html=True)
         
         st.divider()
         target_avg = st.number_input("المتوسط المستهدف الذي ترغب فيه؟", value=old_p-0.01, step=0.01, format="%.2f")
-        if (new_p >= old_p and target_avg < old_p) or (new_p <= old_p and target_avg > old_p):
-             st.warning("⚠️ حسابياً: السعر الجديد لا يساعد في الوصول لهذا المتوسط.")
-        elif new_p == target_avg:
-             st.error("⚠️ السعر الجديد يساوي المتوسط المستهدف!")
-        else:
+        if new_p != target_avg:
             needed_q = (old_q * (old_p - target_avg)) / (target_avg - new_p)
             if needed_q > 0:
-                total_cost = needed_q * new_p
-                st.markdown(f"""
-                    <div class='target-box'>
-                        <h3 style='color: #58a6ff; margin-top:0;'>الخطة المطلوبة للوصول لهدفك:</h3>
-                        <p style='font-size: 1.1em;'>للوصول لمتوسط <b style='color:#3fb950;'>{target_avg:.3f} ج</b></p>
-                        <div style='text-align: right; display: inline-block;'>
-                            <p>✅ يجب شراء عدد: <b style='color:#3fb950;'>{int(needed_q):,}</b> سهم جديد</p>
-                            <p>✅ إجمالي المبلغ المطلوب: <b style='color:#3fb950;'>{total_cost:,.2f} ج.م</b></p>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"<div class='target-box'><h3 style='color: #58a6ff; margin-top:0;'>الخطة المطلوبة للوصول لهدفك:</h3><p style='font-size: 1.1em;'>للوصول لمتوسط <b style='color:#3fb950;'>{target_avg:.3f} ج</b></p><div style='text-align: right; display: inline-block;'><p>✅ يجب شراء عدد: <b style='color:#3fb950;'>{int(needed_q):,}</b> سهم جديد</p><p>✅ إجمالي المبلغ المطلوب: <b style='color:#3fb950;'>{needed_q * new_p:,.2f} ج.م</b></p></div></div>", unsafe_allow_html=True)
 
-# --- 6. GOLD PAGE (MODIFIED FOR HIGHEST QUALITY ONLY) ---
+# --- 6. GOLD PAGE (تعديل الذهب ليكون أكثر مرونة) ---
 elif st.session_state.page == 'gold':
     if st.button("⬅️ عودة للرئيسية"): go_to('home')
-    st.subheader("💎 قنص الصفقات الذهبية (الأكثر ضماناً)")
+    st.subheader("💎 قنص الصفقات الذهبية")
     if st.button("🏹 صيد الذهب الآن"):
         all_d = fetch_egx_data(scan_all=True)
         gold_results = []
         for r in all_d:
             an = analyze_stock(r, is_scan=True)
-            # الذهب يحتاج سكور أعلى من 80 بجانب شرط الذهب الأصلي
-            if an and an['is_gold'] and an['t_score'] >= 80:
+            # تم تقليل الفلتر لـ 70 بدلاً من 80 لزيادة فرص الظهور مع الحفاظ على شرط الذهب الفني
+            if an and an['is_gold'] and an['t_score'] >= 70:
                 gold_results.append(an)
         
-        # الترتيب حسب السكور
+        # ترتيب النتائج من السكور الأعلى للأقل
         gold_results.sort(key=lambda x: x['t_score'], reverse=True)
         
         if gold_results:
@@ -279,4 +250,4 @@ elif st.session_state.page == 'gold':
                 st.markdown(f"<div class='gold-deal'><b>💎 {an['name']} (Score: {an['t_score']})</b>: {an['vol_txt']}</div>", unsafe_allow_html=True)
                 render_stock_ui(an)
         else:
-            st.warning("لا يوجد فرص ذهبية 'مضمونة' حالياً. انتظر تحسن ظروف السوق.")
+            st.warning("لا يوجد ذهب حالياً. جرب البحث في 'كشاف السوق' عن فرص قوية أخرى.")
