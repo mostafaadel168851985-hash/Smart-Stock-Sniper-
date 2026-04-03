@@ -1,35 +1,36 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Elite v9.7", layout="wide")
+# ================== CONFIG & STYLE (V8.3 ORIGINAL) ==================
+st.set_page_config(page_title="EGX Sniper Elite v10.0", layout="wide")
 
 st.markdown("""
     <style>
-    button[data-baseweb="tab"] { padding-left: 2px !important; padding-right: 2px !important; margin-right: 2px !important; font-size: 11px !important; }
-    .stTabs [data-baseweb="tab-list"] { gap: 2px !important; }
-    .stock-header { font-size: 18px !important; font-weight: bold; color: #58a6ff; }
+    button[data-baseweb="tab"] { padding-left: 5px !important; padding-right: 5px !important; font-size: 14px !important; }
+    .stock-header { font-size: 20px !important; font-weight: bold; color: #58a6ff; }
     .price-callout { font-size: 18px !important; font-weight: bold; color: #3fb950; }
     .stoploss-callout { font-size: 16px !important; font-weight: bold; color: #f85149; }
-    .score-badge { background-color: #238636; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-left: 5px; }
     .stMetric { background-color: #161b22; border: 1px solid #30363d !important; border-radius: 8px; }
     div[data-testid="stExpander"] { border: 1px solid #30363d; background-color: #0d1117; }
-    .gold-deal { border: 2px solid #ffd700 !important; background-color: #1c1c10 !important; border-radius: 12px; padding: 15px; margin-bottom: 20px; }
-    .warning-box { background-color: #2e2a0b; border: 1px solid #ffd700; color: #ffd700; padding: 12px; border-radius: 8px; margin: 10px 0; font-weight: bold; border-left: 5px solid #ffd700; }
-    .breakout-card { border: 2px solid #00ffcc !important; background-color: #0a1a1a !important; border-radius: 12px; padding: 10px; margin-bottom: 10px; }
+    .avg-card { background-color: #1c2128; border: 1px solid #444c56; border-radius: 10px; padding: 15px; margin-bottom: 10px; }
+    .target-box { background-color: #0d1117; border: 2px solid #58a6ff; border-radius: 10px; padding: 20px; margin-top: 10px; }
     
-    /* تنسيق مستطيل الزخم الجديد */
+    /* تنسيق مربع الزخم المطور مع الرموز */
     .vol-container {
         background-color: #161b22;
         border: 1px solid #30363d;
         border-radius: 8px;
         padding: 10px;
         text-align: center;
-        height: 100%;
     }
     .vol-label { color: #8b949e; font-size: 14px; margin-bottom: 2px; }
-    .vol-value { font-size: 24px; font-weight: bold; color: white; margin-bottom: 0px; }
-    .vol-status { font-size: 12px; font-weight: bold; margin-top: -2px; }
+    .vol-value { font-size: 24px; font-weight: bold; color: white; }
+    .vol-status { font-size: 13px; font-weight: bold; margin-top: 2px; }
+    
+    /* تنبيه الذهب والاختراق */
+    .gold-deal { border: 2px solid #ffd700 !important; background-color: #1c1c10 !important; border-radius: 12px; padding: 15px; margin-bottom: 20px; border-left: 8px solid #ffd700; }
+    .breakout-card { border: 2px solid #00ffcc !important; background-color: #0a1a1a !important; border-radius: 12px; padding: 10px; margin-bottom: 10px; }
+    .warning-box { background-color: #2e2a0b; border: 1px solid #ffd700; color: #ffd700; padding: 12px; border-radius: 8px; margin: 10px 0; font-weight: bold; border-left: 5px solid #ffd700; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -69,12 +70,13 @@ def analyze_stock(d_row, is_scan=False):
         ratio = v / (avg_v or 1)
         rsi_val = rsi if rsi is not None else 0
         
-        # --- منطق وصف الزخم ---
-        if ratio < 0.7: vol_txt, vol_col = "سيولة غائبة", "#ff4b4b"
-        elif 0.7 <= ratio < 1.3: vol_txt, vol_col = "تداول هادئ", "#8b949e"
-        elif 1.3 <= ratio < 1.9: vol_txt, vol_col = "دخول سيولة", "#3fb950"
-        else: vol_txt, vol_col = "زخم انفجاري", "#ffd700"
+        # --- الزخم مع الرموز التعبيرية ---
+        if ratio < 0.7: vol_txt, vol_col = "🔴 سيولة غائبة", "#ff4b4b"
+        elif 0.7 <= ratio < 1.3: vol_txt, vol_col = "⚪ تداول هادئ", "#8b949e"
+        elif 1.3 <= ratio < 1.9: vol_txt, vol_col = "🟢 دخول سيولة", "#3fb950"
+        else: vol_txt, vol_col = "🔥 زخم انفجاري", "#ffd700"
 
+        # معادلات الذهب والاختراق
         is_gold = (ratio > 1.6 and 48 < rsi_val < 66 and chg > 0.5 and p > ((h + l) / 2))
         is_breakout = (p > r1 * 0.998 and ratio > 1.2 and rsi_val > 50)
 
@@ -105,15 +107,14 @@ def render_stock_ui(res, is_break=False):
     st.markdown(f"""
         <div style='display: flex; justify-content: space-between; align-items: center;'>
             <span class='stock-header'>{res['name']} {res['desc'][:15]}</span>
-            <span style='color:{res['col']}; font-weight:bold; border:1px solid {res['col']}; padding:2px 10px; border-radius:6px; font-size:14px;'>{res['rec']}</span>
+            <span style='color:{res['col']}; font-weight:bold; border:1px solid {res['col']}; padding:3px 12px; border-radius:6px; font-size:15px;'>{res['rec']}</span>
         </div>
     """, unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns(3)
-    c1.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
-    c2.metric("RSI", f"{res['rsi']:.1f}")
+    c1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
+    c2.metric("مؤشر RSI", f"{res['rsi']:.1f}")
     
-    # --- تصميم الزخم المدمج ---
     with c3:
         st.markdown(f"""
             <div class='vol-container'>
@@ -123,31 +124,30 @@ def render_stock_ui(res, is_break=False):
             </div>
         """, unsafe_allow_html=True)
     
+    # تنبيه المطاردة (v9.5 style)
     daily_entry_top = res['t_e'] * 1.008
-    safety_limit = daily_entry_top * 1.01 
-    
-    if res['p'] > safety_limit:
+    if res['p'] > daily_entry_top * 1.01:
         st.markdown(f"<div class='warning-box'>⚠️ تنبيه: السعر ({res['p']:.2f}) أعلى من نطاق الدخول الآمن ({daily_entry_top:.2f}). مطاردة!</div>", unsafe_allow_html=True)
     
     st.divider()
 
     col_t, col_s = st.columns(2)
     with col_t:
-        st.markdown(f"**🎯 مضارب يومي <span class='score-badge'>{res['t_score']}</span>**", unsafe_allow_html=True)
+        st.markdown(f"**🎯 مضارب يومي ({res['t_score']})**")
         st.markdown(f"نطاق دخول: <span class='price-callout'>{res['t_e']:.2f} - {daily_entry_top:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['t_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['t_s']:.2f}</span>", unsafe_allow_html=True)
 
     with col_s:
-        st.markdown(f"**🔁 سوينج أسبوعي <span class='score-badge'>{res['s_score']}</span>**", unsafe_allow_html=True)
-        st.markdown(f"نطاق دخول: <span class='price-callout'>{res['s_e']:.2f} - {res['s_e']*1.008:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"**🔁 سوينج أسبوعي ({res['s_score']})**")
+        st.markdown(f"نطاق دخول: <span class='price-callout'>{res['s_e']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['s_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
 
 # ================== MAIN APP STRUCTURE ==================
-st.title("🏹 EGX Sniper Elite v9.7")
+st.title("🏹 EGX Sniper Elite v10.0")
 
-tab1, tab2, tab3, tab4 = st.tabs(["📡 تحليل سهم", "🔭 للمراقبة", "🧮 حساب المتوسط", "💎 قنص الذهب"])
+tab1, tab2, tab3, tab4 = st.tabs(["📡 رادار البحث", "🔭 الماسح الشامل", "🧮 حاسبة المتوسطات", "💎 قنص الذهب"])
 
 with tab1:
     sym = st.text_input("ادخل كود السهم").upper().strip()
@@ -159,10 +159,8 @@ with tab1:
 
 with tab2:
     col_l, col_r = st.columns(2)
-    with col_l:
-        scan_btn = st.button("🔍 فحص سريع")
-    with col_r:
-        break_btn = st.button("🚀 كشف الاختراقات")
+    with col_l: scan_btn = st.button("🔍 فحص سريع")
+    with col_r: break_btn = st.button("🚀 كشف الاختراقات")
 
     if scan_btn:
         all_d = fetch_egx_data(scan_all=True)
@@ -182,13 +180,29 @@ with tab2:
         if not found: st.warning("لا توجد اختراقات مؤكدة حالياً.")
 
 with tab3:
-    st.subheader("🧮 حاسبة متوسط التكلفة")
-    c1, c2, c3 = st.columns(3)
-    op, oq, np = c1.number_input("سعرك", 0.0), c2.number_input("كميتك", 0), c3.number_input("جديد", 0.0)
-    if op > 0 and oq > 0 and np > 0:
-        target = st.number_input("المستهدف؟", value=op-0.01)
-        needed = (oq * (op - target)) / (target - np)
-        st.success(f"للوصول لـ {target:.3f}: اشتري {int(needed):,} سهم")
+    # --- حاسبة المتوسطات (V8.3 ORIGINAL STYLE) ---
+    st.subheader("🧮 حاسبة متوسط التكلفة الذكية")
+    col_input1, col_input2, col_input3 = st.columns(3)
+    old_p = col_input1.number_input("سعرك القديم", value=0.0, step=0.01)
+    old_q = col_input2.number_input("الكمية الحالية", value=0, step=10)
+    new_p = col_input3.number_input("السعر الجديد", value=0.0, step=0.01)
+    
+    if old_p > 0 and old_q > 0 and new_p > 0:
+        current_total = old_p * old_q
+        st.divider()
+        st.markdown("#### 💡 اقتراحات التعديل:")
+        scenarios = [{"label": "تعديل بسيط (نصف الكمية)", "add_qty": int(old_q * 0.5)},
+                     {"label": "تعديل متوسط (1:1)", "add_qty": old_q},
+                     {"label": "تعديل جذري (2:1)", "add_qty": old_q * 2}]
+        for sc in scenarios:
+            new_avg = (current_total + (new_p * sc['add_qty'])) / (old_q + sc['add_qty'])
+            st.markdown(f"<div class='avg-card'><b>{sc['label']}</b>: شراء {sc['add_qty']} سهم. المتوسط الجديد: <span style='color:#3fb950;'>{new_avg:.3f} ج</span></div>", unsafe_allow_html=True)
+        
+        st.markdown("### 🎯 الوصول لمتوسط محدد")
+        target_avg = st.number_input("المتوسط المستهدف؟", value=old_p-0.01)
+        if target_avg > new_p and target_avg < old_p:
+            needed_q = (old_q * (old_p - target_avg)) / (target_avg - new_p)
+            st.markdown(f"<div class='target-box'>للوصول لـ {target_avg:.3f}: اشتري <b style='color:#3fb950;'>{int(needed_q):,}</b> سهم بتكلفة {needed_q*new_p:,.0f} ج</div>", unsafe_allow_html=True)
 
 with tab4:
     st.subheader("💎 قناص الصفقات الذهبية")
@@ -201,4 +215,4 @@ with tab4:
                 found = True
                 st.markdown(f"<div class='gold-deal'><b>💎 {an['name']} (Score: {an['t_score']})</b>: {an['vol_txt']} ({an['ratio']:.1f}x)</div>", unsafe_allow_html=True)
                 render_stock_ui(an)
-        if not found: st.warning("لا يوجد حالياً.")
+        if not found: st.warning("لا يوجد ذهب حالياً.")
