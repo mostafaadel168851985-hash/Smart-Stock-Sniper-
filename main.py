@@ -1,20 +1,20 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (V10.1 MODIFIED) ==================
-st.set_page_config(page_title="EGX Sniper Elite v10.1", layout="wide")
+# ================== CONFIG & STYLE (V11.0 DASHBOARD MODE) ==================
+st.set_page_config(page_title="EGX Sniper Elite v11.0", layout="wide")
 
 st.markdown("""
     <style>
-    /* موازنة المسافات لظهور المسميات الطويلة في سطر واحد */
-    button[data-baseweb="tab"] { 
-        padding-left: 3px !important; 
-        padding-right: 3px !important; 
-        margin-left: 1px !important;
-        margin-right: 1px !important;
-        font-size: 11px !important; 
+    /* تنسيق أزرار القائمة الرئيسية */
+    .stButton>button {
+        width: 100%;
+        border-radius: 12px;
+        height: 3em;
+        font-size: 18px !important;
+        font-weight: bold !important;
+        margin-bottom: 10px;
     }
-    div[data-testid="stTabs"] { gap: 0px !important; }
     
     .stock-header { font-size: 18px !important; font-weight: bold; color: #58a6ff; }
     .price-callout { font-size: 16px !important; font-weight: bold; color: #3fb950; }
@@ -41,7 +41,14 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# ================== DATA ENGINE ==================
+# ================== APP STATE MANAGEMENT ==================
+if 'page' not in st.session_state:
+    st.session_state.page = 'home'
+
+def go_to(page_name):
+    st.session_state.page = page_name
+
+# ================== DATA ENGINE (UNTOUCHED) ==================
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
@@ -61,7 +68,7 @@ def fetch_egx_data(symbol=None, scan_all=False):
         return r.get("data", [])
     except: return []
 
-# ================== ANALYSIS LOGIC ==================
+# ================== ANALYSIS LOGIC (UNTOUCHED) ==================
 def analyze_stock(d_row, is_scan=False):
     try:
         d = d_row['d']
@@ -102,10 +109,9 @@ def analyze_stock(d_row, is_scan=False):
         }
     except: return None
 
-# ================== UI COMPONENTS ==================
+# ================== UI COMPONENTS (UNTOUCHED) ==================
 def render_stock_ui(res, is_break=False):
     if not res: return
-    
     if is_break:
         st.markdown(f"<div class='breakout-card'>🚀 <b>اختراق حقيقي: {res['name']} (Score: {res['t_score']})</b></div>", unsafe_allow_html=True)
 
@@ -134,27 +140,35 @@ def render_stock_ui(res, is_break=False):
         st.markdown(f"<div class='warning-box'>⚠️ السعر ({res['p']:.2f}) أعلى من الدخول ({daily_entry_top:.2f}). مطاردة!</div>", unsafe_allow_html=True)
     
     st.divider()
-
     col_t, col_s = st.columns(2)
     with col_t:
         st.markdown(f"**🎯 مضارب ({res['t_score']})**")
         st.markdown(f"دخول: <span class='price-callout'>{res['t_e']:.2f} - {daily_entry_top:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['t_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['t_s']:.2f}</span>", unsafe_allow_html=True)
-
     with col_s:
         st.markdown(f"**🔁 سوينج ({res['s_score']})**")
         st.markdown(f"دخول: <span class='price-callout'>{res['s_e']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['s_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
 
-# ================== MAIN APP STRUCTURE ==================
-st.title("🏹 EGX Sniper v10.1")
+# ================== NAVIGATION SYSTEM ==================
 
-# الأسماء الجديدة الواضحة مع الحفاظ على المساحة
-tab1, tab2, tab3, tab4 = st.tabs(["📡 تحليل سهم", "🔭 للمراقبة", "🧮 حساب متوسط", "💎 قنص الذهب"])
+# --- 1. HOME PAGE ---
+if st.session_state.page == 'home':
+    st.title("🏹 EGX Sniper Elite v11.0")
+    st.markdown("### اختر الأداة المطلوبة:")
+    
+    if st.button("📡 تحليل سهم"): go_to('analyze')
+    if st.button("🔭 كشاف السوق"): go_to('scanner')
+    if st.button("🚀 رادار الاختراقات"): go_to('breakout')
+    if st.button("🧮 مساعد المتوسطات"): go_to('average')
+    if st.button("💎 قنص الذهب"): go_to('gold')
 
-with tab1:
+# --- 2. ANALYZE PAGE ---
+elif st.session_state.page == 'analyze':
+    if st.button("⬅️ عودة للرئيسية"): go_to('home')
+    st.subheader("📡 تحليل سهم محدد")
     sym = st.text_input("كود السهم").upper().strip()
     if sym:
         data = fetch_egx_data(symbol=sym)
@@ -162,20 +176,22 @@ with tab1:
             an = analyze_stock(data[0])
             if an: render_stock_ui(an)
 
-with tab2:
-    col_l, col_r = st.columns(2)
-    with col_l: scan_btn = st.button("🔍 فحص")
-    with col_r: break_btn = st.button("🚀 اختراق")
-
-    if scan_btn:
+# --- 3. SCANNER PAGE ---
+elif st.session_state.page == 'scanner':
+    if st.button("⬅️ عودة للرئيسية"): go_to('home')
+    st.subheader("🔭 كشاف السوق")
+    if st.button("🔍 بدء الفحص الشامل"):
         all_d = fetch_egx_data(scan_all=True)
         for r in all_d:
             an = analyze_stock(r, is_scan=True)
             if an and (an['t_score'] >= 75 or an['rsi'] > 45):
-                # استبدال حرف S بكلمة Score كاملة للوضوح
                 with st.expander(f"🚀 {an['name']} | P: {an['p']} | Score: {an['t_score']}"): render_stock_ui(an)
-                
-    if break_btn:
+
+# --- 4. BREAKOUT PAGE ---
+elif st.session_state.page == 'breakout':
+    if st.button("⬅️ عودة للرئيسية"): go_to('home')
+    st.subheader("🚀 رادار الاختراقات")
+    if st.button("📡 مسح الاختراقات اللحظية"):
         all_d = fetch_egx_data(scan_all=True)
         found = False
         for r in all_d:
@@ -183,10 +199,12 @@ with tab2:
             if an and an['is_break']:
                 found = True
                 render_stock_ui(an, is_break=True)
-        if not found: st.warning("لا توجد اختراقات.")
+        if not found: st.warning("لا توجد اختراقات حالياً.")
 
-with tab3:
-    st.subheader("🧮 حاسبة متوسط التكلفة")
+# --- 5. AVERAGE PAGE ---
+elif st.session_state.page == 'average':
+    if st.button("⬅️ عودة للرئيسية"): go_to('home')
+    st.subheader("🧮 مساعد متوسط التكلفة")
     col_input1, col_input2, col_input3 = st.columns(3)
     old_p = col_input1.number_input("قديم", value=0.0, step=0.01)
     old_q = col_input2.number_input("كمية", value=0, step=10)
@@ -195,22 +213,24 @@ with tab3:
     if old_p > 0 and old_q > 0 and new_p > 0:
         current_total = old_p * old_q
         st.divider()
-        st.markdown("#### 💡 اقتراحات:")
+        st.markdown("#### 💡 اقتراحات التعديل:")
         scenarios = [{"label": "بسيط (نصف)", "add_qty": int(old_q * 0.5)},
                      {"label": "متوسط (1:1)", "add_qty": old_q},
                      {"label": "جذري (2:1)", "add_qty": old_q * 2}]
         for sc in scenarios:
             new_avg = (current_total + (new_p * sc['add_qty'])) / (old_q + sc['add_qty'])
-            st.markdown(f"<div class='avg-card'><b>{sc['label']}</b>: +{sc['add_qty']} سهم. المتوسط: <span style='color:#3fb950;'>{new_avg:.3f}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='avg-card'><b>{sc['label']}</b>: +{sc['add_qty']} سهم. المتوسط الجديد: <span style='color:#3fb950;'>{new_avg:.3f}</span></div>", unsafe_allow_html=True)
         
         target_avg = st.number_input("المتوسط المستهدف؟", value=old_p-0.01)
         if target_avg > new_p and target_avg < old_p:
             needed_q = (old_q * (old_p - target_avg)) / (target_avg - new_p)
-            st.markdown(f"<div class='target-box'>للمتوسط {target_avg:.3f}: اشتري <b style='color:#3fb950;'>{int(needed_q):,}</b> سهم</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='target-box'>للوصول لـ {target_avg:.3f}: اشتري <b style='color:#3fb950;'>{int(needed_q):,}</b> سهم</div>", unsafe_allow_html=True)
 
-with tab4:
+# --- 6. GOLD PAGE ---
+elif st.session_state.page == 'gold':
+    if st.button("⬅️ عودة للرئيسية"): go_to('home')
     st.subheader("💎 قنص الصفقات الذهبية")
-    if st.button("صيد الذهب 🏹"):
+    if st.button("🏹 صيد الذهب الآن"):
         all_d = fetch_egx_data(scan_all=True)
         found = False
         for r in all_d:
