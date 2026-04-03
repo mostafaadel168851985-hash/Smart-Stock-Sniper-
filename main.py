@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (V11.2 MODIFIED) ==================
-st.set_page_config(page_title="EGX Sniper Elite v11.2", layout="wide")
+# ================== CONFIG & STYLE (V11.3 ELITE SNIPER) ==================
+st.set_page_config(page_title="EGX Sniper Elite v11.3", layout="wide")
 
 st.markdown("""
     <style>
@@ -22,30 +22,10 @@ st.markdown("""
     .stMetric { background-color: #161b22; border: 1px solid #30363d !important; border-radius: 8px; padding: 5px !important; }
     div[data-testid="stExpander"] { border: 1px solid #30363d; background-color: #0d1117; }
     
-    /* تنسيق كروت المتوسطات لتطابق الصور */
-    .avg-card { 
-        background-color: #1c2128; 
-        border: 1px solid #444c56; 
-        border-radius: 10px; 
-        padding: 15px; 
-        margin-bottom: 10px; 
-    }
-    .target-box { 
-        background-color: #0d1117; 
-        border: 2px solid #58a6ff; 
-        border-radius: 12px; 
-        padding: 20px; 
-        margin-top: 15px;
-        text-align: center;
-    }
+    .avg-card { background-color: #1c2128; border: 1px solid #444c56; border-radius: 10px; padding: 15px; margin-bottom: 10px; }
+    .target-box { background-color: #0d1117; border: 2px solid #58a6ff; border-radius: 12px; padding: 20px; margin-top: 15px; text-align: center; }
     
-    .vol-container {
-        background-color: #161b22;
-        border: 1px solid #30363d;
-        border-radius: 8px;
-        padding: 8px;
-        text-align: center;
-    }
+    .vol-container { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px; text-align: center; }
     .vol-label { color: #8b949e; font-size: 12px; margin-bottom: 2px; }
     .vol-value { font-size: 20px; font-weight: bold; color: white; }
     .vol-status { font-size: 11px; font-weight: bold; margin-top: 2px; }
@@ -172,9 +152,8 @@ def render_stock_ui(res, is_break=False):
 
 # --- 1. HOME PAGE ---
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Elite v11.2")
+    st.title("🏹 EGX Sniper Elite v11.3")
     st.markdown("### اختر الأداة المطلوبة:")
-    
     if st.button("📡 تحليل سهم"): go_to('analyze')
     if st.button("🔭 كشاف السوق"): go_to('scanner')
     if st.button("🚀 رادار الاختراقات"): go_to('breakout')
@@ -192,16 +171,28 @@ elif st.session_state.page == 'analyze':
             an = analyze_stock(data[0])
             if an: render_stock_ui(an)
 
-# --- 3. SCANNER PAGE ---
+# --- 3. SCANNER PAGE (MODIFIED FOR SMART SORTING) ---
 elif st.session_state.page == 'scanner':
     if st.button("⬅️ عودة للرئيسية"): go_to('home')
-    st.subheader("🔭 كشاف السوق")
+    st.subheader("🔭 كشاف السوق (الأقوى فنياً فقط)")
     if st.button("🔍 بدء الفحص الشامل"):
         all_d = fetch_egx_data(scan_all=True)
+        results = []
         for r in all_d:
             an = analyze_stock(r, is_scan=True)
-            if an and (an['t_score'] >= 75 or an['rsi'] > 45):
-                with st.expander(f"🚀 {an['name']} | P: {an['p']} | Score: {an['t_score']}"): render_stock_ui(an)
+            # فلترة: فقط السكور 70 فأكثر (لإبعاد الـ 40 الضعيف)
+            if an and an['t_score'] >= 70:
+                results.append(an)
+        
+        # الترتيب حسب السكور من الأعلى للأقل
+        results.sort(key=lambda x: x['t_score'], reverse=True)
+        
+        if results:
+            for an in results:
+                with st.expander(f"⭐ Score: {an['t_score']} | {an['name']} | P: {an['p']}"):
+                    render_stock_ui(an)
+        else:
+            st.warning("لا توجد أسهم قوية حالياً تحقق الشروط.")
 
 # --- 4. BREAKOUT PAGE ---
 elif st.session_state.page == 'breakout':
@@ -217,11 +208,10 @@ elif st.session_state.page == 'breakout':
                 render_stock_ui(an, is_break=True)
         if not found: st.warning("لا توجد اختراقات حالياً.")
 
-# --- 5. AVERAGE PAGE (FIXED TO MATCH V10.1 IMAGES) ---
+# --- 5. AVERAGE PAGE (STABLE V11.2) ---
 elif st.session_state.page == 'average':
     if st.button("⬅️ عودة للرئيسية"): go_to('home')
     st.subheader("🧮 مساعد متوسط التكلفة")
-    
     col_input1, col_input2, col_input3 = st.columns(3)
     old_p = col_input1.number_input("قديم", value=0.0, step=0.01, format="%.2f")
     old_q = col_input2.number_input("كمية", value=0, step=10)
@@ -231,14 +221,11 @@ elif st.session_state.page == 'average':
         current_total = old_p * old_q
         st.divider()
         st.markdown("#### 💡 اقتراحات تعديل المتوسط:")
-        
-        # الاقتراحات الثابتة بتنسيق الكروت
         scenarios = [
             {"label": "تعديل بسيط (نصف)", "add_qty": int(old_q * 0.5)},
             {"label": "تعديل متوسط (1:1)", "add_qty": old_q},
             {"label": "تعديل جذري (2:1)", "add_qty": old_q * 2}
         ]
-        
         for sc in scenarios:
             cost = sc['add_qty'] * new_p
             new_avg = (current_total + cost) / (old_q + sc['add_qty'])
@@ -250,10 +237,8 @@ elif st.session_state.page == 'average':
                 </div>
             """, unsafe_allow_html=True)
         
-        # جزء حساب المتوسط المستهدف (المربع الأزرق)
         st.divider()
         target_avg = st.number_input("المتوسط المستهدف الذي ترغب فيه؟", value=old_p-0.01, step=0.01, format="%.2f")
-        
         if (new_p >= old_p and target_avg < old_p) or (new_p <= old_p and target_avg > old_p):
              st.warning("⚠️ حسابياً: السعر الجديد لا يساعد في الوصول لهذا المتوسط.")
         elif new_p == target_avg:
@@ -273,17 +258,25 @@ elif st.session_state.page == 'average':
                     </div>
                 """, unsafe_allow_html=True)
 
-# --- 6. GOLD PAGE ---
+# --- 6. GOLD PAGE (MODIFIED FOR HIGHEST QUALITY ONLY) ---
 elif st.session_state.page == 'gold':
     if st.button("⬅️ عودة للرئيسية"): go_to('home')
-    st.subheader("💎 قنص الصفقات الذهبية")
+    st.subheader("💎 قنص الصفقات الذهبية (الأكثر ضماناً)")
     if st.button("🏹 صيد الذهب الآن"):
         all_d = fetch_egx_data(scan_all=True)
-        found = False
+        gold_results = []
         for r in all_d:
             an = analyze_stock(r, is_scan=True)
-            if an and an['is_gold']:
-                found = True
+            # الذهب يحتاج سكور أعلى من 80 بجانب شرط الذهب الأصلي
+            if an and an['is_gold'] and an['t_score'] >= 80:
+                gold_results.append(an)
+        
+        # الترتيب حسب السكور
+        gold_results.sort(key=lambda x: x['t_score'], reverse=True)
+        
+        if gold_results:
+            for an in gold_results:
                 st.markdown(f"<div class='gold-deal'><b>💎 {an['name']} (Score: {an['t_score']})</b>: {an['vol_txt']}</div>", unsafe_allow_html=True)
                 render_stock_ui(an)
-        if not found: st.warning("لا يوجد ذهب حالياً.")
+        else:
+            st.warning("لا يوجد فرص ذهبية 'مضمونة' حالياً. انتظر تحسن ظروف السوق.")
