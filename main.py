@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (V11.1 FIXED NAVIGATION) ==================
-st.set_page_config(page_title="EGX Sniper Elite v11.1", layout="wide")
+# ================== CONFIG & STYLE (V11.2 MODIFIED) ==================
+st.set_page_config(page_title="EGX Sniper Elite v11.2", layout="wide")
 
 st.markdown("""
     <style>
@@ -21,8 +21,23 @@ st.markdown("""
     .stoploss-callout { font-size: 14px !important; font-weight: bold; color: #f85149; }
     .stMetric { background-color: #161b22; border: 1px solid #30363d !important; border-radius: 8px; padding: 5px !important; }
     div[data-testid="stExpander"] { border: 1px solid #30363d; background-color: #0d1117; }
-    .avg-card { background-color: #1c2128; border: 1px solid #444c56; border-radius: 10px; padding: 12px; margin-bottom: 8px; }
-    .target-box { background-color: #0d1117; border: 2px solid #58a6ff; border-radius: 10px; padding: 15px; margin-top: 10px; }
+    
+    /* تنسيق كروت المتوسطات لتطابق الصور */
+    .avg-card { 
+        background-color: #1c2128; 
+        border: 1px solid #444c56; 
+        border-radius: 10px; 
+        padding: 15px; 
+        margin-bottom: 10px; 
+    }
+    .target-box { 
+        background-color: #0d1117; 
+        border: 2px solid #58a6ff; 
+        border-radius: 12px; 
+        padding: 20px; 
+        margin-top: 15px;
+        text-align: center;
+    }
     
     .vol-container {
         background-color: #161b22;
@@ -47,7 +62,7 @@ if 'page' not in st.session_state:
 
 def go_to(page_name):
     st.session_state.page = page_name
-    st.rerun() # هذا السطر يحل مشكلة الضغطة الثانية ويحدث الصفحة فوراً
+    st.rerun()
 
 # ================== DATA ENGINE (UNTOUCHED) ==================
 @st.cache_data(ttl=300)
@@ -157,7 +172,7 @@ def render_stock_ui(res, is_break=False):
 
 # --- 1. HOME PAGE ---
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Elite v11.1")
+    st.title("🏹 EGX Sniper Elite v11.2")
     st.markdown("### اختر الأداة المطلوبة:")
     
     if st.button("📡 تحليل سهم"): go_to('analyze')
@@ -202,30 +217,61 @@ elif st.session_state.page == 'breakout':
                 render_stock_ui(an, is_break=True)
         if not found: st.warning("لا توجد اختراقات حالياً.")
 
-# --- 5. AVERAGE PAGE ---
+# --- 5. AVERAGE PAGE (FIXED TO MATCH V10.1 IMAGES) ---
 elif st.session_state.page == 'average':
     if st.button("⬅️ عودة للرئيسية"): go_to('home')
     st.subheader("🧮 مساعد متوسط التكلفة")
+    
     col_input1, col_input2, col_input3 = st.columns(3)
-    old_p = col_input1.number_input("قديم", value=0.0, step=0.01)
+    old_p = col_input1.number_input("قديم", value=0.0, step=0.01, format="%.2f")
     old_q = col_input2.number_input("كمية", value=0, step=10)
-    new_p = col_input3.number_input("جديد", value=0.0, step=0.01)
+    new_p = col_input3.number_input("جديد", value=0.0, step=0.01, format="%.2f")
     
     if old_p > 0 and old_q > 0 and new_p > 0:
         current_total = old_p * old_q
         st.divider()
-        st.markdown("#### 💡 اقتراحات التعديل:")
-        scenarios = [{"label": "بسيط (نصف)", "add_qty": int(old_q * 0.5)},
-                     {"label": "متوسط (1:1)", "add_qty": old_q},
-                     {"label": "جذري (2:1)", "add_qty": old_q * 2}]
-        for sc in scenarios:
-            new_avg = (current_total + (new_p * sc['add_qty'])) / (old_q + sc['add_qty'])
-            st.markdown(f"<div class='avg-card'><b>{sc['label']}</b>: +{sc['add_qty']} سهم. المتوسط الجديد: <span style='color:#3fb950;'>{new_avg:.3f}</span></div>", unsafe_allow_html=True)
+        st.markdown("#### 💡 اقتراحات تعديل المتوسط:")
         
-        target_avg = st.number_input("المتوسط المستهدف؟", value=old_p-0.01)
-        if target_avg > new_p and target_avg < old_p:
+        # الاقتراحات الثابتة بتنسيق الكروت
+        scenarios = [
+            {"label": "تعديل بسيط (نصف)", "add_qty": int(old_q * 0.5)},
+            {"label": "تعديل متوسط (1:1)", "add_qty": old_q},
+            {"label": "تعديل جذري (2:1)", "add_qty": old_q * 2}
+        ]
+        
+        for sc in scenarios:
+            cost = sc['add_qty'] * new_p
+            new_avg = (current_total + cost) / (old_q + sc['add_qty'])
+            st.markdown(f"""
+                <div class='avg-card'>
+                    <b style='color:#58a6ff;'>{sc['label']}</b>: شراء <span style='color:#3fb950;'>{sc['add_qty']:,}</span> سهم. 
+                    بتكلفة: <span style='color:#3fb950;'>{cost:,.2f} ج</span><br>
+                    المتوسط الجديد: <b style='color:#3fb950;'>{new_avg:.3f} ج</b>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # جزء حساب المتوسط المستهدف (المربع الأزرق)
+        st.divider()
+        target_avg = st.number_input("المتوسط المستهدف الذي ترغب فيه؟", value=old_p-0.01, step=0.01, format="%.2f")
+        
+        if (new_p >= old_p and target_avg < old_p) or (new_p <= old_p and target_avg > old_p):
+             st.warning("⚠️ حسابياً: السعر الجديد لا يساعد في الوصول لهذا المتوسط.")
+        elif new_p == target_avg:
+             st.error("⚠️ السعر الجديد يساوي المتوسط المستهدف!")
+        else:
             needed_q = (old_q * (old_p - target_avg)) / (target_avg - new_p)
-            st.markdown(f"<div class='target-box'>للوصول لـ {target_avg:.3f}: اشتري <b style='color:#3fb950;'>{int(needed_q):,}</b> سهم</div>", unsafe_allow_html=True)
+            if needed_q > 0:
+                total_cost = needed_q * new_p
+                st.markdown(f"""
+                    <div class='target-box'>
+                        <h3 style='color: #58a6ff; margin-top:0;'>الخطة المطلوبة للوصول لهدفك:</h3>
+                        <p style='font-size: 1.1em;'>للوصول لمتوسط <b style='color:#3fb950;'>{target_avg:.3f} ج</b></p>
+                        <div style='text-align: right; display: inline-block;'>
+                            <p>✅ يجب شراء عدد: <b style='color:#3fb950;'>{int(needed_q):,}</b> سهم جديد</p>
+                            <p>✅ إجمالي المبلغ المطلوب: <b style='color:#3fb950;'>{total_cost:,.2f} ج.م</b></p>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
 
 # --- 6. GOLD PAGE ---
 elif st.session_state.page == 'gold':
