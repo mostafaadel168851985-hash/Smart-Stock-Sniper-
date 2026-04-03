@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Elite v9.4", layout="wide")
+st.set_page_config(page_title="EGX Sniper Elite v9.5", layout="wide")
 
 st.markdown("""
     <style>
@@ -80,7 +80,7 @@ def render_stock_ui(res, is_break=False):
     if not res: return
     
     if is_break:
-        st.markdown(f"<div class='breakout-card'>🚀 <b>اختراق حقيقي: {res['name']} (Score: {res['t_score']}%)</b></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='breakout-card'>🚀 <b>اختراق حقيقي: {res['name']} (Score: {res['t_score']})</b></div>", unsafe_allow_html=True)
 
     st.markdown(f"""
         <div style='display: flex; justify-content: space-between; align-items: center;'>
@@ -104,19 +104,19 @@ def render_stock_ui(res, is_break=False):
 
     col_t, col_s = st.columns(2)
     with col_t:
-        st.markdown(f"**🎯 مضارب يومي <span class='score-badge'>{res['t_score']}%</span>**", unsafe_allow_html=True)
+        st.markdown(f"**🎯 مضارب يومي <span class='score-badge'>{res['t_score']}</span>**", unsafe_allow_html=True)
         st.markdown(f"نطاق دخول: <span class='price-callout'>{res['t_e']:.2f} - {daily_entry_top:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['t_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['t_s']:.2f}</span>", unsafe_allow_html=True)
 
     with col_s:
-        st.markdown(f"**🔁 سوينج أسبوعي <span class='score-badge'>{res['s_score']}%</span>**", unsafe_allow_html=True)
+        st.markdown(f"**🔁 سوينج أسبوعي <span class='score-badge'>{res['s_score']}</span>**", unsafe_allow_html=True)
         st.markdown(f"نطاق دخول: <span class='price-callout'>{res['s_e']:.2f} - {res['s_e']*1.008:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['s_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
 
 # ================== MAIN APP STRUCTURE ==================
-st.title("🏹 EGX Sniper Elite v9.4")
+st.title("🏹 EGX Sniper Elite v9.5")
 
 tab1, tab2, tab3, tab4 = st.tabs(["📡 تحليل سهم", "🔭 للمراقبة", "🧮 حساب المتوسط", "💎 قنص الذهب"])
 
@@ -140,7 +140,7 @@ with tab2:
         for r in all_d:
             an = analyze_stock(r, is_scan=True)
             if an and (an['t_score'] >= 75 or an['rsi'] > 45):
-                with st.expander(f"🚀 {an['name']} | Price: {an['p']} | Score: {an['t_score']}%"): render_stock_ui(an)
+                with st.expander(f"🚀 {an['name']} | P: {an['p']} | Score: {an['t_score']}"): render_stock_ui(an)
                 
     if break_btn:
         all_d = fetch_egx_data(scan_all=True)
@@ -170,6 +170,6 @@ with tab4:
             an = analyze_stock(r, is_scan=True)
             if an and an['is_gold']:
                 found = True
-                st.markdown(f"<div class='gold-deal'><b>💎 {an['name']} (Score: {an['t_score']}%)</b>: اختراق فني بسيولة {an['ratio']:.1f}x</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='gold-deal'><b>💎 {an['name']} (Score: {an['t_score']})</b>: اختراق فني بسيولة {an['ratio']:.1f}x</div>", unsafe_allow_html=True)
                 render_stock_ui(an)
         if not found: st.warning("لا يوجد حالياً.")
