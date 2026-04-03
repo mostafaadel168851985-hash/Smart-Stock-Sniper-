@@ -1,23 +1,20 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (V10.0 MODIFIED FOR MOBILE) ==================
-st.set_page_config(page_title="EGX Sniper Elite v10.0", layout="wide")
+# ================== CONFIG & STYLE (V10.1 MODIFIED) ==================
+st.set_page_config(page_title="EGX Sniper Elite v10.1", layout="wide")
 
 st.markdown("""
     <style>
-    /* تقليل المسافات بين التابات وتصغير الخط لتناسب شاشة الموبايل */
+    /* موازنة المسافات لظهور المسميات الطويلة في سطر واحد */
     button[data-baseweb="tab"] { 
-        padding-left: 5px !important; 
-        padding-right: 5px !important; 
-        margin-left: 2px !important;
-        margin-right: 2px !important;
-        font-size: 11px !important; /* تصغير الخط قليلاً لضمان ظهور الكل */
+        padding-left: 3px !important; 
+        padding-right: 3px !important; 
+        margin-left: 1px !important;
+        margin-right: 1px !important;
+        font-size: 11px !important; 
     }
-    /* تحسين عرض حاوي التابات */
-    div[data-testid="stTabs"] {
-        gap: 0px !important;
-    }
+    div[data-testid="stTabs"] { gap: 0px !important; }
     
     .stock-header { font-size: 18px !important; font-weight: bold; color: #58a6ff; }
     .price-callout { font-size: 16px !important; font-weight: bold; color: #3fb950; }
@@ -152,10 +149,10 @@ def render_stock_ui(res, is_break=False):
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
 
 # ================== MAIN APP STRUCTURE ==================
-st.title("🏹 EGX Sniper v10.0")
+st.title("🏹 EGX Sniper v10.1")
 
-# التابات الآن بمسافات أصغر لتظهر كاملة
-tab1, tab2, tab3, tab4 = st.tabs(["📡 تحليل", "🔭 مراقبة", "🧮 متوسط", "💎 ذهب"])
+# الأسماء الجديدة الواضحة مع الحفاظ على المساحة
+tab1, tab2, tab3, tab4 = st.tabs(["📡 تحليل سهم", "🔭 للمراقبة", "🧮 حساب متوسط", "💎 قنص الذهب"])
 
 with tab1:
     sym = st.text_input("كود السهم").upper().strip()
@@ -175,7 +172,8 @@ with tab2:
         for r in all_d:
             an = analyze_stock(r, is_scan=True)
             if an and (an['t_score'] >= 75 or an['rsi'] > 45):
-                with st.expander(f"🚀 {an['name']} | P: {an['p']} | S: {an['t_score']}"): render_stock_ui(an)
+                # استبدال حرف S بكلمة Score كاملة للوضوح
+                with st.expander(f"🚀 {an['name']} | P: {an['p']} | Score: {an['t_score']}"): render_stock_ui(an)
                 
     if break_btn:
         all_d = fetch_egx_data(scan_all=True)
@@ -188,7 +186,7 @@ with tab2:
         if not found: st.warning("لا توجد اختراقات.")
 
 with tab3:
-    st.subheader("🧮 حاسبة المتوسط")
+    st.subheader("🧮 حاسبة متوسط التكلفة")
     col_input1, col_input2, col_input3 = st.columns(3)
     old_p = col_input1.number_input("قديم", value=0.0, step=0.01)
     old_q = col_input2.number_input("كمية", value=0, step=10)
@@ -211,7 +209,7 @@ with tab3:
             st.markdown(f"<div class='target-box'>للمتوسط {target_avg:.3f}: اشتري <b style='color:#3fb950;'>{int(needed_q):,}</b> سهم</div>", unsafe_allow_html=True)
 
 with tab4:
-    st.subheader("💎 قناص الذهب")
+    st.subheader("💎 قنص الصفقات الذهبية")
     if st.button("صيد الذهب 🏹"):
         all_d = fetch_egx_data(scan_all=True)
         found = False
@@ -219,6 +217,6 @@ with tab4:
             an = analyze_stock(r, is_scan=True)
             if an and an['is_gold']:
                 found = True
-                st.markdown(f"<div class='gold-deal'><b>💎 {an['name']} (S: {an['t_score']})</b>: {an['vol_txt']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='gold-deal'><b>💎 {an['name']} (Score: {an['t_score']})</b>: {an['vol_txt']}</div>", unsafe_allow_html=True)
                 render_stock_ui(an)
         if not found: st.warning("لا يوجد ذهب حالياً.")
