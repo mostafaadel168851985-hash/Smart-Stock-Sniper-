@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Elite v9.6", layout="wide")
+st.set_page_config(page_title="EGX Sniper Elite v9.7", layout="wide")
 
 st.markdown("""
     <style>
@@ -17,7 +17,19 @@ st.markdown("""
     .gold-deal { border: 2px solid #ffd700 !important; background-color: #1c1c10 !important; border-radius: 12px; padding: 15px; margin-bottom: 20px; }
     .warning-box { background-color: #2e2a0b; border: 1px solid #ffd700; color: #ffd700; padding: 12px; border-radius: 8px; margin: 10px 0; font-weight: bold; border-left: 5px solid #ffd700; }
     .breakout-card { border: 2px solid #00ffcc !important; background-color: #0a1a1a !important; border-radius: 12px; padding: 10px; margin-bottom: 10px; }
-    .vol-status { font-size: 12px; font-weight: bold; margin-top: -10px; text-align: center; display: block; }
+    
+    /* تنسيق مستطيل الزخم الجديد */
+    .vol-container {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 10px;
+        text-align: center;
+        height: 100%;
+    }
+    .vol-label { color: #8b949e; font-size: 14px; margin-bottom: 2px; }
+    .vol-value { font-size: 24px; font-weight: bold; color: white; margin-bottom: 0px; }
+    .vol-status { font-size: 12px; font-weight: bold; margin-top: -2px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -57,11 +69,11 @@ def analyze_stock(d_row, is_scan=False):
         ratio = v / (avg_v or 1)
         rsi_val = rsi if rsi is not None else 0
         
-        # --- منطق وصف الزخم الجديد ---
-        if ratio < 0.7: vol_txt, vol_col = "🔴 سيولة غائبة", "#ff4b4b"
-        elif 0.7 <= ratio < 1.3: vol_txt, vol_col = "⚪ تداول هادئ", "#8b949e"
-        elif 1.3 <= ratio < 1.9: vol_txt, vol_col = "🟢 دخول سيولة", "#3fb950"
-        else: vol_txt, vol_col = "🔥 زخم انفجاري", "#ffd700"
+        # --- منطق وصف الزخم ---
+        if ratio < 0.7: vol_txt, vol_col = "سيولة غائبة", "#ff4b4b"
+        elif 0.7 <= ratio < 1.3: vol_txt, vol_col = "تداول هادئ", "#8b949e"
+        elif 1.3 <= ratio < 1.9: vol_txt, vol_col = "دخول سيولة", "#3fb950"
+        else: vol_txt, vol_col = "زخم انفجاري", "#ffd700"
 
         is_gold = (ratio > 1.6 and 48 < rsi_val < 66 and chg > 0.5 and p > ((h + l) / 2))
         is_breakout = (p > r1 * 0.998 and ratio > 1.2 and rsi_val > 50)
@@ -100,9 +112,16 @@ def render_stock_ui(res, is_break=False):
     c1, c2, c3 = st.columns(3)
     c1.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
     c2.metric("RSI", f"{res['rsi']:.1f}")
+    
+    # --- تصميم الزخم المدمج ---
     with c3:
-        st.metric("الزخم", f"{res['ratio']:.1f}x")
-        st.markdown(f"<span class='vol-status' style='color:{res['vol_col']}'>{res['vol_txt']}</span>", unsafe_allow_html=True)
+        st.markdown(f"""
+            <div class='vol-container'>
+                <div class='vol-label'>الزخم</div>
+                <div class='vol-value'>{res['ratio']:.1f}x</div>
+                <div class='vol-status' style='color:{res['vol_col']}'>{res['vol_txt']}</div>
+            </div>
+        """, unsafe_allow_html=True)
     
     daily_entry_top = res['t_e'] * 1.008
     safety_limit = daily_entry_top * 1.01 
@@ -126,7 +145,7 @@ def render_stock_ui(res, is_break=False):
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
 
 # ================== MAIN APP STRUCTURE ==================
-st.title("🏹 EGX Sniper Elite v9.6")
+st.title("🏹 EGX Sniper Elite v9.7")
 
 tab1, tab2, tab3, tab4 = st.tabs(["📡 تحليل سهم", "🔭 للمراقبة", "🧮 حساب المتوسط", "💎 قنص الذهب"])
 
