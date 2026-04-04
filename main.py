@@ -1,30 +1,27 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & MODERN STYLE ==================
-st.set_page_config(page_title="EGX Sniper Elite v12.0", layout="wide")
+# ================== CONFIG & STYLE (V12.1 RESTORED) ==================
+st.set_page_config(page_title="EGX Sniper Elite v12.1", layout="wide")
 
 st.markdown("""
     <style>
-    /* تحسين الأزرار والواجهة */
-    .stButton>button { 
-        width: 100%; border-radius: 12px; height: 3.5em; 
-        font-size: 16px !important; font-weight: bold !important;
-        background-color: #1f4068; color: white; border: none; transition: 0.3s;
-    }
-    .stButton>button:hover { background-color: #58a6ff; transform: translateY(-2px); }
+    .stButton>button { width: 100%; border-radius: 12px; height: 3em; font-size: 18px !important; font-weight: bold !important; margin-bottom: 10px; }
+    .stock-header { font-size: 18px !important; font-weight: bold; color: #58a6ff; }
+    .price-callout { font-size: 16px !important; font-weight: bold; color: #3fb950; }
+    .stoploss-callout { font-size: 14px !important; font-weight: bold; color: #f85149; }
+    .stMetric { background-color: #161b22; border: 1px solid #30363d !important; border-radius: 8px; padding: 5px !important; }
     
-    /* بطاقات العرض */
-    .main-card { background-color: #161b22; border: 1px solid #30363d; border-radius: 15px; padding: 20px; margin-bottom: 15px; }
-    .stock-header { font-size: 22px !important; font-weight: bold; color: #58a6ff; }
+    .avg-card { background-color: #1c2128; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-bottom: 12px; border-left: 5px solid #58a6ff; }
+    .target-box { background-color: #0d1117; border: 2px solid #58a6ff; border-radius: 12px; padding: 20px; margin-top: 15px; text-align: center; }
     
-    /* خطة الدخول */
-    .plan-box { background-color: #0d1117; border-right: 5px solid #58a6ff; padding: 15px; border-radius: 10px; margin-top: 10px; }
-    .price-val { color: #3fb950; font-weight: bold; }
-    .stoploss-tag { color: #f85149; font-weight: bold; background: #2e1a1a; padding: 5px 10px; border-radius: 5px; }
+    .warning-box { background-color: #2e2a0b; border: 1px solid #ffd700; color: #ffd700; padding: 12px; border-radius: 10px; margin-top: 10px; font-weight: bold; border-left: 6px solid #ffd700; }
+    .vol-container { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px; text-align: center; }
+    .breakout-card { border: 2px solid #00ffcc !important; background-color: #0a1a1a !important; border-radius: 12px; padding: 10px; margin-bottom: 10px; }
+    .gold-deal { border: 2px solid #ffd700 !important; background-color: #1c1c10 !important; border-radius: 12px; padding: 12px; margin-bottom: 15px; border-left: 8px solid #ffd700; }
     
-    /* التنبيهات */
-    .warning-box { background-color: #2e2a0b; border: 1px solid #ffd700; color: #ffd700; padding: 12px; border-radius: 10px; margin-top: 10px; font-weight: bold; }
+    /* الخطة الجديدة */
+    .plan-card { background: #0d1117; border: 1px dashed #58a6ff; border-radius: 10px; padding: 15px; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -33,7 +30,7 @@ def go_to(page_name):
     st.session_state.page = page_name
     st.rerun()
 
-# ================== DATA ENGINE (نفس معادلاتك) ==================
+# ================== DATA ENGINE ==================
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
@@ -53,7 +50,7 @@ def fetch_egx_data(symbol=None, scan_all=False):
         return r.get("data", [])
     except: return []
 
-# ================== ANALYSIS LOGIC (نفس منطق v11.8) ==================
+# ================== ENHANCED ANALYSIS ==================
 def analyze_stock(d_row, is_scan=False):
     try:
         d = d_row['d']
@@ -75,75 +72,85 @@ def analyze_stock(d_row, is_scan=False):
         if not volume_ok: t_score -= 15
         t_score = max(t_score, 0)
 
-        is_gold = (ratio > 1.6 and 50 < rsi_val < 65 and chg > 0.5 and trend_ok)
+        s_score = int(85 if (ratio > 1.1 and 40 < rsi_val < 65) else 50)
+        
         is_breakout = (p >= h * 0.992 and ratio > 1.2 and rsi_val > 52)
+        is_gold = (ratio > 1.6 and 50 < rsi_val < 65 and chg > 0.5 and trend_ok)
+
+        if ratio < 0.7: vol_txt, vol_col = "🔴 سيولة غائبة", "#ff4b4b"
+        elif ratio < 1.3: vol_txt, vol_col = "⚪ تداول هادئ", "#8b949e"
+        else: vol_txt, vol_col = "🔥 زخم انفجاري", "#ffd700"
+
+        if rsi_val > 72: rec, col = "🛑 تشبع شراء", "#ff4b4b"
+        elif is_gold: rec, col = "💎 صفقة ذهبية", "#ffd700"
+        elif t_score >= 75: rec, col = "🚀 شراء قوي", "#00ff00"
+        else: rec, col = "⚖️ انتظار", "#58a6ff"
 
         return {
             "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio,
+            "vol_txt": vol_txt, "vol_col": vol_col,
             "t_e": s1, "t_t": r1, "t_s": s1 * 0.98, "t_score": t_score,
-            "s_e": p, "s_t": r2, "s_s": s2, "s_score": int(85 if (ratio > 1.1 and 40 < rsi_val < 65) else 50),
-            "is_gold": is_gold, "is_break": is_breakout, "s2": s2
+            "s_e": p, "s_t": r2, "s_s": s2, "s_score": s_score,
+            "rec": rec, "col": col, "is_gold": is_gold, "is_break": is_breakout, "s2": s2
         }
     except: return None
 
 # ================== UI RENDERER ==================
-def render_stock_ui(res):
+def render_stock_ui(res, title=""):
     if not res: return
+    if title: st.markdown(f"<div class='breakout-card'>{title}</div>", unsafe_allow_html=True)
     
-    st.markdown(f"<div class='main-card'><span class='stock-header'>{res['name']} | {res['desc'][:20]}</span></div>", unsafe_allow_html=True)
+    st.markdown(f"""
+        <div style='display: flex; justify-content: space-between; align-items: center;'>
+            <span class='stock-header'>{res['name']} {res['desc'][:20]}</span>
+            <span style='color:{res['col']}; font-weight:bold; border:1px solid {res['col']}; padding:2px 8px; border-radius:6px;'>{res['rec']}</span>
+        </div>
+    """, unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns(3)
-    c1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
-    c2.metric("Score", f"{res['t_score']}")
-    c3.metric("الزخم", f"{res['ratio']:.1f}x")
+    c1.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
+    c2.metric("RSI", f"{res['rsi']:.1f}")
+    with c3:
+        st.markdown(f"<div class='vol-container'><div style='color:#8b949e;font-size:10px;'>الزخم</div><div style='font-size:16px;font-weight:bold;'>{res['ratio']:.1f}x</div><div style='color:{res['vol_col']};font-size:10px;'>{res['vol_txt']}</div></div>", unsafe_allow_html=True)
     
-    # تحذير المطاردة (نفس منطقك)
     daily_entry_top = res['t_e'] * 1.008
     if res['p'] > daily_entry_top * 1.015:
         st.markdown(f"<div class='warning-box'>⚠️ مطاردة خطر! السعر بعيد عن منطقة الدخول ({daily_entry_top:.2f})</div>", unsafe_allow_html=True)
-
+    
     st.divider()
+    col_t, col_s = st.columns(2)
+    with col_t:
+        st.markdown(f"**🎯 مضارب (Score: {res['t_score']})**")
+        st.markdown(f"دخول: <span class='price-callout'>{res['t_e']:.2f} - {daily_entry_top:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"هدف: <span class='price-callout'>{res['t_t']:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"وقف: <span class='stoploss-callout'>{res['t_s']:.2f}</span>", unsafe_allow_html=True)
+    with col_s:
+        st.markdown(f"**🔁 سوينج (Score: {res['s_score']})**")
+        st.markdown(f"دخول: <span class='price-callout'>{res['s_e']:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"هدف: <span class='price-callout'>{res['s_t']:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
 
-    # --- إضافة خطة التداول الذكية ---
-    st.markdown("### 🛠️ خطة الدخول المقسمة")
-    budget = st.number_input("ميزانية السهم (جنيه):", value=20000, step=1000)
+    # --- الجزء الإضافي: خطة الميزانية الذكية ---
+    st.markdown("---")
+    st.subheader("🛠️ خطة السيولة (30-40-30)")
+    budget = st.number_input("ميزانية السهم (جنيه):", value=20000, key=f"bud_{res['name']}")
     p1, p2, p3 = budget * 0.3, budget * 0.4, budget * 0.3
-    
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.markdown(f"""
-        <div class='plan-box'>
-            <b>1️⃣ دفعة جس نبض (30%): <span class='price-val'>{p1:,.0f} ج</span></b><br>
-            ادخل عند: <span class='price-val'>{res['t_e']:.2f} - {daily_entry_top:.2f}</span>
-        </div>
-        <div class='plan-box'>
-            <b>2️⃣ دفعة التأكيد (40%): <span class='price-val'>{p2:,.0f} ج</span></b><br>
-            عند اختراق: <span class='price-val'>{res['t_t']:.2f}</span> أو ارتداد من <span class='price-val'>{res['s2']:.2f}</span>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col_b:
-        st.markdown(f"""
-        <div class='plan-box'>
-            <b>3️⃣ دفعة التعزيز (30%): <span class='price-val'>{p3:,.0f} ج</span></b><br>
-            عند استهداف السوينج: <span class='price-val'>{res['s_t']:.2f}</span>
-        </div>
-        <div style='margin-top:15px;'>
-            <span class='stoploss-tag'>🛑 وقف خسارة نهائي: {res['t_s']:.2f}</span>
-        </div>
-        """, unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class='plan-card'>
+    1️⃣ <b>جس نبض (30%):</b> {p1:,.0f} ج عند {res['t_e']:.2f}<br>
+    2️⃣ <b>تأكيد (40%):</b> {p2:,.0f} ج عند {res['t_t']:.2f} أو {res['s2']:.2f}<br>
+    3️⃣ <b>تعزيز (30%):</b> {p3:,.0f} ج عند {res['s_t']:.2f}
+    </div>
+    """, unsafe_allow_html=True)
 
-# ================== NAVIGATION ==================
+# ================== PAGES ==================
 if st.session_state.page == 'home':
-    st.markdown("<h1 style='text-align: center; color: #58a6ff;'>🏹 EGX Sniper Elite</h1>", unsafe_allow_html=True)
-    st.divider()
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("📡 تحليل سهم"): go_to('analyze')
-        if st.button("🔭 كشاف السوق"): go_to('scanner')
-    with c2:
-        if st.button("🧮 مساعد المتوسطات"): go_to('average')
-        if st.button("💎 قنص الذهب"): go_to('gold')
+    st.title("🏹 EGX Sniper Elite v12.1")
+    if st.button("📡 تحليل سهم"): go_to('analyze')
+    if st.button("🔭 كشاف السوق"): go_to('scanner')
+    if st.button("🚀 رادار الاختراقات"): go_to('breakout')
+    if st.button("🧮 مساعد المتوسطات"): go_to('average')
+    if st.button("💎 قنص الذهب"): go_to('gold')
 
 elif st.session_state.page == 'analyze':
     if st.button("🏠"): go_to('home')
@@ -154,22 +161,40 @@ elif st.session_state.page == 'analyze':
 
 elif st.session_state.page == 'scanner':
     if st.button("🏠"): go_to('home')
-    if st.button("بدء الفحص"):
-        for r in fetch_egx_data(scan_all=True):
-            if (an := analyze_stock(r, True)) and an['t_score'] >= 75:
-                with st.expander(f"⭐ {an['t_score']} | {an['name']} ({an['p']:.2f})"):
-                    render_stock_ui(an)
+    if st.button("🔍 فحص السوق"):
+        results = [an for r in fetch_egx_data(scan_all=True) if (an := analyze_stock(r, True)) and an['t_score'] >= 70]
+        results.sort(key=lambda x: x['t_score'], reverse=True)
+        for an in results:
+            with st.expander(f"⭐ {an['t_score']} | {an['name']}"): render_stock_ui(an)
+
+elif st.session_state.page == 'breakout':
+    if st.button("🏠"): go_to('home')
+    for r in fetch_egx_data(scan_all=True):
+        if (an := analyze_stock(r, True)) and an['is_break']:
+            render_stock_ui(an, f"🚀 اختراق: {an['name']}")
+
+elif st.session_state.page == 'gold':
+    if st.button("🏠"): go_to('home')
+    for r in fetch_egx_data(scan_all=True):
+        if (an := analyze_stock(r, True)) and an['is_gold']:
+            render_stock_ui(an, "💎 فرصة ذهبية")
 
 elif st.session_state.page == 'average':
     if st.button("🏠"): go_to('home')
-    st.subheader("🧮 مساعد المتوسطات")
-    # (نفس كود المتوسطات الخاص بك مع تحسين بسيط في العرض)
+    st.subheader("🧮 مساعد متوسط التكلفة")
     c1, c2, c3 = st.columns(3)
-    old_p = c1.number_input("السعر القديم", value=0.0)
+    old_p = c1.number_input("السعر القديم", value=0.0, format="%.2f")
     old_q = c2.number_input("الكمية القديمة", value=0)
-    new_p = c3.number_input("السعر الجديد", value=0.0)
+    new_p = c3.number_input("السعر الجديد (التعديل)", value=0.0, format="%.2f")
     if old_p > 0 and old_q > 0 and new_p > 0:
         total_old = old_p * old_q
-        for label, q in [("بسيط", int(old_q*0.5)), ("متوسط (1:1)", old_q), ("جذري (2:1)", old_q*2)]:
+        for label, q in [("بسيط (0.5x)", int(old_q*0.5)), ("متوسط (1:1)", old_q), ("جذري (2:1)", old_q*2)]:
             avg = (total_old + (q * new_p)) / (old_q + q)
-            st.markdown(f"<div class='plan-box'><b>{label}:</b> شراء {q:,} سهم. المتوسط الجديد: <span class='price-val'>{avg:.3f}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='avg-card'><b>{label}</b>: شراء {q:,} سهم. المتوسط: <span class='price-callout'>{avg:.3f} ج</span></div>", unsafe_allow_html=True)
+        
+        st.divider()
+        target = st.number_input("المتوسط المستهدف؟", value=old_p-0.01, format="%.2f")
+        if new_p < target < old_p:
+            needed_q = (old_q * (old_p - target)) / (target - new_p)
+            needed_money = needed_q * new_p
+            st.markdown(f"<div class='target-box'><h3>الوصول لمتوسط {target:.2f}</h3>شراء: <b>{int(needed_q):,} سهم</b><br>المبلغ المطلوب: <b>{needed_money:,.2f} ج</b></div>", unsafe_allow_html=True)
