@@ -38,10 +38,9 @@ def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
     if scan_all:
         payload = {
-            "filter": [{"left": "volume", "operation": "greater", "right": 50000}, {"left": "close", "operation": "greater", "right": 0.4}],
-            "columns": ["name", "close", "RSI", "volume", "average_volume_10d_calc", "high", "low", "change", "description"],
-            "sort": {"sortBy": "change", "sortOrder": "desc"}, "range": [0, 100]
-        }
+    "filter": [{"left": "description", "operation": "match", "right": symbol.upper()}],
+    "columns": ["name", "close", "RSI", "volume", "average_volume_10d_calc", "high", "low", "change", "description"]
+}
     else:
         payload = {
             "symbols": {"tickers": [f"EGX:{symbol.upper()}"], "query": {"types": []}},
