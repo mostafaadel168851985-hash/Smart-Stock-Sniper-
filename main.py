@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (V12.1 RESTORED) ==================
-st.set_page_config(page_title="EGX Sniper Elite v12.1", layout="wide")
+# ================== CONFIG & STYLE (V12.2 PERFECTED) ==================
+st.set_page_config(page_title="EGX Sniper Elite v12.2", layout="wide")
 
 st.markdown("""
     <style>
@@ -12,16 +12,18 @@ st.markdown("""
     .stoploss-callout { font-size: 14px !important; font-weight: bold; color: #f85149; }
     .stMetric { background-color: #161b22; border: 1px solid #30363d !important; border-radius: 8px; padding: 5px !important; }
     
+    /* رجوع ألوان المتوسط القديمة */
     .avg-card { background-color: #1c2128; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-bottom: 12px; border-left: 5px solid #58a6ff; }
     .target-box { background-color: #0d1117; border: 2px solid #58a6ff; border-radius: 12px; padding: 20px; margin-top: 15px; text-align: center; }
+    .target-res { color: #3fb950; font-weight: bold; font-size: 20px; }
     
     .warning-box { background-color: #2e2a0b; border: 1px solid #ffd700; color: #ffd700; padding: 12px; border-radius: 10px; margin-top: 10px; font-weight: bold; border-left: 6px solid #ffd700; }
     .vol-container { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px; text-align: center; }
-    .breakout-card { border: 2px solid #00ffcc !important; background-color: #0a1a1a !important; border-radius: 12px; padding: 10px; margin-bottom: 10px; }
-    .gold-deal { border: 2px solid #ffd700 !important; background-color: #1c1c10 !important; border-radius: 12px; padding: 12px; margin-bottom: 15px; border-left: 8px solid #ffd700; }
     
-    /* الخطة الجديدة */
-    .plan-card { background: #0d1117; border: 1px dashed #58a6ff; border-radius: 10px; padding: 15px; margin-top: 10px; }
+    /* ستايل الخطة الشاملة */
+    .plan-section { background: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-top: 10px; }
+    .up-scen { border-right: 4px solid #3fb950; padding-right: 10px; margin-bottom: 10px; }
+    .down-scen { border-right: 4px solid #f85149; padding-right: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -50,7 +52,7 @@ def fetch_egx_data(symbol=None, scan_all=False):
         return r.get("data", [])
     except: return []
 
-# ================== ENHANCED ANALYSIS ==================
+# ================== ANALYSIS ENGINE ==================
 def analyze_stock(d_row, is_scan=False):
     try:
         d = d_row['d']
@@ -73,7 +75,6 @@ def analyze_stock(d_row, is_scan=False):
         t_score = max(t_score, 0)
 
         s_score = int(85 if (ratio > 1.1 and 40 < rsi_val < 65) else 50)
-        
         is_breakout = (p >= h * 0.992 and ratio > 1.2 and rsi_val > 52)
         is_gold = (ratio > 1.6 and 50 < rsi_val < 65 and chg > 0.5 and trend_ok)
 
@@ -98,7 +99,7 @@ def analyze_stock(d_row, is_scan=False):
 # ================== UI RENDERER ==================
 def render_stock_ui(res, title=""):
     if not res: return
-    if title: st.markdown(f"<div class='breakout-card'>{title}</div>", unsafe_allow_html=True)
+    if title: st.markdown(f"<div class='breakout-card' style='border:2px solid #00ffcc; background:#0a1a1a; padding:10px; border-radius:12px; margin-bottom:10px;'>{title}</div>", unsafe_allow_html=True)
     
     st.markdown(f"""
         <div style='display: flex; justify-content: space-between; align-items: center;'>
@@ -113,15 +114,15 @@ def render_stock_ui(res, title=""):
     with c3:
         st.markdown(f"<div class='vol-container'><div style='color:#8b949e;font-size:10px;'>الزخم</div><div style='font-size:16px;font-weight:bold;'>{res['ratio']:.1f}x</div><div style='color:{res['vol_col']};font-size:10px;'>{res['vol_txt']}</div></div>", unsafe_allow_html=True)
     
-    daily_entry_top = res['t_e'] * 1.008
-    if res['p'] > daily_entry_top * 1.015:
-        st.markdown(f"<div class='warning-box'>⚠️ مطاردة خطر! السعر بعيد عن منطقة الدخول ({daily_entry_top:.2f})</div>", unsafe_allow_html=True)
+    daily_top = res['t_e'] * 1.008
+    if res['p'] > daily_top * 1.015:
+        st.markdown(f"<div class='warning-box'>⚠️ مطاردة خطر! السعر بعيد عن منطقة الدخول ({daily_top:.2f})</div>", unsafe_allow_html=True)
     
     st.divider()
     col_t, col_s = st.columns(2)
     with col_t:
         st.markdown(f"**🎯 مضارب (Score: {res['t_score']})**")
-        st.markdown(f"دخول: <span class='price-callout'>{res['t_e']:.2f} - {daily_entry_top:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"دخول: <span class='price-callout'>{res['t_e']:.2f} - {daily_top:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['t_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['t_s']:.2f}</span>", unsafe_allow_html=True)
     with col_s:
@@ -130,22 +131,30 @@ def render_stock_ui(res, title=""):
         st.markdown(f"هدف: <span class='price-callout'>{res['s_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
 
-    # --- الجزء الإضافي: خطة الميزانية الذكية ---
+    # --- الخطة الشاملة (صعود وهبوط) ---
     st.markdown("---")
-    st.subheader("🛠️ خطة السيولة (30-40-30)")
-    budget = st.number_input("ميزانية السهم (جنيه):", value=20000, key=f"bud_{res['name']}")
+    st.subheader("🛠️ استراتيجية السيولة الذكية")
+    budget = st.number_input("ميزانية السهم (جنيه):", value=20000, key=f"plan_{res['name']}")
     p1, p2, p3 = budget * 0.3, budget * 0.4, budget * 0.3
+    
     st.markdown(f"""
-    <div class='plan-card'>
-    1️⃣ <b>جس نبض (30%):</b> {p1:,.0f} ج عند {res['t_e']:.2f}<br>
-    2️⃣ <b>تأكيد (40%):</b> {p2:,.0f} ج عند {res['t_t']:.2f} أو {res['s2']:.2f}<br>
-    3️⃣ <b>تعزيز (30%):</b> {p3:,.0f} ج عند {res['s_t']:.2f}
+    <div class='plan-section'>
+        <div class='up-scen'>
+            <b>📈 في حالة الصعود:</b><br>
+            - اشتري بـ <span class='price-callout'>{p1:,.0f} ج</span> الآن (جس نبض).<br>
+            - زود بـ <span class='price-callout'>{p2:,.0f} ج</span> لو السهم اخترق واستقر فوق {res['t_t']:.2f}.
+        </div>
+        <div class='down-scen'>
+            <b>📉 في حالة الهبوط (تعديل):</b><br>
+            - لو السهم نزل لـ <span class='price-callout'>{res['s2']:.2f}</span> (دعم قوي)، زود بـ <span class='price-callout'>{p2:,.0f} ج</span> لتحسين المتوسط.<br>
+            - <span class='stoploss-callout'>تنبيه:</span> لو كسر السهم {res['t_s']:.2f}، اخرج فوراً ولا تضخ باقي الميزانية ({p3:,.0f} ج).
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-# ================== PAGES ==================
+# ================== NAVIGATION ==================
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Elite v12.1")
+    st.title("🏹 EGX Sniper Elite v12.2")
     if st.button("📡 تحليل سهم"): go_to('analyze')
     if st.button("🔭 كشاف السوق"): go_to('scanner')
     if st.button("🚀 رادار الاختراقات"): go_to('breakout')
@@ -186,15 +195,22 @@ elif st.session_state.page == 'average':
     old_p = c1.number_input("السعر القديم", value=0.0, format="%.2f")
     old_q = c2.number_input("الكمية القديمة", value=0)
     new_p = c3.number_input("السعر الجديد (التعديل)", value=0.0, format="%.2f")
+    
     if old_p > 0 and old_q > 0 and new_p > 0:
         total_old = old_p * old_q
         for label, q in [("بسيط (0.5x)", int(old_q*0.5)), ("متوسط (1:1)", old_q), ("جذري (2:1)", old_q*2)]:
             avg = (total_old + (q * new_p)) / (old_q + q)
-            st.markdown(f"<div class='avg-card'><b>{label}</b>: شراء {q:,} سهم. المتوسط: <span class='price-callout'>{avg:.3f} ج</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='avg-card'><b>{label}</b>: شراء {q:,} سهم.<br>المتوسط الجديد: <span class='price-callout'>{avg:.3f} ج</span></div>", unsafe_allow_html=True)
         
         st.divider()
         target = st.number_input("المتوسط المستهدف؟", value=old_p-0.01, format="%.2f")
         if new_p < target < old_p:
             needed_q = (old_q * (old_p - target)) / (target - new_p)
             needed_money = needed_q * new_p
-            st.markdown(f"<div class='target-box'><h3>الوصول لمتوسط {target:.2f}</h3>شراء: <b>{int(needed_q):,} سهم</b><br>المبلغ المطلوب: <b>{needed_money:,.2f} ج</b></div>", unsafe_allow_html=True)
+            st.markdown(f"""
+                <div class='target-box'>
+                    <h3>الوصول لمتوسط {target:.2f}</h3>
+                    شراء عدد: <span class='target-res'>{int(needed_q):,} سهم</span><br>
+                    بمبلغ إجمالي: <span class='target-res'>{needed_money:,.2f} جنيه</span>
+                </div>
+            """, unsafe_allow_html=True)
