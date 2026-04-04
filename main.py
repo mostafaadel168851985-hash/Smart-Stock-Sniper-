@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (V12.5 FIXED) ==================
-st.set_page_config(page_title="EGX Sniper Elite v12.5", layout="wide")
+# ================== CONFIG & STYLE (V12.7 PRECISE) ==================
+st.set_page_config(page_title="EGX Sniper Elite v12.7", layout="wide")
 
 st.markdown("""
     <style>
@@ -131,28 +131,34 @@ def render_stock_ui(res, title=""):
         st.markdown(f"هدف: <span class='price-callout'>{res['s_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
 
+    # --- الجزء المحدث: خطة السيولة بالأسعار ---
     st.markdown("---")
-    st.subheader("🛠️ خطة السيولة الذكية (إجمالي الـ 20 ألف)")
+    st.subheader("🛠️ خطة السيولة وتمركزات التعزيز (إجمالي الـ 20 ألف)")
     budget = st.number_input("ميزانية السهم (جنيه):", value=20000, key=f"plan_{res['name']}_{res['p']}")
     p1, p2, p3 = budget * 0.3, budget * 0.4, budget * 0.3
     
     st.markdown(f"""
     <div class='plan-container'>
         <div class='plan-step up-line'>
-            <b>📈 سيناريو الصعود:</b> اشتري بـ <span class='price-callout'>{p1:,.0f} ج</span> عند {res['t_e']:.2f}. لو اخترق {res['t_t']:.2f}، زود بـ <span class='price-callout'>{p2:,.0f} ج</span>.
+            <b>📈 سيناريو الصعود:</b><br>
+            - ادخل بـ <span class='price-callout'>{p1:,.0f} ج</span> عند {res['t_e']:.2f}.<br>
+            - لو اخترق {res['t_t']:.2f}، زود بـ <span class='price-callout'>{p2:,.0f} ج</span>.<br>
+            - <b>التعزيز النهائي:</b> ضخ الـ <span class='price-callout'>{p3:,.0f} ج</span> الباقية عند تجاوز <b>{res['s_t']:.2f}</b> لضمان استكمال الاتجاه.
         </div>
         <div class='plan-step down-line'>
-            <b>📉 سيناريو الهبوط:</b> لو نزل لـ <b>{res['s_s']:.2f}</b>، استهلك الـ <span class='price-callout'>{p2:,.0f} ج</span> لتعديل المتوسط.
+            <b>📉 سيناريو الهبوط:</b><br>
+            - لو نزل لـ <b>{res['s_s']:.2f}</b>، استهلك الـ <span class='price-callout'>{p2:,.0f} ج</span> لتعديل المتوسط.<br>
+            - <b>التعزيز النهائي:</b> ضخ الـ <span class='price-callout'>{p3:,.0f} ج</span> المتبقية فور عودة السعر لمنطقة <b>{res['p']:.2f}</b> (تأكيد الارتداد).
         </div>
-        <div style='margin-top:10px; color:#8b949e; font-size:13px;'>
-            ✅ السيولة المتبقية للطوارئ/التعزيز: <b>{p3:,.0f} جنيه</b>
+        <div style='margin-top:10px; color:#8b949e; font-size:13px; text-align:center; border-top:1px solid #333; padding-top:5px;'>
+            ✅ إجمالي الميزانية الموزعة: <b>{p1+p2+p3:,.0f} جنيه</b>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
 # ================== NAVIGATION ==================
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Elite v12.5")
+    st.title("🏹 EGX Sniper Elite v12.7")
     if st.button("📡 تحليل سهم"): go_to('analyze')
     if st.button("🔭 كشاف السوق"): go_to('scanner')
     if st.button("🚀 رادار الاختراقات"): go_to('breakout')
