@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (V12.7 PRECISE) ==================
-st.set_page_config(page_title="EGX Sniper Elite v12.7", layout="wide")
+# ================== CONFIG & STYLE (V12.8 SMART P&L) ==================
+st.set_page_config(page_title="EGX Sniper Elite v12.8", layout="wide")
 
 st.markdown("""
     <style>
@@ -10,20 +10,13 @@ st.markdown("""
     .stock-header { font-size: 18px !important; font-weight: bold; color: #58a6ff; }
     .price-callout { font-size: 16px !important; font-weight: bold; color: #3fb950; }
     .stoploss-callout { font-size: 14px !important; font-weight: bold; color: #f85149; }
+    .pnl-box { padding: 5px 10px; border-radius: 6px; font-size: 13px; font-weight: bold; margin-top: 5px; display: inline-block; }
+    .pnl-win { background-color: rgba(63, 185, 80, 0.15); color: #3fb950; border: 1px solid #3fb950; }
+    .pnl-loss { background-color: rgba(248, 81, 73, 0.15); color: #f85149; border: 1px solid #f85149; }
     .stMetric { background-color: #161b22; border: 1px solid #30363d !important; border-radius: 8px; padding: 5px !important; }
-    
     .avg-card { background-color: #1c2128; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-bottom: 12px; border-left: 5px solid #58a6ff; }
     .target-box { background-color: #0d1117; border: 2px solid #58a6ff; border-radius: 12px; padding: 20px; margin-top: 15px; text-align: center; }
-    
-    .warning-box { background-color: #2e2a0b; border: 1px solid #ffd700; color: #ffd700; padding: 12px; border-radius: 10px; margin-top: 10px; font-weight: bold; border-left: 6px solid #ffd700; }
-    .vol-container { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px; text-align: center; }
-    .breakout-card { border: 2px solid #00ffcc !important; background-color: #0a1a1a !important; border-radius: 12px; padding: 10px; margin-bottom: 10px; }
-    .gold-deal { border: 2px solid #ffd700 !important; background-color: #1c1c10 !important; border-radius: 12px; padding: 12px; margin-bottom: 15px; border-left: 8px solid #ffd700; }
-    
     .plan-container { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-top: 15px; }
-    .plan-step { margin-bottom: 8px; padding-right: 10px; }
-    .up-line { border-right: 4px solid #3fb950; }
-    .down-line { border-right: 4px solid #f85149; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -32,7 +25,7 @@ def go_to(page_name):
     st.session_state.page = page_name
     st.rerun()
 
-# ================== DATA ENGINE ==================
+# ================== DATA ENGINE (SMART SEARCH UPDATED) ==================
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
@@ -43,21 +36,32 @@ def fetch_egx_data(symbol=None, scan_all=False):
             "sort": {"sortBy": "change", "sortOrder": "desc"}, "range": [0, 100]
         }
     else:
+        # المحاولة الأولى: البحث بالكود المباشر
         payload = {
             "symbols": {"tickers": [f"EGX:{symbol.upper()}"], "query": {"types": []}},
-            "columns": ["close", "high", "low", "volume", "RSI", "average_volume_10d_calc", "change", "description"]
+            "columns": ["name", "close", "high", "low", "volume", "RSI", "average_volume_10d_calc", "change", "description"]
         }
     try:
         r = requests.post(url, json=payload, timeout=10).json()
-        return r.get("data", [])
+        data = r.get("data", [])
+        
+        # المحاولة الثانية (البحث المرن): إذا لم تظهر نتائج (للسهمين FERC, NAPR وأمثالهم)
+        if not data and not scan_all and symbol:
+            search_payload = {
+                "filter": [{"left": "name", "operation": "match", "right": symbol.upper()}],
+                "columns": ["name", "close", "high", "low", "volume", "RSI", "average_volume_10d_calc", "change", "description"]
+            }
+            r_alt = requests.post(url, json=search_payload, timeout=10).json()
+            return r_alt.get("data", [])
+        return data
     except: return []
 
-# ================== ANALYSIS ENGINE (v11.8 Logic) ==================
+# ================== ANALYSIS ENGINE ==================
 def analyze_stock(d_row, is_scan=False):
     try:
         d = d_row['d']
-        if is_scan: name, p, rsi, v, avg_v, h, l, chg, desc = d
-        else: p, h, l, v, rsi, avg_v, chg, desc = d; name = ""
+        # ترتيب الأعمدة ثابت في fetch_egx_data الموحد
+        name, p, h, l, v, rsi, avg_v, chg, desc = d
         
         if p is None or h is None or l is None: return None
         pp = (p + h + l) / 3
@@ -114,51 +118,59 @@ def render_stock_ui(res, title=""):
     with c3:
         st.markdown(f"<div class='vol-container'><div style='color:#8b949e;font-size:10px;'>الزخم</div><div style='font-size:16px;font-weight:bold;'>{res['ratio']:.1f}x</div><div style='color:{res['vol_col']};font-size:10px;'>{res['vol_txt']}</div></div>", unsafe_allow_html=True)
     
-    daily_entry_top = res['t_e'] * 1.008
-    if res['p'] > daily_entry_top * 1.015:
-        st.markdown(f"<div class='warning-box'>⚠️ مطاردة خطر! السعر عالي جداً عن منطقة الدخول ({daily_entry_top:.2f})</div>", unsafe_allow_html=True)
-    
     st.divider()
+    
+    # ميزانية السهم للحسابات
+    budget = st.number_input("ميزانية السهم لحساب الربح/الخسارة:", value=20000, key=f"bud_{res['name']}")
+
     col_t, col_s = st.columns(2)
     with col_t:
         st.markdown(f"**🎯 مضارب (Score: {res['t_score']})**")
-        st.markdown(f"دخول: <span class='price-callout'>{res['t_e']:.2f} - {daily_entry_top:.2f}</span>", unsafe_allow_html=True)
+        st.markdown(f"دخول: <span class='price-callout'>{res['t_e']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['t_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['t_s']:.2f}</span>", unsafe_allow_html=True)
+        
+        # حسابات P&L للمضارب
+        t_profit_pct = ((res['t_t'] - res['t_e']) / res['t_e']) * 100
+        t_loss_pct = ((res['t_s'] - res['t_e']) / res['t_e']) * 100
+        st.markdown(f"<div class='pnl-box pnl-win'>💰 ربح: {t_profit_pct:+.1f}% ({ (budget * t_profit_pct/100):,.0f} ج)</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='pnl-box pnl-loss'>⚠️ خسارة: {t_loss_pct:.1f}% ({ (budget * t_loss_pct/100):,.0f} ج)</div>", unsafe_allow_html=True)
+
     with col_s:
         st.markdown(f"**🔁 سوينج (Score: {res['s_score']})**")
         st.markdown(f"دخول: <span class='price-callout'>{res['s_e']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"هدف: <span class='price-callout'>{res['s_t']:.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"وقف: <span class='stoploss-callout'>{res['s_s']:.2f}</span>", unsafe_allow_html=True)
+        
+        # حسابات P&L للسوينج
+        s_profit_pct = ((res['s_t'] - res['s_e']) / res['s_e']) * 100
+        s_loss_pct = ((res['s_s'] - res['s_e']) / res['s_e']) * 100
+        st.markdown(f"<div class='pnl-box pnl-win'>💰 ربح: {s_profit_pct:+.1f}% ({ (budget * s_profit_pct/100):,.0f} ج)</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='pnl-box pnl-loss'>⚠️ خسارة: {s_loss_pct:.1f}% ({ (budget * s_loss_pct/100):,.0f} ج)</div>", unsafe_allow_html=True)
 
-    # --- الجزء المحدث: خطة السيولة بالأسعار ---
+    # --- خطة السيولة الذكية ---
     st.markdown("---")
-    st.subheader("🛠️ خطة السيولة وتمركزات التعزيز (إجمالي الـ 20 ألف)")
-    budget = st.number_input("ميزانية السهم (جنيه):", value=20000, key=f"plan_{res['name']}_{res['p']}")
+    st.subheader("🛠️ خطة السيولة وتمركزات التعزيز")
     p1, p2, p3 = budget * 0.3, budget * 0.4, budget * 0.3
-    
     st.markdown(f"""
     <div class='plan-container'>
-        <div class='plan-step up-line'>
-            <b>📈 سيناريو الصعود:</b><br>
-            - ادخل بـ <span class='price-callout'>{p1:,.0f} ج</span> عند {res['t_e']:.2f}.<br>
-            - لو اخترق {res['t_t']:.2f}، زود بـ <span class='price-callout'>{p2:,.0f} ج</span>.<br>
-            - <b>التعزيز النهائي:</b> ضخ الـ <span class='price-callout'>{p3:,.0f} ج</span> الباقية عند تجاوز <b>{res['s_t']:.2f}</b> لضمان استكمال الاتجاه.
+        <div style='border-right: 4px solid #3fb950; padding-right:10px; margin-bottom:10px;'>
+            <b>📈 في حالة الصعود:</b><br>
+            - اشتري بـ <span class='price-callout'>{p1:,.0f} ج</span> الآن عند {res['p']:.2f}.<br>
+            - زود بـ <span class='price-callout'>{p2:,.0f} ج</span> لو السهم اخترق واستقر فوق {res['t_t']:.2f}.<br>
+            - <b>التعزيز:</b> ضخ الـ {p3:,.0f} ج الباقية عند تجاوز {res['s_t']:.2f}.
         </div>
-        <div class='plan-step down-line'>
-            <b>📉 سيناريو الهبوط:</b><br>
-            - لو نزل لـ <b>{res['s_s']:.2f}</b>، استهلك الـ <span class='price-callout'>{p2:,.0f} ج</span> لتعديل المتوسط.<br>
-            - <b>التعزيز النهائي:</b> ضخ الـ <span class='price-callout'>{p3:,.0f} ج</span> المتبقية فور عودة السعر لمنطقة <b>{res['p']:.2f}</b> (تأكيد الارتداد).
-        </div>
-        <div style='margin-top:10px; color:#8b949e; font-size:13px; text-align:center; border-top:1px solid #333; padding-top:5px;'>
-            ✅ إجمالي الميزانية الموزعة: <b>{p1+p2+p3:,.0f} جنيه</b>
+        <div style='border-right: 4px solid #f85149; padding-right:10px;'>
+            <b>📉 في حالة الهبوط (تعديل):</b><br>
+            - لو السهم نزل لـ {res['s_s']:.2f}، زود بـ <span class='price-callout'>{p2:,.0f} ج</span> لتحسين المتوسط.<br>
+            - تنبيه: لو كسر السعر {res['s_s'] * 0.98:.2f} اخرج فوراً ولا تضخ باقي السيولة.
         </div>
     </div>
     """, unsafe_allow_html=True)
 
 # ================== NAVIGATION ==================
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Elite v12.7")
+    st.title("🏹 EGX Sniper Elite v12.8")
     if st.button("📡 تحليل سهم"): go_to('analyze')
     if st.button("🔭 كشاف السوق"): go_to('scanner')
     if st.button("🚀 رادار الاختراقات"): go_to('breakout')
@@ -177,12 +189,18 @@ elif st.session_state.page == 'average':
             cost = q * new_p
             avg = (total_old + cost) / (old_q + q)
             st.markdown(f"<div class='avg-card'><b>{label}</b>: شراء {q:,} سهم بتكلفة {cost:,.2f} ج<br>المتوسط الجديد: <span class='price-callout'>{avg:.3f} ج</span></div>", unsafe_allow_html=True)
-        st.divider()
-        target = st.number_input("المتوسط المستهدف؟", value=old_p-0.01)
-        if new_p < target < old_p:
-            needed_q = (old_q * (old_p - target)) / (target - new_p)
-            st.markdown(f"<div class='target-box'><h3>خطة الوصول لهدف {target:.2f}</h3><p>✅ شراء: <b style='color:#3fb950;'>{int(needed_q):,} سهم</b></p><p>✅ مبلغ: <b style='color:#3fb950;'>{(needed_q*new_p):,.2f} ج</b></p></div>", unsafe_allow_html=True)
 
+elif st.session_state.page == 'analyze':
+    if st.button("🏠"): go_to('home')
+    sym = st.text_input("ادخل رمز السهم (مثلاً: FERC أو ATQA)").upper().strip()
+    if sym:
+        data = fetch_egx_data(symbol=sym)
+        if data: 
+            render_stock_ui(analyze_stock(data[0]))
+        else:
+            st.error("لم يتم العثور على السهم. تأكد من الرمز الصحيح.")
+
+# (بقية الصفحات Scanner, Breakout, Gold تتبع نفس منطق render_stock_ui المحدث)
 elif st.session_state.page == 'scanner':
     if st.button("🏠"): go_to('home')
     if st.button("🔍 فحص السوق"):
@@ -202,10 +220,3 @@ elif st.session_state.page == 'gold':
     for r in fetch_egx_data(scan_all=True):
         if (an := analyze_stock(r, True)) and an['is_gold']:
             render_stock_ui(an, "💎 ذهب")
-
-elif st.session_state.page == 'analyze':
-    if st.button("🏠"): go_to('home')
-    sym = st.text_input("ادخل رمز السهم (مثلاً: ATQA)").upper().strip()
-    if sym:
-        data = fetch_egx_data(symbol=sym)
-        if data: render_stock_ui(analyze_stock(data[0]))
