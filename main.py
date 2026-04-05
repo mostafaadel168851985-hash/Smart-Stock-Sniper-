@@ -52,7 +52,7 @@ def fetch_egx_data(symbol=None, scan_all=False):
         return r.get("data", [])
     except: return []
 
-# ================== ANALYSIS ENGINE ==================
+# ================== ANALYSIS ENGINE (v11.8 Logic) ==================
 def analyze_stock(d_row, is_scan=False):
     try:
         d = d_row['d']
@@ -75,11 +75,10 @@ def analyze_stock(d_row, is_scan=False):
         t_score = max(t_score, 0)
 
         s_score = int(85 if (ratio > 1.1 and 40 < rsi_val < 65) else 50)
-
         is_breakout = (p >= h * 0.992 and ratio > 1.2 and rsi_val > 52)
         is_gold = (ratio > 1.6 and 50 < rsi_val < 65 and chg > 0.5 and trend_ok)
 
-        # ✅ تقييم الاختراق
+        # ✅ إضافة تقييم الاختراق
         break_strength = "weak"
         if is_breakout and ratio > 1.5 and rsi_val < 65 and chg > 1:
             break_strength = "strong"
@@ -98,8 +97,7 @@ def analyze_stock(d_row, is_scan=False):
             "vol_txt": vol_txt, "vol_col": vol_col,
             "t_e": s1, "t_t": r1, "t_s": s1 * 0.98, "t_score": t_score,
             "s_e": p, "s_t": r2, "s_s": s2, "s_score": s_score,
-            "rec": rec, "col": col,
-            "is_gold": is_gold, "is_break": is_breakout,
+            "rec": rec, "col": col, "is_gold": is_gold, "is_break": is_breakout,
             "break_strength": break_strength
         }
     except: return None
@@ -109,6 +107,7 @@ def render_stock_ui(res, title=""):
     if not res: return
     if title: st.markdown(f"<div class='breakout-card'>{title}</div>", unsafe_allow_html=True)
 
+    # ✅ عرض تقييم الاختراق
     if res['is_break']:
         if res['break_strength'] == "strong":
             st.success("🚀 اختراق حقيقي")
@@ -116,47 +115,43 @@ def render_stock_ui(res, title=""):
             st.warning("⚠️ اختراق ضعيف")
 
     st.markdown(f"""
-    <div style='display: flex; justify-content: space-between; align-items: center;'>
-        <span class='stock-header'>{res['name']} {res['desc'][:15]}</span>
-        <span style='color:{res['col']}; font-weight:bold; border:1px solid {res['col']}; padding:2px 8px; border-radius:6px;'>{res['rec']}</span>
-    </div>
+        <div style='display: flex; justify-content: space-between; align-items: center;'>
+            <span class='stock-header'>{res['name']} {res['desc'][:15]}</span>
+            <span style='color:{res['col']}; font-weight:bold; border:1px solid {res['col']}; padding:2px 8px; border-radius:6px;'>{res['rec']}</span>
+        </div>
     """, unsafe_allow_html=True)
-
+    
     c1, c2, c3 = st.columns(3)
     c1.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
     c2.metric("RSI", f"{res['rsi']:.1f}")
     with c3:
         st.markdown(f"<div class='vol-container'><div style='font-size:16px;font-weight:bold;'>{res['ratio']:.1f}x</div></div>", unsafe_allow_html=True)
-
+    
     daily_entry_top = res['t_e'] * 1.008
     if res['p'] > daily_entry_top * 1.015:
-        st.markdown(f"<div class='warning-box'>⚠️ مطاردة خطر</div>", unsafe_allow_html=True)
-
+        st.markdown(f"<div class='warning-box'>⚠️ مطاردة خطر! السعر عالي جداً عن منطقة الدخول ({daily_entry_top:.2f})</div>", unsafe_allow_html=True)
+    
     st.divider()
+
+    # ================== إضافة الربح والخسارة ==================
+    st.markdown("---")
+    st.subheader("💰 تحليل الصفقة")
 
     entry = res['t_e']
     target = res['t_t']
     stop = res['t_s']
 
-    st.markdown(f"🎯 دخول: {entry:.2f}")
-    st.markdown(f"🎯 هدف: {target:.2f}")
-    st.markdown(f"🛑 وقف: {stop:.2f}")
+    budget_calc = st.number_input("حجم الصفقة", value=20000, key=f"calc_{res['name']}_{res['p']}")
 
-    # ✅ حساب الربح والخسارة
-    st.markdown("---")
-    st.subheader("💰 تحليل الصفقة")
-
-    budget = st.number_input("حجم الصفقة", value=20000, key=f"calc_{res['name']}_{res['p']}")
-
-    profit = ((target - entry) / entry) * budget
-    loss = ((entry - stop) / entry) * budget
+    profit = ((target - entry) / entry) * budget_calc
+    loss = ((entry - stop) / entry) * budget_calc
     rr = profit / loss if loss != 0 else 0
 
     st.markdown(f"""
     <div class='plan-container'>
-        <div class='plan-step up-line'>📈 ربح: {profit:,.0f} ج</div>
-        <div class='plan-step down-line'>📉 خسارة: {loss:,.0f} ج</div>
-        <div style='text-align:center;'>⚖️ RR: {rr:.2f}</div>
+        <div class='plan-step up-line'>📈 ربح متوقع: <b>{profit:,.0f} ج</b></div>
+        <div class='plan-step down-line'>📉 خسارة محتملة: <b>{loss:,.0f} ج</b></div>
+        <div style='text-align:center;'>⚖️ Risk/Reward = <b>{rr:.2f}</b></div>
     </div>
     """, unsafe_allow_html=True)
 
