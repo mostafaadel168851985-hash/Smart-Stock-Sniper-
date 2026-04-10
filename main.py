@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v15.1", layout="wide")
+st.set_page_config(page_title="EGX Sniper Pro v15.2", layout="wide")
 
 st.markdown("""
     <style>
@@ -39,15 +39,17 @@ def get_rr_status(rr):
     elif rr >= 1.8: return "مقبول 👍", "rr-fair"
     else: return "خطر / عائد ضعيف ⚠️", "rr-bad"
 
-# ✳️ Function الجديدة: محرك اتخاذ القرار (Decision Engine)
+# 🔥 تحسين الـ Decision Engine (نسخة v15.2)
 def get_final_decision(res):
     rr = res["rr"]
     trend = res["t_med"]
     ratio = res["ratio"]
 
-    if rr >= 2 and trend == "صاعد" and ratio > 1.2:
+    if rr >= 2.5 and trend == "صاعد" and ratio > 1.5:
+        return "🚀 فرصة قوية جدًا", "#0f5132"
+    elif rr >= 2 and trend == "صاعد":
         return "🟢 ادخل دلوقتي", "#238636"
-    elif rr >= 1.5 and trend == "صاعد":
+    elif rr >= 1.5:
         return "🟡 راقب", "#d29922"
     else:
         return "🔴 ابعد", "#f85149"
@@ -138,7 +140,6 @@ def analyze_stock(d_row, is_scanner=False):
 def render_stock_ui(res):
     st.markdown(f"<div class='stock-header'>{res['name']} | {res['desc'][:20]} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
     
-    # 🎯 عرض القرار النهائي في الـ UI
     decision, color = get_final_decision(res)
     st.markdown(f"""
     <div style='background:{color};padding:15px;border-radius:10px;
@@ -168,50 +169,68 @@ def render_stock_ui(res):
     <div class='target-box'>🏁 <b>الهدف المتوقع:</b> {res['target']:.2f}</div>
     """, unsafe_allow_html=True)
 
-    # إدارة المتوسط
+    # 🔥 2. تبسيط المتوسط (نسخة Pro 🔥)
     st.markdown("<div class='avg-section'>", unsafe_allow_html=True)
-    st.subheader("📉 تعديل المتوسط على السهم")
+    st.subheader("📉 حاسبة المتوسط الذكي")
     col_a, col_b = st.columns(2)
     old_p = col_a.number_input("متوسطك الحالي", value=0.0, key=f"ap_{res['name']}")
-    old_q = col_b.number_input("عدد الأسهم الحالية", value=0, key=f"aq_{res['name']}")
+    old_q = col_b.number_input("الكمية الحالية", value=0, key=f"aq_{res['name']}")
 
     if old_p > 0 and old_q > 0:
         entry_p = res['entry_price']
-        st.markdown("<b>سيناريوهات التعديل:</b>", unsafe_allow_html=True)
-        for label, mult in [("تعديل خفيف (0.5x)", 0.5), ("تعديل متوازن (1x)", 1.0), ("تعديل قوي (2x)", 2.0)]:
-            new_q = int(old_q * mult)
-            new_avg = ((old_p * old_q) + (entry_p * new_q)) / (old_q + new_q)
-            st.write(f"🔹 {label}: اشترِ **{new_q:,}** سهم @ {entry_p:.2f} ➔ المتوسط: **{new_avg:.2f}**")
+        target_avg = st.number_input("عايز توصل لمتوسط كام؟", value=round(old_p * 0.98, 2), key=f"tar_{res['name']}")
+
+        if entry_p < target_avg < old_p:
+            req_q = (old_q * (old_p - target_avg)) / (target_avg - entry_p)
+            cost = req_q * entry_p
+            st.success(f"""
+            🎯 **الحل:** اشترِ **{int(req_q):,} سهم** عند {entry_p:.2f}  
+            💰 **التكلفة:** {cost:,.0f} ج | 📉 **المتوسط الجديد:** {target_avg:.2f}
+            """)
+        else:
+            st.caption("أدخل متوسط بين السعر الحالي وسعرك القديم")
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # 🔥 1 & 4. إدارة المخاطر وتجنب الصفر
     budget = st.number_input(f"الميزانية لـ {res['name']}:", value=10000, key=f"v_{res['name']}")
-    num_shares = int(budget / res['entry_price'])
-    st.markdown(f"<div class='plan-container'>💎 <b>الكمية:</b> {num_shares:,} سهم<br><span style='color:#3fb950'>🟢 ربح محتمل: {(res['target'] - res['entry_price']) * num_shares:,.2f} ج</span></div>", unsafe_allow_html=True)
+    num_shares = max(1, int(budget / res['entry_price']))
+    
+    profit = (res['target'] - res['entry_price']) * num_shares
+    loss = (res['entry_price'] - res['stop_loss']) * num_shares
+
+    st.markdown(f"""
+    <div class='plan-container'>
+    💎 <b>الكمية المتاحة:</b> {num_shares:,} سهم<br><br>
+    🟢 <b>ربح محتمل:</b> {profit:,.2f} ج<br>
+    🔴 <b>خسارة محتملة:</b> {loss:,.2f} ج<br><br>
+    ⚖️ <b>نسبة المخاطرة:</b> {res['rr']} R<br><hr>
+    ✅ <b>دخول أول (50%):</b> {(budget*0.5):,.0f} ج<br>
+    🛡️ <b>احتياطي (50%):</b> {(budget*0.5):,.0f} ج
+    </div>
+    """, unsafe_allow_html=True)
 
 # ================== NAVIGATION ==================
 if st.session_state.page == 'home':
-    st.title("🏹 Sniper Elite v15.1 Pro")
+    st.title("🏹 Sniper Elite v15.2 Pro")
     if st.button("📡 تحليل سهم"): st.session_state.page = 'analyze'; st.rerun()
     if st.button("🔭 كشاف السوق"): st.session_state.page = 'scanner'; st.rerun()
     if st.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
     if st.button("💎 قنص الذهب"): st.session_state.page = 'gold'; st.rerun()
-    if st.button("🧮 الوصول لمتوسط مستهدف"): st.session_state.page = 'target_avg'; st.rerun()
+    if st.button("🧮 حاسبة المتوسط المستهدف"): st.session_state.page = 'target_avg'; st.rerun()
 
 elif st.session_state.page == 'target_avg':
     if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
-    st.header("🧮 حاسبة المتوسط المستهدف")
+    st.header("🧮 حاسبة المتوسط العام")
     col1, col2 = st.columns(2)
     cur_p = col1.number_input("سعر الشراء الحالي", 0.0)
     cur_q = col1.number_input("الكمية الحالية", 0)
     mkt_p = col2.number_input("سعر السوق الحالي", 0.0)
     tar_a = col2.number_input("المتوسط المطلوب", 0.0)
-
     if cur_p > 0 and cur_q > 0 and mkt_p > 0 and tar_a > 0:
-        if mkt_p >= tar_a: st.warning("⚠️ سعر السوق أعلى من المتوسط المطلوب!")
+        if mkt_p >= tar_a: st.warning("⚠️ لا يمكن التعديل بسعر أعلى من المتوسط المطلوب")
         else:
             req_q = (cur_q * (cur_p - tar_a)) / (tar_a - mkt_p)
-            cost = req_q * mkt_p
-            st.success(f"✅ اشترِ **{int(req_q):,}** سهم بتكلفة **{cost:,.0f}** ج للوصول لمتوسط **{tar_a:.2f}**")
+            st.success(f"✅ اشترِ **{int(req_q):,}** سهم بتكلفة **{(req_q * mkt_p):,.0f}** ج")
 
 elif st.session_state.page == 'analyze':
     if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
@@ -229,9 +248,8 @@ elif st.session_state.page == 'scanner':
     results = [analyze_stock(r, is_scanner=True) for r in raw_data if analyze_stock(r, is_scanner=True)]
     results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
     for an in results[:15]:
-        # ❗ التعديل الاختياري: إظهار القرار في عنوان الـ Expander
         decision, _ = get_final_decision(an)
-        with st.expander(f"{decision} | {an['name']} | RR: {an['rr']} | Score: {an['score']}"):
+        with st.expander(f"{decision} | {an['name']} | RR: {an['rr']}"):
             render_stock_ui(an)
 
 elif st.session_state.page == 'gold':
