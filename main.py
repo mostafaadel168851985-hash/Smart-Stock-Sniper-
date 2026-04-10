@@ -62,7 +62,11 @@ def analyze_stock(d_row):
         
         real_entry = p if p < r1 * 0.98 else r1
         near_support = p <= s1 * 1.02
-        is_breakout = (p > r1 and ratio > 1.3 and chg > 1 and trend_med == "صاعد")
+        
+        # 🔥 التعديلات الجديدة: أنواع الاختراق
+        is_early_break = (p >= r1 * 0.98 and ratio > 1.1 and trend_med == "صاعد")
+        is_strong_break = (p > r1 and ratio > 1.3 and chg > 1 and trend_med == "صاعد")
+        
         is_gold = (ratio > 1.5 and 45 < rsi_val < 65 and trend_med == "صاعد" and sma50 and p > sma50)
         is_chase = (p > r1 * 1.02)
 
@@ -80,17 +84,17 @@ def analyze_stock(d_row):
             "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio,
             "vol_txt": vol_txt, "vol_col": vol_col, "s1": s1, "s2": s2, "r1": r1, "r2": r2,
             "t_med": trend_med, "real_entry": real_entry, "s_score": smart_score, 
-            "is_gold": is_gold, "is_break": is_breakout, "is_chase": is_chase, "near_support": near_support
+            "is_gold": is_gold, "is_early_break": is_early_break, "is_strong_break": is_strong_break,
+            "is_chase": is_chase, "near_support": near_support
         }
     except: return None
 
 # ================== UI RENDERER ==================
 def render_stock_ui(res, title=""):
     if not res: return
-    # تم إصلاح الخطأ في السطر التالي (Syntax Error Fix)
     if title: st.markdown(f"<div class='breakout-card'>{title}</div>", unsafe_allow_html=True)
     
-    col_rec = "#ffd700" if res['is_gold'] else "#00ffcc" if res['is_break'] else "#3fb950"
+    col_rec = "#ffd700" if res['is_gold'] else "#00ffcc" if (res['is_strong_break'] or res['is_early_break']) else "#3fb950"
     st.markdown(f"<div class='stock-header'>{res['name']} | {res['desc'][:15]} <span style='color:{col_rec}; float:left;'>Score: {res['s_score']}</span></div>", unsafe_allow_html=True)
     
     tm_cls = "trend-up" if res['t_med'] == "صاعد" else "trend-down"
@@ -148,7 +152,7 @@ elif st.session_state.page == 'scanner':
             and an['s_score'] >= 50 and an['ratio'] > 0.8
             and not an['is_chase'] and an['t_med'] == "صاعد"
             and 35 < an['rsi'] < 70
-            and (an['near_support'] or an['is_break'] or an['s_score'] > 70)
+            and (an['near_support'] or an['is_strong_break'] or an['is_early_break'] or an['s_score'] > 70)
         ]
         results.sort(key=lambda x: (x['s_score'], x['ratio']), reverse=True)
         for an in results:
@@ -158,8 +162,11 @@ elif st.session_state.page == 'breakout':
     if st.button("🏠"): go_to('home')
     for r in fetch_egx_data(scan_all=True):
         an = analyze_stock(r)
-        if an and an['is_break'] and not an['is_chase']:
-            render_stock_ui(an, f"🚀 اختراق حقيقي: {an['name']}")
+        if an and not an['is_chase']:
+            if an['is_strong_break']:
+                render_stock_ui(an, f"🚀 اختراق مؤكد: {an['name']}")
+            elif an['is_early_break']:
+                render_stock_ui(an, f"🟡 اختراق مبكر: {an['name']}")
 
 elif st.session_state.page == 'gold':
     if st.button("🏠"): go_to('home')
@@ -196,7 +203,3 @@ elif st.session_state.page == 'average':
                     <p>✅ التكلفة المطلوبة: <b style='color:#3fb950; font-size:20px;'>{(needed_q*new_p):,.2f} ج</b></p>
                 </div>
             """, unsafe_allow_html=True)
-        elif target <= new_p:
-            st.warning("⚠️ لا يمكن الوصول لمتوسط أقل من سعر السوق الحالي.")
-        else:
-            st.info("ℹ️ السعر المستهدف أعلى من سعرك القديم بالفعل!")
