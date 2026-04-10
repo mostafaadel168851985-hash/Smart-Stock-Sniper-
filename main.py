@@ -74,7 +74,6 @@ def analyze_stock(d_row):
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
         t_long = "صاعد" if (sma200 and p > sma200) else "هابط"
 
-        # 🧠 التعديل الجوهري لـ Entry Price
         entry_min = p * 0.98
         entry_max = p * 1.01
         entry_price = (entry_min + entry_max) / 2
@@ -84,14 +83,12 @@ def analyze_stock(d_row):
         s2 = pp - ((h or p) - (l or p))
         
         stop_loss = min(s2, entry_price * 0.97)
-        # 🧠 التعديل الجوهري لـ Target
         target = max(r1, entry_price * 1.05)
 
         profit_ps = target - entry_price; loss_ps = entry_price - stop_loss
         if loss_ps <= 0: return None
         rr = round(profit_ps / loss_ps, 2)
 
-        # ⭐ منطق الإشارة الاحترافي المحدث
         if rr >= 2 and t_short == "صاعد" and t_med == "صاعد":
             signal, sig_cls = "شراء قوي 🔥", "buy-strong"
         elif ratio > 2 and t_short == "صاعد":
@@ -159,32 +156,44 @@ def render_stock_ui(res):
         
         max_position_size = portfolio * 0.25
         recommended_position_size = min(shares_to_buy_initial * res['entry_price'], max_position_size)
-        shares_to_buy = int(recommended_position_size / res['entry_price']) if res['entry_price'] > 0 else 0
         
-        actual_loss = (res['entry_price'] - res['stop_loss']) * shares_to_buy
-        actual_risk_pct = (actual_loss / portfolio) * 100
+        # ✅ التحسين الاحترافي: ضمان وجود سهم واحد على الأقل للحسابات
+        shares_to_buy = max(1, int(recommended_position_size / res['entry_price'])) if res['entry_price'] > 0 else 0
+        
+        # ✅ إرجاع حسابات الربح والخسارة الإجمالية
+        profit_val = (res['target'] - res['entry_price']) * shares_to_buy
+        loss_val = (res['entry_price'] - res['stop_loss']) * shares_to_buy
+        
+        actual_risk_pct = (loss_val / portfolio) * 100
 
         st.markdown(f"""
         <div style='background: rgba(88, 166, 255, 0.1); border: 1px solid #58a6ff; padding: 15px; border-radius: 10px; margin-top: 10px;'>
-            🧠 <b>إجمالي السيولة المقررة: {recommended_position_size:,.0f} ج</b><br>
+            🧠 <b>إجمالي السيولة المقررة: { (shares_to_buy * res['entry_price']):,.0f} ج</b><br>
             ⚠️ <b>المخاطرة الفعلية: {actual_risk_pct:.2f}%</b>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ✅ إضافة بلوك تقييم الصفقة المالي
+        st.markdown(f"""
+        <div class='plan-container' style='border-right: 5px solid #58a6ff;'>
+        📊 <b>تقييم مالي للصفقة ({shares_to_buy:,} سهم):</b><br>
+        🟢 الربح المتوقع: {profit_val:,.0f} ج<br>
+        🔴 الخسارة المحتملة: {loss_val:,.0f} ج<br>
+        ⚖️ معدل RR المحقق: {res['rr']}
         </div>
         """, unsafe_allow_html=True)
 
         st.markdown("---")
         st.markdown("### 🧮 تعديل متوسط السعر")
-        if shares_to_buy == 0:
-            st.warning("⚠️ لا يوجد مركز مفتوح حالياً لحساب متوسط (حدد حجم المحفظة أولاً)")
-        else:
-            c_avg1, c_avg2 = st.columns(2)
-            add_price = c_avg1.number_input("سعر التعزيز الجديد", value=res['p'], key=f"ap_{res['name']}")
-            add_qty = c_avg2.number_input("عدد الأسهم الجديدة", value=0, key=f"aq_{res['name']}")
+        c_avg1, c_avg2 = st.columns(2)
+        add_price = c_avg1.number_input("سعر التعزيز الجديد", value=res['p'], key=f"ap_{res['name']}")
+        add_qty = c_avg2.number_input("عدد الأسهم الجديدة", value=0, key=f"aq_{res['name']}")
 
-            if add_qty > 0:
-                new_total_qty = shares_to_buy + add_qty
-                new_total_cost = (shares_to_buy * res['entry_price']) + (add_qty * add_price)
-                new_avg = new_total_cost / new_total_qty
-                st.info(f"📊 متوسط السعر بعد التعزيز: {new_avg:.2f}")
+        if add_qty > 0:
+            new_total_qty = shares_to_buy + add_qty
+            new_total_cost = (shares_to_buy * res['entry_price']) + (add_qty * add_price)
+            new_avg = new_total_cost / new_total_qty
+            st.info(f"📊 متوسط السعر بعد التعزيز: {new_avg:.2f}")
 
         # 🏹 خطة الدخول الذكية
         range_size = res['entry_price'] - res['stop_loss']
@@ -195,7 +204,8 @@ def render_stock_ui(res):
         elif res['rr'] >= 1.5: weights = [0.5, 0.3, 0.2]
         else: weights = [0.3, 0.4, 0.3]
 
-        e1_m, e2_m, e3_m = recommended_position_size * weights[0], recommended_position_size * weights[1], recommended_position_size * weights[2]
+        current_total_val = shares_to_buy * res['entry_price']
+        e1_m, e2_m, e3_m = current_total_val * weights[0], current_total_val * weights[1], current_total_val * weights[2]
         e1_s, e2_s, e3_s = int(e1_m / e1_p), int(e2_m / e2_p), int(e3_m / e3_p)
 
         st.markdown("### 🏹 خطة التنفيذ المباشرة")
@@ -212,7 +222,7 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
-# (بقية كود الـ Navigation كما هو بدون تغيير لضمان عمل الصفحات)
+# ================== 🔥 NAVIGATION ==================
 if st.session_state.page == 'home':
     st.title("🏹 Sniper Elite v15.8 Pro")
     render_mode_selector()
