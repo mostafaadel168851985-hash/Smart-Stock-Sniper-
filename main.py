@@ -74,23 +74,34 @@ def analyze_stock(d_row):
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
         t_long = "صاعد" if (sma200 and p > sma200) else "هابط"
 
-        entry_price = p
+        # 🧠 التعديل الجوهري لـ Entry Price
         entry_min = p * 0.98
         entry_max = p * 1.01
+        entry_price = (entry_min + entry_max) / 2
         
         pp = (p + (h or p) + (l or p)) / 3
         s1, r1 = (2 * pp) - (h or p), (2 * pp) - (l or p)
         s2 = pp - ((h or p) - (l or p))
         
         stop_loss = min(s2, entry_price * 0.97)
-        target = r1 if p < r1 else r1 + ((r1 - s1) * 0.7)
+        # 🧠 التعديل الجوهري لـ Target
+        target = max(r1, entry_price * 1.05)
 
         profit_ps = target - entry_price; loss_ps = entry_price - stop_loss
         if loss_ps <= 0: return None
         rr = round(profit_ps / loss_ps, 2)
 
-        signal, sig_cls = ("شراء قوي 🔥", "buy-strong") if (t_short == "صاعد" and t_med == "صاعد" and rr >= 1.8) else \
-                          ("شراء حذر ⚠️", "buy-caution") if (t_short == "صاعد" and rr >= 1.5) else ("انتظار ⏳", "wait")
+        # ⭐ منطق الإشارة الاحترافي المحدث
+        if rr >= 2 and t_short == "صاعد" and t_med == "صاعد":
+            signal, sig_cls = "شراء قوي 🔥", "buy-strong"
+        elif ratio > 2 and t_short == "صاعد":
+            signal, sig_cls = "اختراق قوي 🚀", "buy-strong"
+        elif ratio > 1.5 and rr >= 1.2:
+            signal, sig_cls = "فرصة مضاربية ⚡", "buy-caution"
+        elif rr >= 1.2:
+            signal, sig_cls = "شراء حذر ⚠️", "buy-caution"
+        else:
+            signal, sig_cls = "انتظار ⏳", "wait"
 
         return {
             "name": name, "desc": desc, "p": p, "rsi": rsi or 0, "chg": chg, "ratio": ratio,
@@ -105,10 +116,6 @@ def analyze_stock(d_row):
 def render_stock_ui(res):
     st.markdown(f"<div class='stock-header'>{res['name']} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
     
-    if res['rr'] >= 2: st.success("💎 صفقة قوية - فرصة ممتازة")
-    elif res['rr'] >= 1.5: st.warning("⚖️ صفقة متوسطة")
-    else: st.error("⚠️ صفقة ضعيفة - مخاطرة عالية")
-
     tab_analysis, tab_management = st.tabs(["📊 التحليل الفني", "📉 إدارة المخاطر والسيولة"])
 
     with tab_analysis:
@@ -170,7 +177,7 @@ def render_stock_ui(res):
             st.warning("⚠️ لا يوجد مركز مفتوح حالياً لحساب متوسط (حدد حجم المحفظة أولاً)")
         else:
             c_avg1, c_avg2 = st.columns(2)
-            add_price = c_avg1.number_input("سعر التعزيز الجديد", value=res['entry_price'], key=f"ap_{res['name']}")
+            add_price = c_avg1.number_input("سعر التعزيز الجديد", value=res['p'], key=f"ap_{res['name']}")
             add_qty = c_avg2.number_input("عدد الأسهم الجديدة", value=0, key=f"aq_{res['name']}")
 
             if add_qty > 0:
@@ -178,9 +185,8 @@ def render_stock_ui(res):
                 new_total_cost = (shares_to_buy * res['entry_price']) + (add_qty * add_price)
                 new_avg = new_total_cost / new_total_qty
                 st.info(f"📊 متوسط السعر بعد التعزيز: {new_avg:.2f}")
-        st.markdown("---")
 
-        # 🏹 خطة الدخول الذكية (التعديلات الجوهرية هنا)
+        # 🏹 خطة الدخول الذكية
         range_size = res['entry_price'] - res['stop_loss']
         e1_p, e2_p = res['entry_price'], max(res['entry_price'] - (range_size * 0.5), res['stop_loss'] * 1.02)
         e3_p = res['entry_price'] + (res['target'] - res['entry_price']) * 0.3
@@ -195,18 +201,18 @@ def render_stock_ui(res):
         st.markdown("### 🏹 خطة التنفيذ المباشرة")
         st.markdown(f"""
         <div class='plan-container'>
-        🟢 <b>لو السعر الحالي ≈ {e1_p:.2f} ج ➜ اشتري الآن</b><br>
+        🟢 <b>لو السعر ≈ {e1_p:.2f} ج ➜ اشتري (دخول أساسي)</b><br>
         📦 الكمية: {e1_s:,} سهم | 💰 القيمة: {e1_m:,.0f} ج<br><br>
 
-        🟡 <b>لو السعر نزل لـ {e2_p:.2f} ج ➜ عزز (دعم)</b><br>
+        🟡 <b>لو السعر نزل لـ {e2_p:.2f} ج ➜ اشتري (تعزيز دعم)</b><br>
         📦 الكمية: {e2_s:,} سهم | 💰 القيمة: {e2_m:,.0f} ج<br><br>
 
-        🔵 <b>لو السعر اخترق {e3_p:.2f} ج ➜ زود (تأكيد)</b><br>
+        🔵 <b>لو السعر اخترق {e3_p:.2f} ج ➜ اشتري (تأكيد اختراق)</b><br>
         📦 الكمية: {e3_s:,} سهم | 💰 القيمة: {e3_m:,.0f} ج
         </div>
         """, unsafe_allow_html=True)
 
-# ================== 🔥 NAVIGATION ==================
+# (بقية كود الـ Navigation كما هو بدون تغيير لضمان عمل الصفحات)
 if st.session_state.page == 'home':
     st.title("🏹 Sniper Elite v15.8 Pro")
     render_mode_selector()
@@ -238,7 +244,6 @@ elif st.session_state.page == 'gold':
     found = False
     for r in raw_data:
         an = analyze_stock(r)
-        # تصحيح الـ Precedence باستخدام الأقواس
         if an and ((an['rr'] >= 2 and an['ratio'] > 1.2) or an['score'] > 65):
             with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']})"): 
                 render_stock_ui(an)
@@ -252,7 +257,7 @@ elif st.session_state.page == 'scanner':
     results = [analyze_stock(r) for r in raw_data if analyze_stock(r)]
     results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
     for an in results[:15]:
-        with st.expander(f"{an['name']} | RR: {an['rr']} | Score: {an['score']}"): render_stock_ui(an)
+        with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
 
 elif st.session_state.page == 'breakout':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
