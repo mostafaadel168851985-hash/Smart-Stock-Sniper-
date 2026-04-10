@@ -34,7 +34,8 @@ def go_to(page_name):
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
-    cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA50","SMA200"]
+    # ✳️ تم إضافة SMA20 للقائمة
+    cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA20","SMA50","SMA200"]
     if scan_all:
         payload = {
             "filter": [{"left": "volume", "operation": "greater", "right": 10000}, {"left": "close", "operation": "greater", "right": 0.4}],
@@ -50,17 +51,23 @@ def fetch_egx_data(symbol=None, scan_all=False):
 # ================== 🔥 ANALYSIS ENGINE ==================
 def analyze_stock(d_row):
     try:
-        name, p, rsi, v, avg_v, h, l, chg, desc, sma50, sma200 = d_row['d']
+        # ✳️ Unpack الجديد مع SMA20
+        name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d_row['d']
         if p is None or h is None or l is None: return None
+        
         pp = (p + h + l) / 3
         s1, r1 = (2 * pp) - h, (2 * pp) - l
         s2, r2 = pp - (h - l), pp + (h - l)
         
+        # ✳️ حساب الاتجاهات الثلاثة
+        trend_short = "صاعد" if sma20 and p > sma20 else "هابط"
         trend_med = "صاعد" if sma50 and p > sma50 else "هابط"
+        trend_long = "صاعد" if sma200 and p > sma200 else "هابط"
+        
         ratio = v / (avg_v or 1)
         rsi_val = rsi if rsi else 0
         
-        # ================== 🎯 ENTRY + RISK SYSTEM (تعديلاتك الجديدة) ==================
+        # ================== 🎯 ENTRY + RISK SYSTEM ==================
         near_support = p <= s1 * 1.02
         is_early_break = (p >= r1 * 0.97 and ratio > 1.1 and trend_med == "صاعد")
         is_strong_break = (p > r1 and ratio > 1.3 and chg > 0.5 and trend_med == "صاعد")
@@ -104,7 +111,8 @@ def analyze_stock(d_row):
         return {
             "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio,
             "vol_txt": vol_txt, "vol_col": vol_col, "s1": s1, "s2": s2, "r1": r1, "r2": r2,
-            "t_med": trend_med, "s_score": smart_score, "is_gold": is_gold,
+            "t_short": trend_short, "t_med": trend_med, "t_long": trend_long,
+            "s_score": smart_score, "is_gold": is_gold,
             "entry_min": entry_min, "entry_max": entry_max, "entry_avg": entry_avg,
             "stop_loss": stop_loss, "target1": target1, "target2": target2,
             "risk_value": risk, "reward_value": reward, "rr": rr, "rr_rating": rr_rating,
@@ -121,15 +129,25 @@ def render_stock_ui(res, title=""):
     col_rec = "#ffd700" if res['is_gold'] else "#00ffcc" if (res['is_strong_break'] or res['is_early_break']) else "#3fb950"
     st.markdown(f"<div class='stock-header'>{res['name']} | {res['desc'][:15]} <span style='color:{col_rec}; float:left;'>Score: {res['s_score']}</span></div>", unsafe_allow_html=True)
     
+    # 🎨 عرض الاتجاهات الثلاثة
+    ts_cls = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
     tm_cls = "trend-up" if res['t_med'] == "صاعد" else "trend-down"
-    st.markdown(f"<span class='trend-pill {tm_cls}'>ترند متوسط: {res['t_med']}</span>", unsafe_allow_html=True)
+    tl_cls = "trend-up" if res['t_long'] == "صاعد" else "trend-down"
+
+    st.markdown(f"""
+    <div style='margin-bottom:10px;'>
+        <span class='trend-pill {ts_cls}'>قصير: {res['t_short']}</span>
+        <span class='trend-pill {tm_cls}'>متوسط: {res['t_med']}</span>
+        <span class='trend-pill {tl_cls}'>طويل: {res['t_long']}</span>
+    </div>
+    """, unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns(3)
     c1.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
     c2.metric("RSI", f"{res['rsi']:.1f}")
     with c3: st.markdown(f"<div class='vol-container'>الزخم: <b>{res['ratio']:.1f}x</b><br><span style='color:{res['vol_col']}'>{res['vol_txt']}</span></div>", unsafe_allow_html=True)
     
-    # 🎨 واجهة الدخول المطورة (تعديلاتك)
+    # 🎨 واجهة الدخول وتحليل الصفقة
     st.markdown(f"""
     <div class='entry-card-new'>
     🎯 <b>منطقة الدخول:</b><br>
@@ -150,11 +168,11 @@ def render_stock_ui(res, title=""):
     st.markdown("---")
     st.subheader("🛠️ خطة السيولة الذكية")
     budget = st.number_input("الميزانية المستهدفة (جنيه):", value=20000, key=f"plan_{res['name']}_{res['p']}")
-    p1, p2, p3 = budget * 0.3, budget * 0.4, budget * 0.3
+    p1, p2 = budget * 0.3, budget * 0.4
     st.markdown(f"""
         <div class='plan-container'>
             <div class='plan-step up-line'><b>📈 سيناريو الصعود:</b><br>- ادخل بـ <span class='price-callout'>{p1:,.0f} ج</span> عند {res['entry_avg']:.2f}.<br>- لو اخترق {res['target1']:.2f} بزخم، زود بـ <span class='price-callout'>{p2:,.0f} ج</span>.</div>
-            <div class='plan-step down-line'><b>📉 سيناريو الهبوط:</b><br>- لو نزل لـ <b>{res['stop_loss']:.2f}</b>، راقب تفعيل وقف الخسارة أو عدل المتوسط بـ {p2:,.0f} ج فقط لو ارتد.</div>
+            <div class='plan-step down-line'><b>📉 سيناريو الهبوط:</b><br>- لو نزل لـ <b>{res['stop_loss']:.2f}</b>، راقب تفعيل وقف الخسارة أو عدل المتوسط فقط لو ارتد.</div>
         </div>
     """, unsafe_allow_html=True)
 
