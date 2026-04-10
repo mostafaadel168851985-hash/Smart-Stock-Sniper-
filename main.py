@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Full Ultra v12.9", layout="wide")
+# ================== CONFIG & STYLE (v12.9 PRO FIXED) ==================
+st.set_page_config(page_title="EGX Sniper Elite v12.9 Pro", layout="wide")
 
 st.markdown("""
     <style>
@@ -63,7 +63,7 @@ def analyze_stock(d_row):
         real_entry = p if p < r1 * 0.98 else r1
         near_support = p <= s1 * 1.02
         is_breakout = (p > r1 and ratio > 1.3 and chg > 1 and trend_med == "صاعد")
-        is_gold = (ratio > 1.5 and 45 < rsi_val < 65 and trend_med == "صاعد" and p > (sma50 or 0))
+        is_gold = (ratio > 1.5 and 45 < rsi_val < 65 and trend_med == "صاعد" and sma50 and p > sma50)
         is_chase = (p > r1 * 1.02)
 
         smart_score = 0
@@ -87,7 +87,8 @@ def analyze_stock(d_row):
 # ================== UI RENDERER ==================
 def render_stock_ui(res, title=""):
     if not res: return
-    if title: st.markdown(f<div class='breakout-card'>{title}</div>, unsafe_allow_html=True)
+    # تم إصلاح الخطأ في السطر التالي (Syntax Error Fix)
+    if title: st.markdown(f"<div class='breakout-card'>{title}</div>", unsafe_allow_html=True)
     
     col_rec = "#ffd700" if res['is_gold'] else "#00ffcc" if res['is_break'] else "#3fb950"
     st.markdown(f"<div class='stock-header'>{res['name']} | {res['desc'][:15]} <span style='color:{col_rec}; float:left;'>Score: {res['s_score']}</span></div>", unsafe_allow_html=True)
@@ -105,10 +106,10 @@ def render_stock_ui(res, title=""):
     sc1, sc2, sc3, sc4 = st.columns(4)
     sc1.metric("دعم 2", f"{res['s2']:.2f}"); sc2.metric("دعم 1", f"{res['s1']:.2f}"); sc3.metric("مقاومة 1", f"{res['r1']:.2f}"); sc4.metric("مقاومة 2", f"{res['r2']:.2f}")
 
-    # --- إعادة إضافة خطة السيولة ---
+    # --- خطة السيولة ---
     st.markdown("---")
     st.subheader("🛠️ خطة السيولة الذكية")
-    budget = st.number_input("الميزانية المستهدفة (جنيه):", value=20000, key=f"plan_{res['name']}")
+    budget = st.number_input("الميزانية المستهدفة لهذا السهم (جنيه):", value=20000, key=f"plan_{res['name']}_{res['p']}")
     p1, p2, p3 = budget * 0.3, budget * 0.4, budget * 0.3
     st.markdown(f"""
         <div class='plan-container'>
@@ -119,7 +120,7 @@ def render_stock_ui(res, title=""):
 
 # ================== NAVIGATION & LOGIC ==================
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Full Ultra v12.9")
+    st.title("🏹 EGX Sniper Pro v12.9")
     cols = st.columns(2)
     if cols[0].button("📡 تحليل سهم"): go_to('analyze')
     if cols[1].button("🔭 كشاف السوق"): go_to('scanner')
@@ -153,23 +154,49 @@ elif st.session_state.page == 'scanner':
         for an in results:
             with st.expander(f"⭐ {an['s_score']} | {an['name']} | {an['p']}"): render_stock_ui(an)
 
+elif st.session_state.page == 'breakout':
+    if st.button("🏠"): go_to('home')
+    for r in fetch_egx_data(scan_all=True):
+        an = analyze_stock(r)
+        if an and an['is_break'] and not an['is_chase']:
+            render_stock_ui(an, f"🚀 اختراق حقيقي: {an['name']}")
+
+elif st.session_state.page == 'gold':
+    if st.button("🏠"): go_to('home')
+    for r in fetch_egx_data(scan_all=True):
+        an = analyze_stock(r)
+        if an and an['is_gold'] and not an['is_chase']:
+            render_stock_ui(an, "💎 صفقة ذهبية")
+
 elif st.session_state.page == 'average':
     if st.button("🏠"): go_to('home')
-    st.subheader("🧮 مساعد متوسط التكلفة")
+    st.subheader("🧮 مساعد متوسط التكلفة الذكي")
     c1, c2, c3 = st.columns(3)
-    old_p = c1.number_input("السعر القديم", 0.0)
-    old_q = c2.number_input("الكمية القديمة", 0)
-    new_p = c3.number_input("السعر الحالي/الجديد", 0.0)
+    old_p = c1.number_input("سعر الشراء القديم", 0.0)
+    old_q = c2.number_input("كمية الأسهم الحالية", 0)
+    new_p = c3.number_input("سعر الشراء الجديد (السعر الحالي)", 0.0)
+    
     if old_p > 0 and old_q > 0 and new_p > 0:
         total_old = old_p * old_q
-        for label, q in [("بسيط (0.5x)", int(old_q*0.5)), ("متكامل (1:1)", old_q), ("هجومي (2:1)", old_q*2)]:
+        for label, q in [("تعديل بسيط (0.5x)", int(old_q*0.5)), ("تعديل متوازن (1:1)", old_q), ("تعديل قوي (2:1)", old_q*2)]:
             cost = q * new_p
             avg = (total_old + cost) / (old_q + q)
-            st.markdown(f"<div class='avg-card'><b>{label}</b>: شراء {q:,} سهم بتكلفة {cost:,.2f} ج<br>المتوسط الجديد: <span class='price-callout'>{avg:.3f} ج</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='avg-card'><b>{label}</b>: شراء {q:,} سهم بتكلفة {cost:,.2f} ج<br>المتوسط الجديد سيكون: <span class='price-callout'>{avg:.3f} ج</span></div>", unsafe_allow_html=True)
+        
         st.divider()
-        target = st.number_input("المتوسط المستهدف؟", value=old_p-0.01)
+        st.subheader("🎯 الوصول لمتوسط مستهدف")
+        target = st.number_input("ما هو السعر المتوسط الذي تطمح للوصول إليه؟", value=old_p-0.10)
+        
         if new_p < target < old_p:
             needed_q = (old_q * (old_p - target)) / (target - new_p)
-            st.markdown(f"<div class='target-box'><h3>خطة الوصول لهدف {target:.2f}</h3><p>✅ شراء: <b style='color:#3fb950;'>{int(needed_q):,} سهم</b></p><p>✅ الميزانية المطلوبة: <b style='color:#3fb950;'>{(needed_q*new_p):,.2f} ج</b></p></div>", unsafe_allow_html=True)
-
-# باقي الصفحات (Gold, Breakout) بنفس المنطق...
+            st.markdown(f"""
+                <div class='target-box'>
+                    <h3>خطة الوصول لهدف {target:.2f}</h3>
+                    <p>✅ تحتاج لشراء: <b style='color:#3fb950; font-size:20px;'>{int(needed_q):,} سهم</b></p>
+                    <p>✅ التكلفة المطلوبة: <b style='color:#3fb950; font-size:20px;'>{(needed_q*new_p):,.2f} ج</b></p>
+                </div>
+            """, unsafe_allow_html=True)
+        elif target <= new_p:
+            st.warning("⚠️ لا يمكن الوصول لمتوسط أقل من سعر السوق الحالي.")
+        else:
+            st.info("ℹ️ السعر المستهدف أعلى من سعرك القديم بالفعل!")
