@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (v13.2 FINAL STABLE) ==================
-st.set_page_config(page_title="EGX Sniper Elite v13.2", layout="wide")
+# ================== CONFIG & STYLE (v13.3 GOLD RECOVERY) ==================
+st.set_page_config(page_title="EGX Sniper Elite v13.3", layout="wide")
 
 st.markdown("""
     <style>
@@ -27,7 +27,6 @@ def go_to(page_name):
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
-    # القائمة الكاملة للأعمدة المطلوبة للتحليل التاريخي
     cols = [
         "name","close","RSI","volume","average_volume_10d_calc","high","low","change","description",
         "SMA20","SMA50","SMA200",
@@ -48,21 +47,18 @@ def fetch_egx_data(symbol=None, scan_all=False):
 # ================== 🔥 ANALYSIS ENGINE ==================
 def analyze_stock(d_row):
     try:
-        d = d_row['d']
-        # Unpack لازم يطابق عدد الـ cols فوق بالظبط (17 عنصر)
+        d = d_row.get('d', [])
+        if len(d) < 17: return None
+        
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200, h_1m, l_1m, h_52w, l_52w, perf_w, perf_m = d
         
         if p is None: return None
-
-        # ✳️ منع الأسهم الضعيفة جداً أسبوعياً
         if perf_w is not None and perf_w < -5: return None
         
-        # حساب نقاط البيفوت
         pp = (p + (h or p) + (l or p)) / 3
         s1, r1 = (2 * pp) - (h or p), (2 * pp) - (l or p)
         s2, r2 = pp - ((h or p) - (l or p)), pp + ((h or p) - (l or p))
         
-        # الاتجاهات
         trend_short = "صاعد" if (sma20 and p > sma20) else "هابط"
         trend_med = "صاعد" if (sma50 and p > sma50) else "هابط"
         trend_long = "صاعد" if (sma200 and p > sma200) else "هابط"
@@ -70,13 +66,13 @@ def analyze_stock(d_row):
         ratio = v / (avg_v or 1)
         rsi_val = rsi if rsi else 0
         
-        # فلاتر القمة (المحدثة)
+        # فلاتر القمة والذهب
         at_year_high = (h_52w and p >= h_52w * 0.97 and ratio > 1.2)
         at_month_high = (h_1m and p >= h_1m * 0.98 and ratio > 1.1)
-        
+        is_gold = (ratio > 1.5 and 45 < rsi_val < 65 and trend_med == "صاعد")
+
         near_support = p <= s1 * 1.02
-        is_strong_break = (p > r1 and ratio > 1.3 and chg > 0.5 and trend_med == "صاعد")
-        is_chase = (p > r1 * 1.02)
+        is_strong_break = (p > r1 and ratio > 1.3 and chg > 0.5)
 
         if near_support: entry_min, entry_max = s1 * 0.99, s1 * 1.01
         elif is_strong_break: entry_min, entry_max = r1, r1 * 1.01
@@ -87,7 +83,6 @@ def analyze_stock(d_row):
         reward = max(r2 - entry_avg, 0.01)
         rr = round(reward / risk, 2)
 
-        # Smart Score
         smart_score = 0
         if trend_short == "صاعد" and trend_med == "صاعد": smart_score += 10
         if trend_long == "صاعد": smart_score += 10
@@ -96,7 +91,6 @@ def analyze_stock(d_row):
         if 40 <= rsi_val <= 65: smart_score += 15
         if at_year_high: smart_score += 20 
         if near_support: smart_score += 15
-        if is_chase: smart_score -= 40
         
         smart_score = max(min(smart_score, 100), 0)
 
@@ -104,20 +98,19 @@ def analyze_stock(d_row):
             "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio,
             "s1": s1, "s2": s2, "r1": r1, "r2": r2,
             "h_1m": h_1m, "l_1m": l_1m, "h_52w": h_52w, "l_52w": l_52w,
-            "perf_w": perf_w, "perf_m": perf_m,
+            "perf_w": perf_w, "perf_m": perf_m, "is_gold": is_gold,
             "t_short": trend_short, "t_med": trend_med, "t_long": trend_long,
             "s_score": smart_score, "rr": rr, "rr_rating": "🔥 ممتازة" if rr >= 2 else "👍 مقبولة" if rr >= 1.5 else "⚠️ ضعيفة",
             "entry_min": entry_min, "entry_max": entry_max, "entry_avg": entry_avg,
             "stop_loss": s2, "target1": r1, "target2": r2,
             "at_year_high": at_year_high, "at_month_high": at_month_high
         }
-    except Exception as e:
-        return None
+    except: return None
 
 # ================== UI RENDERER ==================
 def render_stock_ui(res, title=""):
     if not res: return
-    if title: st.markdown(f"<div style='border: 2px solid #00ffcc; background-color: #0a1a1a; border-radius: 12px; padding: 10px; margin-bottom: 10px;'>{title}</div>", unsafe_allow_html=True)
+    if title: st.info(title)
     
     st.markdown(f"<div class='stock-header'>{res['name']} | {res['desc'][:20]} <span style='color:#ffd700; float:left;'>Score: {res['s_score']}</span></div>", unsafe_allow_html=True)
     
@@ -128,43 +121,30 @@ def render_stock_ui(res, title=""):
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown(f"""
-        <div class='hist-box'>
-        📅 <b>نطاق شهر:</b> {(res['l_1m'] or 0):.2f} — {(res['h_1m'] or 0):.2f}<br>
-        🏆 <b>قمة سنة:</b> {(res['h_52w'] or 0):.2f} 
-        {"<span style='color:#00ffcc;'> (قوة اختراق!)</span>" if res['at_year_high'] or res['at_month_high'] else ""}
-        </div>
-        """, unsafe_allow_html=True)
+        l1m = res['l_1m'] if res['l_1m'] else 0
+        h1m = res['h_1m'] if res['h_1m'] else 0
+        h52 = res['h_52w'] if res['h_52w'] else 0
+        st.markdown(f"<div class='hist-box'>📅 <b>شهر:</b> {l1m:.2f} - {h1m:.2f}<br>🏆 <b>سنة:</b> {h52:.2f}</div>", unsafe_allow_html=True)
     with c2:
-        p_w = res['perf_w'] if res['perf_w'] is not None else 0
-        p_m = res['perf_m'] if res['perf_m'] is not None else 0
-        st.markdown(f"""
-        <div class='hist-box'>
-        📊 <b>أداء أسبوع:</b> {p_w:.1f}%<br>
-        📈 <b>أداء شهر:</b> {p_m:.1f}%
-        </div>
-        """, unsafe_allow_html=True)
+        pw = res['perf_w'] if res['perf_w'] else 0
+        pm = res['perf_m'] if res['perf_m'] else 0
+        st.markdown(f"<div class='hist-box'>📊 <b>أسبوع:</b> {pw:.1f}%<br>📈 <b>شهر:</b> {pm:.1f}%</div>", unsafe_allow_html=True)
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
+    m1.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
     m2.metric("RSI", f"{res['rsi']:.1f}")
     with m3: st.markdown(f"<div class='vol-container'>الزخم: <b>{res['ratio']:.1f}x</b></div>", unsafe_allow_html=True)
 
-    st.markdown(f"""
-    <div class='entry-card-new'>
-    🎯 <b>منطقة الدخول:</b> {res['entry_min']:.2f} → {res['entry_max']:.2f}<br>
-    🛑 <b>وقف الخسارة:</b> <span style='color:#f85149;'>{res['stop_loss']:.2f}</span><br>
-    ⚖️ <b>النسبة RR:</b> 1 : {res['rr']} ({res['rr_rating']})
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<div class='entry-card-new'>🎯 <b>الدخول:</b> {res['entry_min']:.2f} → {res['entry_max']:.2f}<br>🛑 <b>الوقف:</b> {res['stop_loss']:.2f}<br>⚖️ <b>النسبة:</b> 1:{res['rr']} ({res['rr_rating']})</div>", unsafe_allow_html=True)
 
 # ================== NAVIGATION ==================
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Elite v13.2")
+    st.title("🏹 EGX Sniper Elite v13.3")
     c1, c2 = st.columns(2)
-    if c1.button("📡 تحليل سهم محدد"): go_to('analyze')
-    if c2.button("🔭 كشاف السوق الكامل"): go_to('scanner')
-    if c1.button("🚀 اختراقات تاريخية"): go_to('breakout')
+    if c1.button("📡 تحليل سهم"): go_to('analyze')
+    if c2.button("🔭 كشاف السوق"): go_to('scanner')
+    if c1.button("🚀 الاختراقات"): go_to('breakout')
+    if c2.button("💎 قنص الذهب"): go_to('gold')
     if st.button("🧮 مساعد المتوسطات"): go_to('average')
 
 elif st.session_state.page == 'analyze':
@@ -175,38 +155,47 @@ elif st.session_state.page == 'analyze':
         if data: 
             res = analyze_stock(data[0])
             if res: render_stock_ui(res)
-            else: st.warning("السهم مستبعد حالياً (أداء ضعيف أو تراجع حاد)")
+            else: st.warning("السهم مستبعد حالياً")
         else: st.error("سهم غير موجود")
 
 elif st.session_state.page == 'scanner':
     if st.button("🏠"): go_to('home')
-    if st.button("🔍 فحص الفرص"):
+    if st.button("🔍 فحص"):
         data = fetch_egx_data(scan_all=True)
-        results = [an for r in data if (an := analyze_stock(r)) and an['s_score'] >= 55]
-        results.sort(key=lambda x: x['s_score'], reverse=True)
-        for an in results:
-            with st.expander(f"⭐ {an['s_score']} | {an['name']} | RR: {an['rr']}"): render_stock_ui(an)
+        if data:
+            results = [an for r in data if (an := analyze_stock(r)) and an['s_score'] >= 55]
+            results.sort(key=lambda x: x['s_score'], reverse=True)
+            for an in results:
+                with st.expander(f"⭐ {an['s_score']} | {an['name']}"): render_stock_ui(an)
 
 elif st.session_state.page == 'breakout':
     if st.button("🏠"): go_to('home')
     data = fetch_egx_data(scan_all=True)
+    if data:
+        for r in data:
+            an = analyze_stock(r)
+            if an and (an['at_year_high'] or an['at_month_high']):
+                render_stock_ui(an, "🚀 اختراق قمة")
+
+elif st.session_state.page == 'gold':
+    if st.button("🏠"): go_to('home')
+    data = fetch_egx_data(scan_all=True)
     found = False
-    for r in data:
-        an = analyze_stock(r)
-        if an and (an['at_year_high'] or an['at_month_high']):
-            tag = "🚀 اختراق قمة سنة" if an['at_year_high'] else "🔥 اختراق قمة شهر"
-            render_stock_ui(an, tag)
-            found = True
-    if not found: st.write("لا توجد اختراقات مستوفية للشروط حالياً")
+    if data:
+        for r in data:
+            an = analyze_stock(r)
+            if an and an['is_gold']:
+                render_stock_ui(an, "💎 سهم ذهبي")
+                found = True
+    if not found: st.write("لا يوجد فرص ذهبية حالياً")
 
 elif st.session_state.page == 'average':
     if st.button("🏠"): go_to('home')
-    st.subheader("🧮 مساعد متوسط التكلفة")
+    st.subheader("🧮 مساعد المتوسطات")
     c1, c2, c3 = st.columns(3)
-    old_p, old_q = c1.number_input("سعر الشراء القديم", 0.0), c2.number_input("كمية الأسهم", 0)
-    new_p = c3.number_input("سعر الشراء الجديد", 0.0)
+    old_p, old_q = c1.number_input("سعر الشراء", 0.0), c2.number_input("الكمية", 0)
+    new_p = c3.number_input("السعر الجديد", 0.0)
     if old_p > 0 and old_q > 0 and new_p > 0:
-        total_old = old_p * old_q
-        for label, q in [("تعديل بسيط (0.5x)", int(old_q*0.5)), ("تعديل متوازن (1:1)", old_q), ("تعديل قوي (2:1)", old_q*2)]:
-            avg = (total_old + (q * new_p)) / (old_q + q)
-            st.markdown(f"**{label}**: متوسط جديد {avg:.3f} ج")
+        for label, q in [("0.5x", int(old_q*0.5)), ("1:1", old_q), ("2:1", old_q*2)]:
+            avg = ((old_p * old_q) + (q * new_p)) / (old_q + q)
+            st.write(f"**{label}**: متوسط جديد {avg:.3f}")
