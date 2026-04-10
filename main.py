@@ -1,8 +1,7 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG ==================
-st.set_page_config(page_title="EGX Sniper v17.3 PRO", layout="wide")
+st.set_page_config(page_title="EGX Sniper v17.4 FINAL", layout="wide")
 
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
@@ -11,7 +10,7 @@ def go_to(p):
     st.session_state.page = p
     st.rerun()
 
-# ================== DATA ==================
+# ================= DATA =================
 @st.cache_data(ttl=300)
 def fetch_egx_data(query_val=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
@@ -32,12 +31,12 @@ def fetch_egx_data(query_val=None, scan_all=False):
     except:
         return []
 
-# ================== ANALYSIS ==================
+# ================= ANALYSIS =================
 def analyze_stock(d_row):
     try:
         d = d_row['d']
         name,p,rsi,v,avg_v,h,l,chg,desc,sma50,sma200 = d
-        
+
         pp = (h+l+p)/3
         r1,s1 = (2*pp)-l,(2*pp)-h
         r2,s2 = pp+(h-l),pp-(h-l)
@@ -45,48 +44,32 @@ def analyze_stock(d_row):
         ratio = v/(avg_v or 1)
         rsi_val = rsi or 0
 
-        # الاتجاه
+        # اتجاه
         t_short = "صاعد" if p > pp else "هابط"
         t_med = "صاعد" if sma50 and p > sma50 else "هابط"
         t_long = "صاعد" if sma200 and p > sma200 else "هابط"
 
-        # السيولة
+        # سيولة
         vol_txt = "🔥 قوي" if ratio>1.5 else "⚪ متوسط" if ratio>0.8 else "🔴 ضعيف"
 
         # سكـور
         t_score = int(85 if 40<rsi_val<60 else 60 if rsi_val<70 else 35)
         if t_med=="هابط": t_score -= 15
 
-        # ================== إشارات ==================
+        # إشارات محسنة
+        is_gold = (ratio > 1.5 and 45 < rsi_val < 60 and t_med == "صاعد")
 
-        # GOLD (فرص نظيفة)
-        is_gold = (
-            ratio > 1.5 and
-            45 < rsi_val < 60 and
-            t_med == "صاعد"
-        )
+        is_break = (p >= h*0.995 and ratio > 1.2 and rsi_val > 50 and t_med == "صاعد")
 
-        # BREAKOUT (حقيقي مش وهمي)
-        is_break = (
-            p >= h*0.995 and
-            ratio > 1.2 and
-            rsi_val > 50 and
-            t_med == "صاعد"
-        )
-
-        # مطاردة
-        is_chase = (
-            (p > r1*1.03 and rsi_val > 70) or
-            (chg > 7 and ratio > 2)
-        )
+        is_chase = ((p > r1*1.03 and rsi_val > 70) or (chg > 7 and ratio > 2))
 
         # Status
         if is_chase:
-            status = "⚠️ مطاردة - تجنب"
+            status = "⚠️ مطاردة"
         elif is_break:
             status = "🚀 اختراق"
         elif is_gold:
-            status = "💎 فرصة ذهبية"
+            status = "💎 ذهب"
         elif rsi_val < 45:
             status = "🟢 تجميع"
         else:
@@ -103,46 +86,67 @@ def analyze_stock(d_row):
     except:
         return None
 
-# ================== UI ==================
+# ================= UI =================
 def render(an):
 
-    # تحذير
+    # تحذير المطاردة
     if an['is_chase']:
-        st.error("⚠️ السهم في منطقة مطاردة - الأفضل الانتظار")
+        st.error("⚠️ تحذير: السهم في منطقة مطاردة")
 
-    st.markdown(f"### {an['name']} | {an['status']} | Score: {an['t_score']}")
+    st.markdown(f"## {an['name']} | {an['status']} | Score: {an['t_score']}")
 
-    # الاتجاه
-    st.write(f"قصير: {an['t_short']} | متوسط: {an['t_med']} | طويل: {an['t_long']}")
+    st.write(f"Trend: قصير({an['t_short']}) - متوسط({an['t_med']}) - طويل({an['t_long']})")
 
-    # بيانات
-    st.write(f"السعر: {an['p']:.2f} | RSI: {an['rsi']:.1f} | سيولة: {an['vol_txt']}")
+    st.write(f"السعر: {an['p']:.2f} | RSI: {an['rsi']:.1f} | السيولة: {an['vol_txt']}")
 
     st.divider()
 
-    # أهداف
+    # الدعوم والمقاومات
+    st.subheader("📊 الدعوم والمقاومات")
+    c = st.columns(4)
+    c[0].write(f"دعم2: {an['s2']:.2f}")
+    c[1].write(f"دعم1: {an['s1']:.2f}")
+    c[2].write(f"مقاومة1: {an['r1']:.2f}")
+    c[3].write(f"مقاومة2: {an['r2']:.2f}")
+
+    # المضارب والسوينج
     col1,col2 = st.columns(2)
 
     with col1:
         st.subheader("🎯 مضارب")
-        st.write(f"هدف1: {an['r1']:.2f}")
-        st.write(f"هدف2: {an['r2']:.2f}")
+        st.write(f"دخول: {an['p']:.2f}")
+        st.write(f"هدف: {an['r1']:.2f}")
         st.write(f"وقف: {an['s1']:.2f}")
 
     with col2:
-        st.subheader("💰 خطة 20,000")
-        st.write(f"7000 عند {an['p']:.2f}")
-        st.write(f"7000 عند اختراق {an['r1']:.2f}")
-        st.write(f"6000 عند {an['s2']:.2f}")
+        st.subheader("📈 سوينج")
+        st.write(f"دخول: {an['p']:.2f}")
+        st.write(f"هدف: {an['r2']:.2f}")
+        st.write(f"دعم: {an['s2']:.2f}")
 
-# ================== PAGES ==================
+    # خطة السيولة
+    st.subheader("💰 خطة السيولة (20,000)")
+    st.write(f"7000 عند {an['p']:.2f}")
+    st.write(f"7000 عند {an['r1']:.2f}")
+    st.write(f"6000 عند {an['s2']:.2f}")
+
+    # حاسبة المتوسط
+    with st.expander("🧮 حاسبة المتوسط"):
+        old_p = st.number_input("السعر القديم", value=float(an['p']))
+        old_q = st.number_input("الكمية", value=1000)
+        new_q = st.number_input("كمية جديدة", value=old_q)
+
+        avg = ((old_p * old_q) + (an['p'] * new_q)) / (old_q + new_q)
+        st.success(f"المتوسط الجديد: {avg:.2f}")
+
+# ================= PAGES =================
 if st.session_state.page == 'home':
-    st.title("🏹 Sniper v17.3 PRO")
+    st.title("🏹 Sniper v17.4 FINAL")
 
     if st.button("📡 تحليل سهم"): go_to('analyze')
     if st.button("🔭 كشاف السوق"): go_to('scanner')
-    if st.button("🚀 الاختراقات"): go_to('breakout')
-    if st.button("💎 الفرص الذهب"): go_to('gold')
+    if st.button("🚀 اختراق"): go_to('breakout')
+    if st.button("💎 ذهب"): go_to('gold')
 
 elif st.session_state.page == 'analyze':
     if st.button("⬅️"): go_to('home')
