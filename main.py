@@ -146,7 +146,6 @@ def render_stock_ui(res):
         portfolio = col_port.number_input("إجمالي حجم المحفظة (ج):", value=100000, step=1000, key=f"port_{res['name']}")
         risk_per_trade = col_risk.slider("نسبة مخاطرة الصفقة (%)", 0.5, 5.0, 2.0, key=f"risk_{res['name']}")
 
-        # حسابات إدارة المخاطر
         max_loss_allowed = portfolio * (risk_per_trade / 100)
         risk_per_share = res['entry_price'] - res['stop_loss']
         shares_to_buy_initial = int(max_loss_allowed / risk_per_share) if risk_per_share > 0 else 0
@@ -165,35 +164,45 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
-        # 🧮 حاسبة المتوسط داخل التحليل (التعديل الجديد)
         st.markdown("---")
         st.markdown("### 🧮 تعديل متوسط السعر")
-        c_avg1, c_avg2 = st.columns(2)
-        add_price = c_avg1.number_input("سعر التعزيز الجديد", value=res['entry_price'], key=f"ap_{res['name']}")
-        add_qty = c_avg2.number_input("عدد الأسهم الجديدة", value=0, key=f"aq_{res['name']}")
+        if shares_to_buy == 0:
+            st.warning("⚠️ لا يوجد مركز مفتوح حالياً لحساب متوسط (حدد حجم المحفظة أولاً)")
+        else:
+            c_avg1, c_avg2 = st.columns(2)
+            add_price = c_avg1.number_input("سعر التعزيز الجديد", value=res['entry_price'], key=f"ap_{res['name']}")
+            add_qty = c_avg2.number_input("عدد الأسهم الجديدة", value=0, key=f"aq_{res['name']}")
 
-        if add_qty > 0:
-            new_total_qty = shares_to_buy + add_qty
-            new_total_cost = (shares_to_buy * res['entry_price']) + (add_qty * add_price)
-            new_avg = new_total_cost / new_total_qty
-            st.info(f"📊 متوسط السعر بعد التعزيز: {new_avg:.2f}")
+            if add_qty > 0:
+                new_total_qty = shares_to_buy + add_qty
+                new_total_cost = (shares_to_buy * res['entry_price']) + (add_qty * add_price)
+                new_avg = new_total_cost / new_total_qty
+                st.info(f"📊 متوسط السعر بعد التعزيز: {new_avg:.2f}")
         st.markdown("---")
 
-        # خطة الدخول
+        # 🏹 خطة الدخول الذكية (التعديلات الجوهرية هنا)
         range_size = res['entry_price'] - res['stop_loss']
-        entry1_price = res['entry_price']
-        entry2_price = max(res['entry_price'] - (range_size * 0.5), res['stop_loss'] * 1.02)
-        entry3_price = res['entry_price'] + (res['target'] - res['entry_price']) * 0.3
+        e1_p, e2_p = res['entry_price'], max(res['entry_price'] - (range_size * 0.5), res['stop_loss'] * 1.02)
+        e3_p = res['entry_price'] + (res['target'] - res['entry_price']) * 0.3
 
         if res['rr'] >= 2: weights = [0.7, 0.2, 0.1]
         elif res['rr'] >= 1.5: weights = [0.5, 0.3, 0.2]
         else: weights = [0.3, 0.4, 0.3]
 
+        e1_m, e2_m, e3_m = recommended_position_size * weights[0], recommended_position_size * weights[1], recommended_position_size * weights[2]
+        e1_s, e2_s, e3_s = int(e1_m / e1_p), int(e2_m / e2_p), int(e3_m / e3_p)
+
+        st.markdown("### 🏹 خطة التنفيذ المباشرة")
         st.markdown(f"""
         <div class='plan-container'>
-        🟢 <b>دخول أساسي:</b> {entry1_price:.2f} | {(recommended_position_size*weights[0]/entry1_price):,.0f} سهم<br>
-        🟡 <b>تعزيز دعم:</b> {entry2_price:.2f} | {(recommended_position_size*weights[1]/entry2_price):,.0f} سهم<br>
-        🔵 <b>تأكيد اختراق:</b> {entry3_price:.2f} | {(recommended_position_size*weights[2]/entry3_price):,.0f} سهم
+        🟢 <b>لو السعر الحالي ≈ {e1_p:.2f} ج ➜ اشتري الآن</b><br>
+        📦 الكمية: {e1_s:,} سهم | 💰 القيمة: {e1_m:,.0f} ج<br><br>
+
+        🟡 <b>لو السعر نزل لـ {e2_p:.2f} ج ➜ عزز (دعم)</b><br>
+        📦 الكمية: {e2_s:,} سهم | 💰 القيمة: {e2_m:,.0f} ج<br><br>
+
+        🔵 <b>لو السعر اخترق {e3_p:.2f} ج ➜ زود (تأكيد)</b><br>
+        📦 الكمية: {e3_s:,} سهم | 💰 القيمة: {e3_m:,.0f} ج
         </div>
         """, unsafe_allow_html=True)
 
@@ -205,26 +214,54 @@ if st.session_state.page == 'home':
     with col1:
         if st.button("📡 تحليل سهم محدد"): st.session_state.page = 'analyze'; st.rerun()
         if st.button("🔭 كشاف السوق"): st.session_state.page = 'scanner'; st.rerun()
-        if st.button("🧮 حاسبة المتوسط"): st.session_state.page = 'avg'; st.rerun() # الزرار الجديد
+        if st.button("🧮 حاسبة المتوسط"): st.session_state.page = 'avg'; st.rerun()
     with col2:
         if st.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
         if st.button("💎 قنص الذهب"): st.session_state.page = 'gold'; st.rerun()
 
-elif st.session_state.page == 'avg': # الصفحة المستقلة الجديدة
+elif st.session_state.page == 'avg':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     st.title("🧮 حاسبة متوسط السعر")
     col1, col2 = st.columns(2)
-    price1 = col1.number_input("سعر الشراء الأول", value=0.0, format="%.2f")
-    qty1 = col2.number_input("عدد الأسهم", value=0, step=1)
-    price2 = col1.number_input("سعر التعزيز", value=0.0, format="%.2f")
-    qty2 = col2.number_input("عدد الأسهم (تعزيز)", value=0, step=1)
-    
-    total_qty = qty1 + qty2
-    if total_qty > 0:
-        total_cost = (price1 * qty1) + (price2 * qty2)
-        avg_price = total_cost / total_qty
-        st.success(f"📊 متوسط السعر الجديد: {avg_price:.2f}")
-        st.info(f"💰 إجمالي التكلفة: {total_cost:,.2f} ج | إجمالي الأسهم: {total_qty:,}")
+    p1 = col1.number_input("سعر الشراء الأول", value=0.0, format="%.2f")
+    q1 = col2.number_input("عدد الأسهم", value=0, step=1)
+    p2 = col1.number_input("سعر التعزيز", value=0.0, format="%.2f")
+    q2 = col2.number_input("عدد الأسهم (تعزيز)", value=0, step=1)
+    if (q1 + q2) > 0:
+        avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
+        st.success(f"📊 متوسط السعر الجديد: {avg:.2f}")
+
+elif st.session_state.page == 'gold':
+    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
+    render_mode_selector()
+    raw_data = fetch_egx_data(scan_all=True)
+    found = False
+    for r in raw_data:
+        an = analyze_stock(r)
+        # تصحيح الـ Precedence باستخدام الأقواس
+        if an and ((an['rr'] >= 2 and an['ratio'] > 1.2) or an['score'] > 65):
+            with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']})"): 
+                render_stock_ui(an)
+                found = True
+    if not found: st.info("لا توجد فرص ذهبية حالياً.")
+
+elif st.session_state.page == 'scanner':
+    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
+    render_mode_selector()
+    raw_data = fetch_egx_data(scan_all=True)
+    results = [analyze_stock(r) for r in raw_data if analyze_stock(r)]
+    results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
+    for an in results[:15]:
+        with st.expander(f"{an['name']} | RR: {an['rr']} | Score: {an['score']}"): render_stock_ui(an)
+
+elif st.session_state.page == 'breakout':
+    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
+    render_mode_selector()
+    raw_data = fetch_egx_data(scan_all=True)
+    for r in raw_data:
+        an = analyze_stock(r)
+        if an and an['ratio'] > 2:
+            with st.expander(f"🚀 اختراق: {an['name']}"): render_stock_ui(an)
 
 elif st.session_state.page == 'analyze':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -236,35 +273,3 @@ elif st.session_state.page == 'analyze':
             res = analyze_stock(data[0])
             if res: render_stock_ui(res)
         else: st.error("الرمز غير متوفر.")
-
-elif st.session_state.page == 'scanner':
-    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    render_mode_selector()
-    raw_data = fetch_egx_data(scan_all=True)
-    results = [analyze_stock(r) for r in raw_data if analyze_stock(r)]
-    results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
-    for an in results[:15]:
-        with st.expander(f"{an['name']} | RR: {an['rr']} | Score: {an['score']}"): render_stock_ui(an)
-
-elif st.session_state.page == 'gold': # التعديل الذكي لقنص الذهب
-    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    render_mode_selector()
-    raw_data = fetch_egx_data(scan_all=True)
-    found = False
-    for r in raw_data:
-        an = analyze_stock(r)
-        # خيار برو: RR عالي مع سيولة قوية أو سكور مرتفع
-        if an and (an['rr'] >= 2 and an['ratio'] > 1.2 or an['score'] > 65):
-            with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']})"): 
-                render_stock_ui(an)
-                found = True
-    if not found: st.info("لا توجد فرص ذهبية حالياً تطابق المعايير الصارمة.")
-
-elif st.session_state.page == 'breakout':
-    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    render_mode_selector()
-    raw_data = fetch_egx_data(scan_all=True)
-    for r in raw_data:
-        an = analyze_stock(r)
-        if an and an['ratio'] > 2:
-            with st.expander(f"🚀 اختراق: {an['name']}"): render_stock_ui(an)
