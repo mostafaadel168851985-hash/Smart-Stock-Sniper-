@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v14.6", layout="wide")
+st.set_page_config(page_title="EGX Sniper Pro v14.7", layout="wide")
 
 st.markdown("""
     <style>
@@ -20,11 +20,23 @@ st.markdown("""
     .entry-card-new { background-color: #0d1117; border: 1px solid #3fb950; border-radius: 12px; padding: 15px; text-align: center; margin-bottom: 15px; border-top: 4px solid #3fb950; }
     .target-box { border: 2px solid #58a6ff; border-radius: 12px; padding: 15px; text-align: center; background: #0d1117; margin-top: 10px; }
     .plan-container { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-top: 15px; }
-    .rr-tag { font-size: 18px; font-weight: bold; color: #58a6ff; background: rgba(88, 166, 255, 0.1); padding: 5px 15px; border-radius: 8px; }
+    .rr-tag { font-size: 16px; font-weight: bold; color: #58a6ff; background: rgba(88, 166, 255, 0.1); padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(88, 166, 255, 0.3); }
+    .rr-label { font-size: 14px; font-weight: bold; margin-right: 5px; padding: 2px 8px; border-radius: 5px; }
+    .rr-excellent { background: #238636; color: white; }
+    .rr-good { background: #2ea043; color: white; }
+    .rr-fair { background: #d29922; color: white; }
+    .rr-bad { background: #f85149; color: white; }
     </style>
     """, unsafe_allow_html=True)
 
 if 'page' not in st.session_state: st.session_state.page = 'home'
+
+# ================== 🔥 HELPER FUNCTIONS ==================
+def get_rr_status(rr):
+    if rr >= 3: return "فرصة ذهبية 🏆", "rr-excellent"
+    elif rr >= 2: return "صفقة ممتازة ✅", "rr-good"
+    elif rr >= 1.5: return "مقبول 👍", "rr-fair"
+    else: return "خطر / عائد ضعيف ⚠️", "rr-bad"
 
 # ================== 🔥 DATA ENGINE ==================
 @st.cache_data(ttl=300)
@@ -48,26 +60,21 @@ def analyze_stock(d_row):
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d
         if p is None: return None
         
-        # 1. فلترة الأسهم الضعيفة
         ratio = v / (avg_v or 1)
         if ratio < 0.6: return None 
 
-        # 2. الاتجاهات (بمعالجة القيم الفارغة)
         t_short = "صاعد" if (sma20 and p > sma20) else "هابط"
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
         t_long = "صاعد" if (sma200 and p > sma200) else "هابط"
         
-        # 3. إشارة الدخول
         if t_short == "صاعد" and t_med == "صاعد": signal, sig_cls = "شراء قوي 🔥", "buy-strong"
         elif t_short == "صاعد": signal, sig_cls = "شراء حذر ⚠️", "buy-caution"
         else: signal, sig_cls = "انتظار ⏳", "wait"
 
-        # 4. مستويات الدعم والمقاومة
         pp = (p + (h or p) + (l or p)) / 3
         s1, r1 = (2 * pp) - (h or p), (2 * pp) - (l or p)
         s2 = pp - ((h or p) - (l or p))
         
-        # 5. Entry Logic المقترح منك
         if p < r1:
             entry_min, entry_max = s1 * 0.995, s1 * 1.01
         elif p <= r1 * 1.02:
@@ -79,12 +86,12 @@ def analyze_stock(d_row):
         stop_loss = s2
         target = r1 if p < r1 else r1 * 1.1
 
-        # 6. Risk/Reward
         profit_per_share = target - entry_price
         loss_per_share = entry_price - stop_loss
         rr = round(profit_per_share / (loss_per_share if loss_per_share > 0 else 0.01), 2)
+        
+        rr_label, rr_class = get_rr_status(rr)
 
-        # 7. التقييم النهائي
         score = 0
         if t_med == "صاعد": score += 30
         if ratio > 1.2: score += 30
@@ -98,16 +105,22 @@ def analyze_stock(d_row):
             "is_gold": (ratio > 1.5 and 45 < (rsi or 0) < 65 and t_med == "صاعد"),
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}",
             "entry_price": entry_price, "stop_loss": stop_loss, "target": target,
-            "rr": rr, "vol_icon": "🔥 انفجاري" if ratio > 1.5 else "⚪ هادئ"
+            "rr": rr, "rr_label": rr_label, "rr_class": rr_class,
+            "vol_icon": "🔥 انفجاري" if ratio > 1.5 else "⚪ هادئ"
         }
     except: return None
 
 # ================== UI RENDERER ==================
 def render_stock_ui(res):
     st.markdown(f"<div class='stock-header'>{res['name']} | {res['desc'][:20]} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
-    st.markdown(f"<span class='signal-pill {res['sig_cls']}'>{res['signal']}</span> <span class='rr-tag'>RR: {res['rr']}</span>", unsafe_allow_html=True)
     
-    # عرض الاتجاهات
+    # السطر بتاع الـ Signal والـ RR المعدل
+    st.markdown(f"""
+        <span class='signal-pill {res['sig_cls']}'>{res['signal']}</span> 
+        <span class='rr-tag'>RR: {res['rr']}</span> 
+        <span class='rr-label {res['rr_class']}'>{res['rr_label']}</span>
+    """, unsafe_allow_html=True)
+    
     ts_c = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
     tm_c = "trend-up" if res['t_med'] == "صاعد" else "trend-down"
     tl_c = "trend-up" if res['t_long'] == "صاعد" else "trend-down"
@@ -135,7 +148,7 @@ def render_stock_ui(res):
 
 # ================== NAVIGATION ==================
 if st.session_state.page == 'home':
-    st.title("🏹 Sniper Elite v14.6")
+    st.title("🏹 Sniper Elite v14.7")
     if st.button("📡 تحليل سهم"): st.session_state.page = 'analyze'; st.rerun()
     if st.button("🔭 كشاف السوق"): st.session_state.page = 'scanner'; st.rerun()
     if st.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
@@ -180,7 +193,6 @@ elif st.session_state.page == 'breakout':
 elif st.session_state.page == 'average':
     if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
     st.header("🧮 حاسبة المتوسطات")
-    # الكود البسيط للحاسبة
     c1, c2 = st.columns(2)
     p1 = c1.number_input("السعر القديم", 0.0)
     q1 = c1.number_input("الكمية القديمة", 0)
