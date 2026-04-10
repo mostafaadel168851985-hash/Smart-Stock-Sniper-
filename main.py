@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (V16.4 THE RETURN) ==================
-st.set_page_config(page_title="EGX Sniper Elite v16.4", layout="wide")
+# ================== CONFIG & STYLE (V16.6 THE PROTECTOR) ==================
+st.set_page_config(page_title="EGX Sniper Elite v16.6", layout="wide")
 
 st.markdown("""
     <style>
@@ -70,11 +70,9 @@ def analyze_stock(d_row):
 
 # ================== UI RENDERER ==================
 def render_stock_ui(res):
-    # Header with T-Score
     st.markdown(f"### {res['name']} <span class='score-badge'>(T-Score: {res['t_score']})</span>", unsafe_allow_html=True)
     st.caption(res['desc'])
     
-    # Trends
     t_cols = st.columns(3)
     for col, lab, val in zip(t_cols, ["قصير", "متوسط", "طويل"], [res['t_short'], res['t_med'], res['t_long']]):
         cls = "trend-up" if val == "صاعد" else "trend-down"
@@ -82,23 +80,20 @@ def render_stock_ui(res):
 
     st.divider()
     
-    # Core Metrics
     m1, m2, m3 = st.columns(3)
     m1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
     m2.metric("RSI", f"{res['rsi']:.1f}")
     with m3:
         st.markdown(f"<div style='text-align:center;'><b>{res['ratio']:.1f}x</b><br><span style='color:{res['vol_col']}; font-size:12px;'>{res['vol_txt']}</span></div>", unsafe_allow_html=True)
 
-    # 🎯 Daily & Swing Targets (THE HEART)
     c_t, c_s = st.columns(2)
     with c_t:
         st.markdown(f"#### 🎯 مضارب (Score: {res['t_score']})")
-        st.markdown(f"<div class='target-box'>• دخول: <span class='price-callout'>{res['t_e']:.2f} - {res['t_e']*1.01:.2f}</span><br>• هدف: <span class='price-callout'>{res['t_t']:.2f}</span><br>• وقف: <span class='stoploss-callout'>{res['t_s']:.2f}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='target-box'>• دخول: <span class='price-callout'>{res['t_e']:.2f}</span><br>• هدف: <span class='price-callout'>{res['t_t']:.2f}</span><br>• وقف: <span class='stoploss-callout'>{res['t_s']:.2f}</span></div>", unsafe_allow_html=True)
     with c_s:
         st.markdown(f"#### 🔁 سوينج (Score: {res['s_score']})")
         st.markdown(f"<div class='target-box'>• دخول: <span class='price-callout'>{res['s_e']:.2f}</span><br>• هدف مستهدف: <span class='price-callout'>{res['s_t']:.2f}</span><br>• دعم تاريخي: <span class='stoploss-callout'>{res['s_s']:.2f}</span></div>", unsafe_allow_html=True)
 
-    # 🛠️ Liquidity Plan
     with st.expander("🛠️ خطة السيولة (ميزانية الـ 20 ألف)"):
         st.markdown(f"""
         - **صعود:** ادخل بـ 6000 ج عند {res['t_e']:.2f}.. زود بـ 8000 ج عند اختراق {res['t_t']:.2f}.. والتعزيز بـ 6000 ج فوق {res['s_t']:.2f}.
@@ -107,11 +102,11 @@ def render_stock_ui(res):
 
 # ================== PAGES ==================
 if st.session_state.page == 'home':
-    st.title("🏹 Sniper Elite v16.4 Pro")
+    st.title("🏹 Sniper Elite v16.6 Pro")
     c1, c2 = st.columns(2)
     with c1:
         if st.button("📡 تحليل سهم"): go_to('analyze')
-        if st.button("🔭 كشاف السوق"): go_to('scanner')
+        if st.button("🔭 كشاف السوق (Score > 50)"): go_to('scanner')
     with c2:
         if st.button("🚀 رادار الاختراقات"): go_to('breakout')
         if st.button("💎 قنص الذهب"): go_to('gold')
@@ -127,19 +122,19 @@ elif st.session_state.page == 'analyze':
 elif st.session_state.page == 'scanner':
     if st.button("🏠 Home"): go_to('home')
     for r in fetch_egx_data(scan_all=True):
-        if (an := analyze_stock(r)):
+        if (an := analyze_stock(r)) and an['t_score'] >= 50: # فلتر السكور الحاسم
             with st.expander(f"{an['name']} | Score: {an['t_score']} | {an['vol_txt']}"): render_stock_ui(an)
 
 elif st.session_state.page == 'breakout':
     if st.button("🏠 Home"): go_to('home')
     for r in fetch_egx_data(scan_all=True):
-        if (an := analyze_stock(r)) and an['is_break']:
+        if (an := analyze_stock(r)) and an['is_break'] and an['t_score'] >= 50: # حماية السكور
             with st.expander(f"🚀 {an['name']} | Score: {an['t_score']}"): render_stock_ui(an)
 
 elif st.session_state.page == 'gold':
     if st.button("🏠 Home"): go_to('home')
     for r in fetch_egx_data(scan_all=True):
-        if (an := analyze_stock(r)) and an['is_gold']:
+        if (an := analyze_stock(r)) and an['is_gold'] and an['t_score'] >= 50: # حماية السكور
             with st.expander(f"💎 {an['name']} | Score: {an['s_score']}"): render_stock_ui(an)
 
 elif st.session_state.page == 'average':
