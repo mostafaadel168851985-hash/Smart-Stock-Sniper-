@@ -23,6 +23,27 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# ================== 🧠 HELPERS FOR RATINGS ==================
+def get_rr_rating(rr):
+    if rr < 1:
+        return "❌ ضعيف", "RR سيء - مخاطرة أعلى من العائد"
+    elif rr < 1.5:
+        return "⚠️ متوسط", "مضاربة سريعة فقط"
+    elif rr < 2:
+        return "✅ جيد", "صفقة كويسة"
+    else:
+        return "🔥 ممتاز", "فرصة قوية جداً"
+
+def get_volume_rating(ratio):
+    if ratio < 1:
+        return "❄️ ضعيفة", "مفيش سيولة كفاية"
+    elif ratio < 1.5:
+        return "🙂 عادية", "سيولة طبيعية"
+    elif ratio < 2:
+        return "⚡ نشطة", "في اهتمام بالسهم"
+    else:
+        return "🚀 قوية", "سيولة عالية واختراق محتمل"
+
 # ================== 🔥 SESSION STATE & MODES ==================
 if "mode" not in st.session_state:
     st.session_state.mode = "⚖️ متوازن"
@@ -132,8 +153,16 @@ def render_stock_ui(res):
         
         c1, c2, c3 = st.columns(3)
         c1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
-        c2.metric("نشاط السيولة", f"{res['ratio']:.1f}x")
-        c3.metric("R/R Ratio", f"{res['rr']}")
+        
+        # ✅ تقييم السيولة المحدث
+        vol_label, vol_desc = get_volume_rating(res['ratio'])
+        c2.metric("نشاط السيولة", f"{res['ratio']:.1f}x {vol_label}")
+        with c2: st.caption(f"📊 {vol_desc}")
+        
+        # ✅ تقييم RR المحدث
+        rr_label, rr_desc = get_rr_rating(res['rr'])
+        c3.metric("R/R Ratio", f"{res['rr']} {rr_label}")
+        with c3: st.caption(f"🧠 {rr_desc}")
 
         st.markdown(f"""
         <div class='entry-card-new'>
@@ -157,10 +186,8 @@ def render_stock_ui(res):
         max_position_size = portfolio * 0.25
         recommended_position_size = min(shares_to_buy_initial * res['entry_price'], max_position_size)
         
-        # ✅ التحسين الاحترافي: ضمان وجود سهم واحد على الأقل للحسابات
         shares_to_buy = max(1, int(recommended_position_size / res['entry_price'])) if res['entry_price'] > 0 else 0
         
-        # ✅ إرجاع حسابات الربح والخسارة الإجمالية
         profit_val = (res['target'] - res['entry_price']) * shares_to_buy
         loss_val = (res['entry_price'] - res['stop_loss']) * shares_to_buy
         
@@ -173,7 +200,6 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
-        # ✅ إضافة بلوك تقييم الصفقة المالي
         st.markdown(f"""
         <div class='plan-container' style='border-right: 5px solid #58a6ff;'>
         📊 <b>تقييم مالي للصفقة ({shares_to_buy:,} سهم):</b><br>
@@ -195,7 +221,6 @@ def render_stock_ui(res):
             new_avg = new_total_cost / new_total_qty
             st.info(f"📊 متوسط السعر بعد التعزيز: {new_avg:.2f}")
 
-        # 🏹 خطة الدخول الذكية
         range_size = res['entry_price'] - res['stop_loss']
         e1_p, e2_p = res['entry_price'], max(res['entry_price'] - (range_size * 0.5), res['stop_loss'] * 1.02)
         e3_p = res['entry_price'] + (res['target'] - res['entry_price']) * 0.3
