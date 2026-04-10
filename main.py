@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Elite v14.8", layout="wide")
+st.set_page_config(page_title="EGX Sniper Elite v14.9", layout="wide")
 
 st.markdown("""
     <style>
@@ -19,7 +19,8 @@ st.markdown("""
     .wait { background: #161b22; color: #8b949e; border: 1px solid #30363d; }
     .entry-card-new { background-color: #0d1117; border: 1px solid #3fb950; border-radius: 12px; padding: 15px; text-align: center; margin-bottom: 15px; border-top: 4px solid #3fb950; }
     .target-box { border: 2px solid #58a6ff; border-radius: 12px; padding: 15px; text-align: center; background: #0d1117; margin-top: 10px; }
-    .plan-container { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-top: 15px; }
+    .avg-card { background: linear-gradient(135deg, #161b22 0%, #0d1117 100%); border: 1px solid #30363d; border-radius: 15px; padding: 20px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+    .avg-result { font-size: 32px !important; font-weight: 800; color: #58a6ff; text-shadow: 0 0 10px rgba(88,166,255,0.3); }
     .rr-tag { font-size: 16px; font-weight: bold; color: #58a6ff; background: rgba(88, 166, 255, 0.1); padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(88, 166, 255, 0.3); }
     .rr-label { font-size: 14px; font-weight: bold; margin-right: 5px; padding: 2px 8px; border-radius: 5px; }
     .rr-excellent { background: #238636; color: white; }
@@ -55,11 +56,24 @@ def analyze_stock(d_row):
     try:
         d = d_row.get('d', [])
         if not d or len(d) < 12: return None
-        name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d
-        if p is None: return None
         
-        # 1. فلترة سيولة أقوى (تعديل 4)
-        ratio = v / (avg_v or 1)
+        # حماية من القيم الفارغة (None Handling) لمنع الـ TypeError
+        name = d[0]
+        p = d[1] if d[1] is not None else 0
+        rsi = d[2] if d[2] is not None else 50
+        v = d[3] if d[3] is not None else 0
+        avg_v = d[4] if d[4] is not None else 1
+        h = d[5] if d[5] is not None else p
+        l = d[6] if d[6] is not None else p
+        chg = d[7] if d[7] is not None else 0
+        desc = d[8] if d[8] is not None else ""
+        sma20 = d[9]
+        sma50 = d[10]
+        sma200 = d[11]
+
+        if p == 0: return None
+        
+        ratio = v / (avg_v if avg_v > 0 else 1)
         if ratio < 0.8: return None 
 
         t_short = "صاعد" if (sma20 and p > sma20) else "هابط"
@@ -70,9 +84,9 @@ def analyze_stock(d_row):
         elif t_short == "صاعد": signal, sig_cls = "شراء حذر ⚠️", "buy-caution"
         else: signal, sig_cls = "انتظار ⏳", "wait"
 
-        pp = (p + (h or p) + (l or p)) / 3
-        s1, r1 = (2 * pp) - (h or p), (2 * pp) - (l or p)
-        s2 = pp - ((h or p) - (l or p))
+        pp = (p + h + l) / 3
+        s1, r1 = (2 * pp) - h, (2 * pp) - l
+        s2 = pp - (h - l)
         
         if p < r1:
             entry_min, entry_max = s1 * 0.995, s1 * 1.01
@@ -82,37 +96,29 @@ def analyze_stock(d_row):
             entry_min, entry_max = p * 0.99, p
         
         entry_price = (entry_min + entry_max) / 2
-        
-        # 2. حماية الوقف (تعديل 3)
         stop_loss = min(s2, entry_price * 0.97)
 
-        # 3. هدف معتمد على السعر (تعديل 2)
-        if p < r1:
-            target = r1
-        else:
-            target = r1 + (r1 - s1)
+        if p < r1: target = r1
+        else: target = r1 + (r1 - s1)
 
         profit_per_share = target - entry_price
         loss_per_share = entry_price - stop_loss
         
-        # 4. فلترة RR الصارم (تعديل 1 و 5)
         if loss_per_share <= 0: return None
         rr = round(profit_per_share / loss_per_share, 2)
-        if rr < 1.5: return None 
+        if rr < 1.3: return None # قللتها شوية عشان تظهر نتائج أكتر لو السوق هادي
 
         rr_label, rr_class = get_rr_status(rr)
-
         score = 0
         if t_med == "صاعد": score += 30
         if ratio > 1.2: score += 30
-        if 40 < (rsi or 0) < 65: score += 20
+        if 40 < rsi < 65: score += 20
         if rr > 2: score += 20
 
         return {
-            "name": name, "desc": desc, "p": p, "rsi": rsi or 0, "chg": chg, "ratio": ratio,
+            "name": name, "desc": desc, "p": p, "rsi": rsi, "chg": chg, "ratio": ratio,
             "score": score, "signal": signal, "sig_cls": sig_cls,
             "t_short": t_short, "t_med": t_med, "t_long": t_long,
-            "is_gold": (ratio > 1.5 and 45 < (rsi or 0) < 65 and t_med == "صاعد"),
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}",
             "entry_price": entry_price, "stop_loss": stop_loss, "target": target,
             "rr": rr, "rr_label": rr_label, "rr_class": rr_class,
@@ -137,51 +143,69 @@ def render_stock_ui(res):
 
 # ================== NAVIGATION ==================
 if st.session_state.page == 'home':
-    st.title("🏹 Sniper Elite v14.8")
-    for pg in ['analyze', 'scanner', 'breakout', 'gold', 'average']:
-        if st.button(pg.replace('analyze','📡 تحليل سهم').replace('scanner','🔭 كشاف السوق').replace('breakout','🚀 الاختراقات').replace('gold','💎 قنص الذهب').replace('average','🧮 حاسبة المتوسطات')):
-            st.session_state.page = pg; st.rerun()
+    st.title("🏹 Sniper Elite v14.9")
+    col_a, col_b = st.columns(2)
+    if col_a.button("📡 تحليل سهم"): st.session_state.page = 'analyze'; st.rerun()
+    if col_b.button("🔭 كشاف السوق"): st.session_state.page = 'scanner'; st.rerun()
+    if col_a.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
+    if col_b.button("🧮 حاسبة المتوسطات"): st.session_state.page = 'average'; st.rerun()
 
 elif st.session_state.page == 'analyze':
-    if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
-    sym = st.text_input("رمز السهم").upper().strip()
+    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
+    sym = st.text_input("ادخل رمز السهم (مثلاً ATQA)").upper().strip()
     if sym:
         data = fetch_egx_data(symbol=sym)
         if data:
             res = analyze_stock(data[0])
             if res: render_stock_ui(res)
-            else: st.warning("السهم لا يحقق شروط المخاطرة (RR < 1.5) أو السيولة ضعيفة")
-        else: st.error("سهم غير موجود")
+            else: st.warning("⚠️ السهم لا يحقق شروط السيولة (Ratio > 0.8) أو المخاطرة (RR > 1.3) حالياً.")
+        else: st.error("❌ رمز سهم غير صحيح")
 
 elif st.session_state.page == 'scanner':
     if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
     raw_data = fetch_egx_data(scan_all=True)
+    found = False
     for r in raw_data:
         an = analyze_stock(r)
         if an and an['score'] >= 60:
+            found = True
             with st.expander(f"⭐ {an['score']} | {an['name']} | RR: {an['rr']}"): render_stock_ui(an)
+    if not found: st.info("لا توجد فرص قوية حالياً تطابق الفلاتر.")
 
 elif st.session_state.page == 'breakout':
     if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
     raw_data = fetch_egx_data(scan_all=True)
     for r in raw_data:
         an = analyze_stock(r)
-        # 5. شرط الاختراق الأقوى (تعديل 6)
-        if an and an['score'] > 70 and an['rr'] > 1.5 and an['t_med'] == "صاعد":
-            with st.expander(f"🚀 اختراق مؤكد: {an['name']} | RR: {an['rr']}"): render_stock_ui(an)
-
-elif st.session_state.page == 'gold':
-    if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
-    raw_data = fetch_egx_data(scan_all=True)
-    for r in raw_data:
-        an = analyze_stock(r)
-        if an and an['is_gold']:
-            with st.expander(f"✨ ذهبي: {an['name']}"): render_stock_ui(an)
+        if an and an['score'] > 70 and an['t_med'] == "صاعد":
+            with st.expander(f"🚀 اختراق: {an['name']} | RR: {an['rr']}"): render_stock_ui(an)
 
 elif st.session_state.page == 'average':
     if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
-    st.header("🧮 حاسبة المتوسطات")
-    c1, c2 = st.columns(2)
-    p1, q1 = c1.number_input("سعر قديم", 0.0), c1.number_input("كمية قديمة", 0)
-    p2, q2 = c2.number_input("سعر تعديل", 0.0), c2.number_input("كمية جديدة", 0)
-    if (q1 + q2) > 0: st.info(f"المتوسط: {((p1 * q1) + (p2 * q2)) / (q1 + q2):.3f}")
+    st.markdown("<h2 style='text-align:center;'>🧮 حاسبة متوسط التكلفة الاحترافية</h2>", unsafe_allow_html=True)
+    
+    with st.container():
+        st.markdown("<div class='avg-card'>", unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("### المحفظة الحالية")
+            p1 = st.number_input("السعر القديم", min_value=0.0, step=0.01, format="%.2f")
+            q1 = st.number_input("الكمية القديمة", min_value=0, step=1)
+        with c2:
+            st.markdown("### التعديل الجديد")
+            p2 = st.number_input("سعر الشراء الجديد", min_value=0.0, step=0.01, format="%.2f")
+            q2 = st.number_input("الكمية الجديدة", min_value=0, step=1)
+        
+        total_q = q1 + q2
+        if total_q > 0:
+            new_avg = ((p1 * q1) + (p2 * q2)) / total_q
+            total_cost = (p1 * q1) + (p2 * q2)
+            
+            st.markdown("---")
+            st.markdown(f"<div class='avg-result'>المتوسط الجديد: {new_avg:.3f} ج.م</div>", unsafe_allow_html=True)
+            
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("إجمالي الكمية", f"{total_q:,}")
+            mc2.metric("إجمالي التكلفة", f"{total_cost:,.2f} ج")
+            mc3.metric("السيولة المطلوبة", f"{(p2 * q2):,.2f} ج")
+        st.markdown("</div>", unsafe_allow_html=True)
