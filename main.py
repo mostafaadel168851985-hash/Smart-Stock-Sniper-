@@ -19,7 +19,7 @@ st.markdown("""
     .wait { background: #161b22; color: #8b949e; border: 1px solid #30363d; }
     .entry-card-new { background-color: #0d1117; border: 1px solid #3fb950; border-radius: 12px; padding: 15px; text-align: center; margin-bottom: 15px; border-top: 4px solid #3fb950; }
     .target-box { border: 2px solid #58a6ff; border-radius: 12px; padding: 15px; text-align: center; background: #0d1117; margin-top: 10px; font-size: 18px; }
-    .plan-container { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin-top: 15px; }
+    .plan-container { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin-top: 15px; border-right: 5px solid #238636; }
     .avg-section { background: rgba(88, 166, 255, 0.05); border-left: 5px solid #58a6ff; padding: 25px; border-radius: 12px; margin: 20px 0; }
     </style>
     """, unsafe_allow_html=True)
@@ -107,15 +107,13 @@ def render_stock_ui(res):
     decision, color = get_final_decision(res)
     st.markdown(f"<div style='background:{color};padding:15px;border-radius:10px;text-align:center;font-size:20px;font-weight:bold;margin-bottom:10px;color:white'>{decision}</div>", unsafe_allow_html=True)
     
-    # تحسين 3: إضافة المخاطرة لكل سهم تحت القرار
     st.info(f"📊 المخاطرة لكل سهم: {res['entry_price'] - res['stop_loss']:.2f} ج")
 
-    tab_analysis, tab_management = st.tabs(["📊 التحليل الفني", "📉 إدارة المخاطر والمتوسط"])
+    tab_analysis, tab_management = st.tabs(["📊 التحليل الفني", "📉 إدارة المخاطر والسيولة"])
 
     with tab_analysis:
         st.markdown(f"<span class='signal-pill {res['sig_cls']}'>{res['signal']}</span>", unsafe_allow_html=True)
         
-        # تحسين 4: تحسين عرض R/R بـ Markdown
         st.markdown(f"""
         💰 **R/R:** {res['rr']}  
         🎯 **Target:** +{res['target_pct']:.1f}%  
@@ -143,65 +141,78 @@ def render_stock_ui(res):
         """, unsafe_allow_html=True)
 
     with tab_management:
-        # تحسين 1 & 2: Position Sizing based on Risk
+        # --- 1. Position Sizing ---
         col_port, col_risk = st.columns(2)
-        with col_port:
-            portfolio = st.number_input("إجمالي حجم المحفظة (ج):", value=100000, step=1000, key=f"port_{res['name']}")
-        with col_risk:
-            risk_per_trade = st.slider("نسبة مخاطرة الصفقة (%)", 0.5, 5.0, 2.0, key=f"risk_{res['name']}")
+        portfolio = col_port.number_input("إجمالي حجم المحفظة (ج):", value=100000, step=1000, key=f"port_{res['name']}")
+        risk_per_trade = col_risk.slider("نسبة مخاطرة الصفقة (%)", 0.5, 5.0, 2.0, key=f"risk_{res['name']}")
 
-        # منطق الحساب الاحترافي
         max_loss_allowed = portfolio * (risk_per_trade / 100)
         risk_per_share = res['entry_price'] - res['stop_loss']
-        
-        if risk_per_share > 0:
-            shares_to_buy = int(max_loss_allowed / risk_per_share)
-            recommended_position_size = shares_to_buy * res['entry_price']
-        else:
-            shares_to_buy = 0
-            recommended_position_size = 0
+        shares_to_buy = int(max_loss_allowed / risk_per_share) if risk_per_share > 0 else 0
+        recommended_position_size = shares_to_buy * res['entry_price']
 
         st.markdown(f"""
         <div style='background: rgba(88, 166, 255, 0.1); border: 1px solid #58a6ff; padding: 15px; border-radius: 10px; margin-top: 10px;'>
-            🧠 <b>حسبة المخاطرة (Risk Per Trade):</b><br>
-            💸 أقصى خسارة مسموح بها: <b>{max_loss_allowed:,.0f} ج</b><br>
-            🔥 سيولة الدخول المقترحة: <b>{recommended_position_size:,.0f} ج</b><br>
-            📦 عدد الأسهم: <b>{shares_to_buy:,} سهم</b>
+            🧠 <b>إجمالي السيولة المسموح بها: {recommended_position_size:,.0f} ج</b> (أقصى خسارة: {max_loss_allowed:,.0f} ج)
         </div>
         """, unsafe_allow_html=True)
 
+        # --- 2. Execution Strategy (التعديلات الجديدة) ---
+        st.markdown("### 🎯 خطة الدخول المرحلية (Pyramiding)")
+        
+        # تحذيرات ذكية
+        if res['t_long'] == "هابط":
+            st.warning("⚠️ الاتجاه العام هابط - الدخول المرحلي عالي الخطورة")
+        
+        if res['rr'] < 1.5:
+            st.error("❌ لا ينصح بالدخول المرحلي في صفقة ضعيفة (عائد مقابل مخاطرة منخفض)")
+        else:
+            # ربط الدخول بالـ RR
+            if res['rr'] >= 2:
+                entry1_pct, entry2_pct, entry3_pct = 0.7, 0.2, 0.1
+                strategy_note = "🚀 صفقة قوية: دخول هجومي بالبداية"
+            elif res['rr'] >= 1.5:
+                entry1_pct, entry2_pct, entry3_pct = 0.5, 0.3, 0.2
+                strategy_note = "⚖️ صفقة متوازنة: دخول مرحلي قياسي"
+            else:
+                entry1_pct, entry2_pct, entry3_pct = 0.3, 0.4, 0.3
+                strategy_note = "🛡️ صفقة حذرة: دخول تدريجي بسيط"
+
+            entry1_money = recommended_position_size * entry1_pct
+            entry2_money = recommended_position_size * entry2_pct
+            entry3_money = recommended_position_size * entry3_pct
+
+            entry1_shares = int(entry1_money / res['entry_price'])
+            entry2_shares = int(entry2_money / (res['entry_price'] * 0.97)) # عند الهبوط (تعزيز)
+            entry3_shares = int(entry3_money / (res['entry_price'] * 1.02)) # عند الصعود (تأكيد)
+
+            st.caption(strategy_note)
+            st.markdown(f"""
+            <div class='plan-container'>
+            🎯 <b>خطة الدخول المقترحة:</b><br><br>
+            🟢 <b>دخول أول ({int(entry1_pct*100)}%):</b> {entry1_money:,.0f} ج ➜ {entry1_shares:,} سهم (الآن)<br>
+            🟡 <b>تعزيز ({int(entry2_pct*100)}%):</b> {entry2_money:,.0f} ج ➜ {entry2_shares:,} سهم (لو هبط لـ {res['entry_price']*0.97:.2f})<br>
+            🔵 <b>تأكيد ({int(entry3_pct*100)}%):</b> {entry3_money:,.0f} ج ➜ {entry3_shares:,} سهم (لو كسر لـ {res['entry_price']*1.02:.2f})
+            </div>
+            """, unsafe_allow_html=True)
+
+        # --- 3. Average Management ---
         st.markdown("<div class='avg-section'>", unsafe_allow_html=True)
-        st.subheader("📉 حاسبة التعديل الذكية")
+        st.subheader("📉 حاسبة التعديل (لمراكز مفتوحة بالفعل)")
         col_old_p, col_old_q = st.columns(2)
-        old_p = col_old_p.number_input("متوسط سعر الشراء القديم", value=0.0, key=f"ap_{res['name']}")
-        old_q = col_old_q.number_input("الكمية التي تملكها", value=0, key=f"aq_{res['name']}")
+        old_p = col_old_p.number_input("متوسط السعر القديم", value=0.0, key=f"ap_{res['name']}")
+        old_q = col_old_q.number_input("الكمية الحالية", value=0, key=f"aq_{res['name']}")
 
         if old_p > 0 and old_q > 0:
             pnl = (res['p'] - old_p) * old_q
-            st.info(f"📊 موقفك الحالي: {'🟢 ربح' if pnl>=0 else '🔴 خسارة'} {pnl:,.0f} ج")
-            if res['rr'] < 1.5: st.error('⚠️ تحذير: السهم ضعيف فنياً - التعديل خطر حالياً.')
-
-            st.markdown("### 🤖 سيناريوهات التعديل")
+            st.info(f"📊 موقفك: {'🟢 ربح' if pnl>=0 else '🔴 خسارة'} {pnl:,.0f} ج")
+            
             for pct in [0.25, 0.5]:
                 money = recommended_position_size * pct
                 sh = int(money / res['entry_price'])
-                if sh > 0:
-                    n_avg = ((old_p * old_q) + (res['entry_price'] * sh)) / (old_q + sh)
-                    st.write(f"🔹 سيولة {int(pct*100)}% ({money:,.0f}ج) ➜ شراء **{sh}** سهم ➜ المتوسط: **{n_avg:.2f}**")
+                n_avg = ((old_p * old_q) + (res['entry_price'] * sh)) / (old_q + sh)
+                st.write(f"🔹 استثمار {int(pct*100)}% ({money:,.0f}ج) ➜ المتوسط الجديد: **{n_avg:.2f}**")
         st.markdown("</div>", unsafe_allow_html=True)
-
-        # حسابات الربح والخسارة النهائية للعرض
-        profit_val = (res['target'] - res['entry_price']) * shares_to_buy
-        loss_val = (res['entry_price'] - res['stop_loss']) * shares_to_buy
-        
-        st.markdown(f"""
-        <div class='plan-container'>
-        📊 <b>تقييم الصفقة المقترحة:</b><br>
-        <span style="color:#3fb950; font-size:18px;">🟢 <b>الربح المتوقع:</b> {profit_val:,.0f} ج ({res['target_pct']:.1f}%)</span><br>
-        <span style="color:#f85149; font-size:18px;">🔴 <b>الخسارة المحتملة:</b> {loss_val:,.0f} ج ({res['risk_pct']:.1f}%)</span><br>
-        ⚖️ <b>R/R:</b> {res['rr']} R
-        </div>
-        """, unsafe_allow_html=True)
 
 # ================== 🔥 NAVIGATION ==================
 if st.session_state.page == 'home':
