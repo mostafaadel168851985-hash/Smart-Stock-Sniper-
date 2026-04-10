@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v12.8", layout="wide")
+st.set_page_config(page_title="EGX Sniper Ultimate v12.9", layout="wide")
 
 st.markdown("""
     <style>
@@ -14,11 +14,8 @@ st.markdown("""
     .trend-up { background-color: rgba(63, 185, 80, 0.15); color: #3fb950; border: 1px solid #3fb950; }
     .trend-down { background-color: rgba(248, 81, 73, 0.15); color: #f85149; border: 1px solid #f85149; }
     .entry-card-new { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 12px; text-align: center; margin-bottom: 15px; border-top: 4px solid #3fb950; }
-    .avg-card { background-color: #1c2128; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-bottom: 12px; border-left: 5px solid #58a6ff; }
-    .warning-box { background-color: #2e2a0b; border: 1px solid #ffd700; color: #ffd700; padding: 12px; border-radius: 10px; margin-top: 10px; font-weight: bold; border-left: 6px solid #ffd700; }
     .vol-container { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px; text-align: center; }
     .breakout-card { border: 2px solid #00ffcc !important; background-color: #0a1a1a !important; border-radius: 12px; padding: 10px; margin-bottom: 10px; }
-    .plan-container { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-top: 15px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -27,7 +24,7 @@ def go_to(page_name):
     st.session_state.page = page_name
     st.rerun()
 
-# ================== 🔥 DATA ENGINE (IMPROVED FILTERS) ==================
+# ================== 🔥 DATA ENGINE ==================
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
@@ -35,22 +32,17 @@ def fetch_egx_data(symbol=None, scan_all=False):
     
     if scan_all:
         payload = {
-            # تعديل 4: رفع فلتر السيولة لمنع الأسهم الميتة
             "filter": [{"left": "volume", "operation": "greater", "right": 10000}, {"left": "close", "operation": "greater", "right": 0.4}],
-            "columns": cols,
-            "sort": {"sortBy": "change", "sortOrder": "desc"}, "range": [0, 150]
+            "columns": cols, "sort": {"sortBy": "change", "sortOrder": "desc"}, "range": [0, 150]
         }
     else:
-        payload = {
-            "symbols": {"tickers": [f"EGX:{symbol.upper()}"], "query": {"types": []}},
-            "columns": cols
-        }
+        payload = {"symbols": {"tickers": [f"EGX:{symbol.upper()}"]}, "columns": cols}
     try:
         r = requests.post(url, json=payload, timeout=10).json()
         return r.get("data", [])
     except: return []
 
-# ================== 🔥 ANALYSIS ENGINE (SMART ENTRY) ==================
+# ================== 🔥 ANALYSIS ENGINE ==================
 def analyze_stock(d_row):
     try:
         name, p, rsi, v, avg_v, h, l, chg, desc, sma50, sma200 = d_row['d']
@@ -64,17 +56,16 @@ def analyze_stock(d_row):
         ratio = v / (avg_v or 1)
         rsi_val = rsi if rsi else 0
         
-        # تعديل 9: تحسين سعر الدخول (أذكى)
-        if p < r1 * 0.98: real_entry = p
-        else: real_entry = r1
+        # تحسين 9: سعر الدخول الذكي
+        real_entry = p if p < r1 * 0.98 else r1
         
-        # تعديل 10: فلتر قرب الدعم
+        # تحسين 10: فلتر الدعم
         near_support = p <= s1 * 1.02
         
-        # التحقق من الاختراق (تعديل 8)
-        is_breakout = (p > r1 and ratio > 1.3 and trend_med == "صاعد")
-        is_chase = (p > r1 * 1.02) # تعديل 1: تعريف المطاردة
-        is_gold = (ratio > 1.5 and 45 < rsi_val < 65 and trend_med == "صاعد")
+        # تحسين 1 & 2: شروط Gold و Breakout المطورة
+        is_breakout = (p > r1 and ratio > 1.3 and chg > 1 and trend_med == "صاعد")
+        is_gold = (ratio > 1.5 and 45 < rsi_val < 65 and trend_med == "صاعد" and p > (sma50 or 0))
+        is_chase = (p > r1 * 1.02)
 
         # Smart Score
         smart_score = 0
@@ -118,23 +109,21 @@ def render_stock_ui(res, title=""):
 
 # ================== NAVIGATION & LOGIC ==================
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Elite v12.8 Pro")
+    st.title("🏹 EGX Sniper Ultimate v12.9")
     cols = st.columns(2)
     if cols[0].button("📡 تحليل سهم"): go_to('analyze')
     if cols[1].button("🔭 كشاف السوق"): go_to('scanner')
     if cols[0].button("🚀 الاختراقات"): go_to('breakout')
     if cols[1].button("💎 قنص الذهب"): go_to('gold')
-    if st.button("🧮 مساعد المتوسطات"): go_to('average')
 
 elif st.session_state.page == 'analyze':
     if st.button("🏠"): go_to('home')
     sym = st.text_input("ادخل رمز السهم").upper().strip()
     if sym:
         data = fetch_egx_data(symbol=sym)
-        if not data: # تعديل 5: تحسين البحث Fallback
+        if not data:
             for r in fetch_egx_data(scan_all=True):
-                if sym == r['d'][0]: # مطابق تماماً للتيكر
-                    data = [r]; break
+                if sym == r['d'][0]: data = [r]; break
         if data: render_stock_ui(analyze_stock(data[0]))
         else: st.error("لم يتم العثور على السهم")
 
@@ -142,17 +131,15 @@ elif st.session_state.page == 'scanner':
     if st.button("🏠"): go_to('home')
     if st.button("🔍 فحص الفرص"):
         data = fetch_egx_data(scan_all=True)
-        # 🔥 التعديل القنبلة: فلترة صارمة لكل النتائج
+        # تحسين 3: الفلتر الذكي والشامل
         results = [
             an for r in data if (an := analyze_stock(r)) 
-            and an['s_score'] >= 50
-            and an['ratio'] > 0.8        # تعديل 2
-            and not an['is_chase']       # تعديل 1
-            and an['t_med'] == "صاعد"     # تعديل 6
-            and 35 < an['rsi'] < 70      # تعديل 7
-            and (an['near_support'] or an['is_break']) # تعديل 10
+            and an['s_score'] >= 50 and an['ratio'] > 0.8
+            and not an['is_chase'] and an['t_med'] == "صاعد"
+            and 35 < an['rsi'] < 70
+            and (an['near_support'] or an['is_break'] or an['s_score'] > 70)
         ]
-        results.sort(key=lambda x: (x['s_score'], x['ratio']), reverse=True) # تعديل 3
+        results.sort(key=lambda x: (x['s_score'], x['ratio']), reverse=True)
         for an in results:
             with st.expander(f"⭐ {an['s_score']} | {an['name']} | {an['p']}"): render_stock_ui(an)
 
@@ -160,17 +147,12 @@ elif st.session_state.page == 'breakout':
     if st.button("🏠"): go_to('home')
     for r in fetch_egx_data(scan_all=True):
         an = analyze_stock(r)
-        if an and an['is_break'] and not an['is_chase'] and an['ratio'] > 1.2:
-            render_stock_ui(an, f"🚀 اختراق مؤكد: {an['name']}")
+        if an and an['is_break'] and not an['is_chase']:
+            render_stock_ui(an, f"🚀 اختراق حقيقي: {an['name']}")
 
 elif st.session_state.page == 'gold':
     if st.button("🏠"): go_to('home')
     for r in fetch_egx_data(scan_all=True):
         an = analyze_stock(r)
-        if an and an['is_gold'] and not an['is_chase'] and 40 < an['rsi'] < 60:
-            render_stock_ui(an, "💎 فرصة ذهبية")
-
-elif st.session_state.page == 'average':
-    if st.button("🏠"): go_to('home')
-    st.subheader("🧮 مساعد المتوسطات")
-    # (نفس كود المتوسطات السابق...)
+        if an and an['is_gold'] and not an['is_chase']:
+            render_stock_ui(an, "💎 صفقة ذهبية")
