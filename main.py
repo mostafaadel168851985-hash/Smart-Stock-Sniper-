@@ -1,15 +1,27 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="🤖 Sniper AI v19.1 Pro", layout="wide")
+# ================== CONFIG & MODERN STYLE ==================
+st.set_page_config(page_title="🤖 Sniper AI v19.5", layout="wide")
 
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 12px; font-weight: bold; height: 3em; }
-    .trend-box { padding: 10px; border-radius: 10px; text-align: center; font-weight: bold; font-size: 14px; border: 1px solid #30363d; }
-    .avg-card { background-color: #1c2128; border-right: 5px solid #58a6ff; padding: 12px; border-radius: 8px; margin-bottom: 8px; }
-    .status-tag { padding: 5px 12px; border-radius: 20px; font-weight: bold; font-size: 16px; }
+    /* أزرار مودرن */
+    .stButton>button { 
+        width: 100%; border-radius: 15px; height: 4em; 
+        font-weight: bold !important; border: 1px solid #30363d;
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover { background-color: #238636; border-color: #3fb950; }
+    
+    /* كروت الاتجاه */
+    .trend-card { padding: 12px; border-radius: 12px; text-align: center; font-weight: bold; border: 1px solid #30363d; }
+    .up { background-color: rgba(35, 134, 54, 0.2); color: #3fb950; border-color: #238636; }
+    .down { background-color: rgba(248, 81, 73, 0.2); color: #f85149; border-color: #da3633; }
+    
+    /* كروت السيولة والحاسبة */
+    .metric-box { background: #161b22; padding: 15px; border-radius: 15px; border-right: 5px solid #58a6ff; margin-bottom: 10px; }
+    .confidence-ring { text-align: center; border: 3px solid #3fb950; border-radius: 50%; width: 80px; height: 80px; line-height: 80px; margin: auto; font-size: 20px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -29,7 +41,7 @@ def fetch_egx_data(query_val=None, scan_all=False):
         return r.get("data",[])
     except: return []
 
-# ================== AI ANALYSIS ENGINE ==================
+# ================== AI CORE LOGIC ==================
 def analyze_stock(d_row):
     try:
         d = d_row['d']
@@ -43,116 +55,105 @@ def analyze_stock(d_row):
         t_med = "صاعد" if sma50 and p > sma50 else "هابط"
         t_long = "صاعد" if sma200 and p > sma200 else "هابط"
 
-        # نظام الـ Score (AI Logic)
+        # AI Scoring System
         score = 0
         if t_short == "صاعد": score += 10
         if t_med == "صاعد": score += 20
         if t_long == "صاعد": score += 10
         if ratio > 1.5: score += 20
-        elif ratio > 1.0: score += 10
-        if 45 < rsi_val < 60: score += 15
-        elif rsi_val < 70: score += 8
+        elif ratio > 0.8: score += 10
+        if 45 < rsi_val < 60: score += 20
         
-        # إشارات خاصة
         is_gold = (ratio > 1.5 and 45 < rsi_val < 60 and t_med == "صاعد")
-        is_break = (p > r1 and ratio > 1.2 and t_med == "صاعد")
+        is_break = (p > r1 and ratio > 1.1 and t_med == "صاعد")
         is_chase = ((p > r1*1.02 and rsi_val > 70) or (chg > 7 and ratio > 2))
         
-        if is_break: score += 15
+        if is_break: score += 10
         if is_gold: score += 10
-        if is_chase: score -= 40 # خصم المطاردة
-
-        confidence = max(min(score, 100), 0)
-        rr = (r1 - p) / (p - s1) if (p - s1) != 0 else 0
+        if is_chase: score -= 40
 
         return {
             "name":name,"desc":desc,"p":p,"rsi":rsi_val,"chg":chg,"ratio":ratio,
-            "t_score":confidence,"r1":r1,"r2":r2,"s1":s1,"s2":s2,"pp":pp,
+            "t_score":max(min(score, 100), 0),"r1":r1,"r2":r2,"s1":s1,"s2":s2,"pp":pp,
             "t_short":t_short,"t_med":t_med,"t_long":t_long,
-            "is_gold":is_gold,"is_break":is_break,"is_chase":is_chase,"rr":rr
+            "is_gold":is_gold,"is_break":is_break,"is_chase":is_chase
         }
     except: return None
 
 # ================== UI RENDERER ==================
 def render(an):
-    # 1. تنبيه المطاردة (بشكل أوضح)
-    if an['is_chase']:
-        st.error("🚨 تحذير مطاردة: السعر تضخم جداً! انتظر التصحيح قرب مستويات الدعم.")
+    if an['is_chase']: st.error("🚫 **تحذير مطاردة:** السهم متضخم سعرياً، انتظر التهدئة.")
     
-    # 2. الهيدر ونسبة الثقة
-    c_head1, c_head2 = st.columns([2, 1])
-    with c_head1:
-        st.markdown(f"## {an['name']} | {an['desc']}")
-    with c_head2:
-        conf_color = "#3fb950" if an['t_score'] > 70 else "#d29922" if an['t_score'] > 50 else "#f85149"
-        st.markdown(f"<div style='text-align:center; border:2px solid {conf_color}; border-radius:15px; padding:5px;'>AI Confidence<br><span style='font-size:24px; color:{conf_color}; font-weight:bold;'>{an['t_score']}%</span></div>", unsafe_allow_html=True)
+    # رأس الصفحة
+    c1, c2, c3 = st.columns([2, 1, 1])
+    with c1:
+        st.markdown(f"## {an['name']} | <small>{an['desc']}</small>", unsafe_allow_html=True)
+    with c2:
+        vol_icon = "🔥" if an['ratio'] > 1.5 else "🟢" if an['ratio'] > 0.8 else "⚪"
+        st.markdown(f"**السيولة:** {vol_icon} {an['ratio']:.1f}x")
+    with c3:
+        color = "#3fb950" if an['t_score'] > 70 else "#d29922" if an['t_score'] > 40 else "#f85149"
+        st.markdown(f"<div style='color:{color}; font-weight:bold; font-size:22px; text-align:right;'>AI Score: {an['t_score']}%</div>", unsafe_allow_html=True)
 
-    # 3. لوحة الاتجاهات الملونة (إضافة مفقودة)
-    st.markdown("### 📊 حالة الاتجاه والسيولة")
-    c_tr = st.columns(4)
-    for col, lab, val in zip(c_tr[:3], ["قصير", "متوسط", "طويل"], [an['t_short'], an['t_med'], an['t_long']]):
-        color = "#238636" if val == "صاعد" else "#da3633"
-        col.markdown(f"<div class='trend-box' style='background:{color}; color:white;'>{lab}: {val}</div>", unsafe_allow_html=True)
-    c_tr[3].markdown(f"<div class='trend-box'>زخم السيولة: {an['ratio']:.1f}x</div>", unsafe_allow_html=True)
+    # الاتجاهات الملونة
+    st.markdown("---")
+    cols = st.columns(3)
+    for col, lab, val in zip(cols, ["المدى القصير", "المدى المتوسط", "المدى الطويل"], [an['t_short'], an['t_med'], an['t_long']]):
+        cls = "up" if val == "صاعد" else "down"
+        col.markdown(f"<div class='trend-card {cls}'>{lab}<br>{val}</div>", unsafe_allow_html=True)
 
-    st.divider()
-
-    # 4. الأهداف وإدارة الـ 20 ألف ج
-    col_aim, col_money = st.columns(2)
-    with col_aim:
-        st.subheader("🎯 أهداف التداول")
-        st.info(f"**المضارب:** هدف {an['r1']:.2f} | وقف {an['s1']:.2f} (R/R: {an['rr']:.2f})")
-        st.success(f"**السوينج:** هدف كبير {an['r2']:.2f} | دعم رئيسي {an['s2']:.2f}")
+    # الأهداف وخطة الـ 20 ألف
+    st.markdown("---")
+    tab1, tab2, tab3 = st.tabs(["🎯 خطة التداول", "💰 إدارة السيولة", "🧮 حاسبة المتوسط"])
     
-    with col_money:
-        st.subheader("💰 خطة السيولة (ميزانية 20,000 ج)")
-        st.write(f"🔹 **7000 ج** عند سعر الشراء الحالي {an['p']:.2f}")
-        st.write(f"🚀 **7000 ج** في حالة اختراق {an['r1']:.2f}")
-        st.write(f"🛑 **6000 ج** سيولة طوارئ عند دعم {an['s2']:.2f}")
+    with tab1:
+        cc1, cc2 = st.columns(2)
+        cc1.info(f"**المضارب:** دخول {an['p']:.2f} | هدف {an['r1']:.2f} | وقف {an['s1']:.2f}")
+        cc2.success(f"**السوينج:** دخول {an['p']:.2f} | هدف {an['r2']:.2f} | دعم {an['s2']:.2f}")
+    
+    with tab2:
+        st.write("📊 تقسيم محفظة الـ 20,000 ج لهذا السهم:")
+        st.markdown(f"""
+        - 🟢 **7000 ج:** شراء الآن عند {an['p']:.2f}
+        - 🚀 **7000 ج:** تعزيز عند اختراق {an['r1']:.2f}
+        - 🛑 **6000 ج:** سيولة طوارئ عند الدعم التاريخي {an['s2']:.2f}
+        """)
 
-    st.divider()
-
-    # 5. حاسبة المتوسط المساعدة (v12.7 Style - إضافة مفقودة)
-    st.subheader("🧮 مساعد تعديل التكلفة (v12.7 Pro)")
-    with st.expander("اضغط لحساب سيناريوهات التعديل المقترحة", expanded=True):
-        c_c1, c_c2 = st.columns(2)
-        old_p = c_c1.number_input("سعر شراءك القديم", value=float(an['p']), key=f"op_{an['name']}")
-        old_q = c_c2.number_input("كميتك الحالية (سهم)", value=1000, key=f"oq_{an['name']}")
-        
-        st.markdown("---")
-        for label, mult in [("تعديل بسيط (0.5x)", 0.5), ("تعديل متوازن (1:1)", 1.0), ("تعديل هجومي (2x)", 2.0)]:
-            nq = int(old_q * mult)
+    with tab3:
+        st.write("🛠️ **مساعد v12.7 للتعديل:**")
+        old_p = st.number_input("سعر الشراء القديم", value=float(an['p']), key=f"p_{an['name']}")
+        old_q = st.number_input("الكمية الحالية", value=1000, key=f"q_{an['name']}")
+        for lbl, m in [("تعديل 1:1", 1.0), ("تعديل 2:1", 2.0)]:
+            nq = int(old_q * m)
             avg = ((old_p * old_q) + (an['p'] * nq)) / (old_q + nq)
-            st.markdown(f"<div class='avg-card'>شراء {nq:,} سهم ({label}) ⬅️ المتوسط الجديد سيكون: <span style='color:#3fb950; font-weight:bold;'>{avg:.3f} ج</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-box'>شراء {nq:,} سهم ⬅️ المتوسط الجديد: {avg:.3f} ج</div>", unsafe_allow_html=True)
 
 # ================== PAGES ==================
 if st.session_state.page == 'home':
-    st.title("🤖 Sniper AI v19.1 Pro")
-    st.info("نظام تداول ذكي يجمع بين التحليل الفني الكلاسيكي ومنطق النقاط (Score System).")
+    st.title("🤖 Sniper AI v19.5")
     c1, c2 = st.columns(2)
-    if c1.button("📡 تحليل سهم محدد"): go_to('analyze')
-    if c2.button("🔥 أفضل فرص السوق (AI)"): go_to('top')
+    if c1.button("🔍 تحليل سهم محدد"): go_to('analyze')
+    if c2.button("📡 كشاف السوق العام"): go_to('scanner')
+    if c1.button("🚀 صفقات الاختراق"): go_to('breakout')
+    if c2.button("💎 فرص الذهب"): go_to('gold')
 
 elif st.session_state.page == 'analyze':
-    if st.button("⬅️ عودة"): go_to('home')
-    q = st.text_input("ادخل رمز السهم (مثال: ATQA)").upper()
+    if st.button("🏠 عودة للرئيسية"): go_to('home')
+    q = st.text_input("ادخل الرمز").upper()
     if q:
         data = fetch_egx_data(query_val=q)
         if data: render(analyze_stock(data[0]))
-        else: st.warning("السهم غير موجود أو لا توجد سيولة كافية.")
 
-elif st.session_state.page == 'top':
-    if st.button("⬅️ عودة"): go_to('home')
-    stocks = []
-    with st.spinner("جاري تحليل أقوى 100 سهم في البورصة..."):
-        for r in fetch_egx_data(scan_all=True):
-            an = analyze_stock(r)
-            if an and not an['is_chase'] and an['t_score'] > 50:
-                stocks.append(an)
-    
-    top = sorted(stocks, key=lambda x: x['t_score'], reverse=True)[:10]
-    if top:
-        for an in top:
-            with st.expander(f"🔥 {an['name']} | Confidence: {an['t_score']}% | Price: {an['p']} ج"):
-                render(an)
-    else: st.info("لا توجد فرص قوية حالياً تحقق شروط الـ AI.")
+elif st.session_state.page in ['scanner', 'breakout', 'gold']:
+    if st.button("🏠 عودة للرئيسية"): go_to('home')
+    page = st.session_state.page
+    for r in fetch_egx_data(scan_all=True):
+        an = analyze_stock(r)
+        if not an: continue
+        show = False
+        if page == 'scanner' and an['t_score'] > 50: show = True
+        if page == 'breakout' and an['is_break'] and not an['is_chase']: show = True
+        if page == 'gold' and an['is_gold']: show = True
+        
+        if show:
+            with st.expander(f"📌 {an['name']} | AI: {an['t_score']}%"): render(an)
