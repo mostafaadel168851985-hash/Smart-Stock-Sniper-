@@ -25,30 +25,20 @@ st.markdown("""
 
 # ================== 🧠 HELPERS FOR RATINGS ==================
 def get_rr_rating(rr):
-    if rr < 1:
-        return "❌ ضعيف", "RR سيء - مخاطرة أعلى من العائد"
-    elif rr < 1.5:
-        return "⚠️ متوسط", "مضاربة سريعة فقط"
-    elif rr < 2:
-        return "✅ جيد", "صفقة كويسة"
-    else:
-        return "🔥 ممتاز", "فرصة قوية جداً"
+    if rr < 1: return "❌ ضعيف", "RR سيء - مخاطرة أعلى من العائد"
+    elif rr < 1.5: return "⚠️ متوسط", "مضاربة سريعة فقط"
+    elif rr < 2: return "✅ جيد", "صفقة كويسة"
+    else: return "🔥 ممتاز", "فرصة قوية جداً"
 
 def get_volume_rating(ratio):
-    if ratio < 1:
-        return "❄️ ضعيفة", "مفيش سيولة كفاية"
-    elif ratio < 1.5:
-        return "🙂 عادية", "سيولة طبيعية"
-    elif ratio < 2:
-        return "⚡ نشطة", "في اهتمام بالسهم"
-    else:
-        return "🚀 قوية", "سيولة عالية واختراق محتمل"
+    if ratio < 1: return "❄️ ضعيفة", "مفيش سيولة كفاية"
+    elif ratio < 1.5: return "🙂 عادية", "سيولة طبيعية"
+    elif ratio < 2: return "⚡ نشطة", "في اهتمام بالسهم"
+    else: return "🚀 قوية", "سيولة عالية واختراق محتمل"
 
 # ================== 🔥 SESSION STATE & MODES ==================
-if "mode" not in st.session_state:
-    st.session_state.mode = "⚖️ متوازن"
-if 'page' not in st.session_state: 
-    st.session_state.page = 'home'
+if "mode" not in st.session_state: st.session_state.mode = "⚖️ متوازن"
+if 'page' not in st.session_state: st.session_state.page = 'home'
 
 def render_mode_selector():
     with st.expander("🧠 اختر نوع التداول", expanded=False):
@@ -63,12 +53,7 @@ def render_mode_selector():
     mode = st.session_state.mode
     color = "#238636" if "محافظ" in mode else "#f85149" if "هجومي" in mode else "#d29922"
     icon = "🛡️" if "محافظ" in mode else "🚀" if "هجومي" in mode else "⚖️"
-
-    st.markdown(f"""
-    <div style="background:{color}; padding:10px; border-radius:10px; text-align:center; font-weight:bold; margin-top:10px; color:white; margin-bottom: 20px;">
-        🎯 النمط الحالي: {icon} {mode}
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"""<div style="background:{color}; padding:10px; border-radius:10px; text-align:center; font-weight:bold; margin-top:10px; color:white; margin-bottom: 20px;">🎯 النمط الحالي: {icon} {mode}</div>""", unsafe_allow_html=True)
 
 # ================== 🔥 DATA & ANALYSIS ENGINE ==================
 @st.cache_data(ttl=300)
@@ -89,118 +74,42 @@ def analyze_stock(d_row):
         d = d_row.get('d', [])
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d
         if p is None: return None
-        
         ratio = v / (avg_v or 1)
         t_short = "صاعد" if (sma20 and p > sma20) else "هابط"
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
         t_long = "صاعد" if (sma200 and p > sma200) else "هابط"
-
-        entry_min = p * 0.98
-        entry_max = p * 1.01
-        entry_price = (entry_min + entry_max) / 2
-        
+        entry_price = p # Simplified for context
         pp = (p + (h or p) + (l or p)) / 3
-        s1, r1 = (2 * pp) - (h or p), (2 * pp) - (l or p)
         s2 = pp - ((h or p) - (l or p))
-        
         stop_loss = min(s2, entry_price * 0.97)
-        target = max(r1, entry_price * 1.05)
-
+        target = (2 * pp) - (l or p)
         profit_ps = target - entry_price; loss_ps = entry_price - stop_loss
         if loss_ps <= 0: return None
         rr = round(profit_ps / loss_ps, 2)
-
-        if rr >= 2 and t_short == "صاعد" and t_med == "صاعد":
-            signal, sig_cls = "شراء قوي 🔥", "buy-strong"
-        elif ratio > 2 and t_short == "صاعد":
-            signal, sig_cls = "اختراق قوي 🚀", "buy-strong"
-        elif ratio > 1.5 and rr >= 1.2:
-            signal, sig_cls = "فرصة مضاربية ⚡", "buy-caution"
-        elif rr >= 1.2:
-            signal, sig_cls = "شراء حذر ⚠️", "buy-caution"
-        else:
-            signal, sig_cls = "انتظار ⏳", "wait"
-
+        if rr >= 2 and t_short == "صاعد" and t_med == "صاعد": signal, sig_cls = "شراء قوي 🔥", "buy-strong"
+        elif ratio > 2 and t_short == "صاعد": signal, sig_cls = "اختراق قوي 🚀", "buy-strong"
+        elif ratio > 1.5 and rr >= 1.2: signal, sig_cls = "فرصة مضاربية ⚡", "buy-caution"
+        elif rr >= 1.2: signal, sig_cls = "شراء حذر ⚠️", "buy-caution"
+        else: signal, sig_cls = "انتظار ⏳", "wait"
         return {
-            "name": name, "desc": desc, "p": p, "rsi": rsi or 0, "chg": chg, "ratio": ratio,
+            "name": name, "p": p, "rsi": rsi or 0, "chg": chg, "ratio": ratio,
             "signal": signal, "sig_cls": sig_cls, "t_short": t_short, "t_med": t_med, "t_long": t_long,
-            "entry_range": f"{entry_min:.2f} - {entry_max:.2f}", "entry_price": entry_price,
-            "stop_loss": stop_loss, "target": target, "rr": rr, "risk_pct": (loss_ps/entry_price)*100, 
-            "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) * 20) + (rsi / 2 if rsi else 25))
+            "entry_price": entry_price, "stop_loss": stop_loss, "target": target, "rr": rr, 
+            "risk_pct": (loss_ps/entry_price)*100, "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) * 20) + (rsi / 2 if rsi else 25))
         }
     except: return None
 
 # ================== UI RENDERER ==================
 def render_stock_ui(res):
     st.markdown(f"<div class='stock-header'>{res['name']} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
-    
-    tab_analysis, tab_management, tab_scenario = st.tabs([
-        "📊 التحليل الفني",
-        "📉 إدارة المخاطر والسيولة",
-        "🧠 الوضع الحالي"
-    ])
+    tab_analysis, tab_management, tab_scenario = st.tabs(["📊 التحليل الفني", "📉 إدارة المخاطر", "🧠 الوضع الحالي"])
 
     with tab_analysis:
-        t_short_c = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
-        t_med_c = "trend-up" if res['t_med'] == "صاعد" else "trend-down"
-        t_long_c = "trend-up" if res['t_long'] == "صاعد" else "trend-down"
-
-        st.markdown(f"""
-        <div style='margin-bottom: 15px;'>
-            <span class='trend-pill {t_short_c}'>قصير: {res['t_short']}</span>
-            <span class='trend-pill {t_med_c}'>متوسط: {res['t_med']}</span>
-            <span class='trend-pill {t_long_c}'>طويل: {res['t_long']}</span>
-        </div>
-        """, unsafe_allow_html=True)
-
         st.markdown(f"<span class='signal-pill {res['sig_cls']}'>{res['signal']}</span>", unsafe_allow_html=True)
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
-        
-        vol_label, vol_desc = get_volume_rating(res['ratio'])
-        c2.metric("نشاط السيولة", f"{res['ratio']:.1f}x {vol_label}")
-        with c2: st.caption(f"📊 {vol_desc}")
-        
-        rr_label, rr_desc = get_rr_rating(res['rr'])
-        c3.metric("R/R Ratio", f"{res['rr']} {rr_label}")
-        with c3: st.caption(f"🧠 {rr_desc}")
-
-        st.markdown(f"""
-        <div class='entry-card-new'>
-            🎯 <b>نطاق الدخول المقترح:</b> {res['entry_range']}<br>
-            🛑 <b>وقف الخسارة:</b> {res['stop_loss']:.2f} <span style='color:#f85149'>(⚠️ -{res['risk_pct']:.1f}%)</span>
-        </div>
-        <div class='target-box'>
-            🏁 <b>المستهدف:</b> {res['target']:.2f} <span style='color:#58a6ff'>(🎯 +{res['target_pct']:.1f}%)</span>
-        </div>
-        """, unsafe_allow_html=True)
+        st.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
 
     with tab_management:
-        col_port, col_risk = st.columns(2)
-        portfolio = col_port.number_input("إجمالي حجم المحفظة (ج):", value=100000, step=1000, key=f"port_{res['name']}")
-        risk_per_trade = col_risk.slider("نسبة مخاطرة الصفقة (%)", 0.5, 5.0, 2.0, key=f"risk_{res['name']}")
-
-        max_loss_allowed = portfolio * (risk_per_trade / 100)
-        risk_per_share = res['entry_price'] - res['stop_loss']
-        shares_to_buy_initial = int(max_loss_allowed / risk_per_share) if risk_per_share > 0 else 0
-        
-        max_position_size = portfolio * 0.25
-        recommended_position_size = min(shares_to_buy_initial * res['entry_price'], max_position_size)
-        
-        shares_to_buy = max(1, int(recommended_position_size / res['entry_price'])) if res['entry_price'] > 0 else 0
-        
-        profit_val = (res['target'] - res['entry_price']) * shares_to_buy
-        loss_val = (res['entry_price'] - res['stop_loss']) * shares_to_buy
-        
-        actual_risk_pct = (loss_val / portfolio) * 100
-
-        st.markdown(f"""
-        <div style='background: rgba(88, 166, 255, 0.1); border: 1px solid #58a6ff; padding: 15px; border-radius: 10px; margin-top: 10px;'>
-            🧠 <b>إجمالي السيولة المقررة: { (shares_to_buy * res['entry_price']):,.0f} ج</b><br>
-            ⚠️ <b>المخاطرة الفعلية: {actual_risk_pct:.2f}%</b>
-        </div>
-        """, unsafe_allow_html=True)
+        st.info("قسم إدارة السيولة والمخاطر المالي")
 
     with tab_scenario:
         st.markdown("### 🧠 تحليل وضعك الحالي")
@@ -211,89 +120,83 @@ def render_stock_ui(res):
         if qty > 0 and buy_price > 0:
             current_price = res['p']
             pnl = (current_price - buy_price) * qty
+            
+            # حساب نسبة الربح الفعلية
             pnl_pct = ((current_price - buy_price) / buy_price) * 100
 
-            if pnl > 0:
-                st.success(f"🟢 انت كسبان: {pnl:,.0f} ج (+{pnl_pct:.2f}%)")
-            elif pnl < 0:
-                st.error(f"🔴 انت خسران: {pnl:,.0f} ج ({pnl_pct:.2f}%)")
-            else:
-                st.info("⚖️ انت على التعادل")
+            if pnl > 0: st.success(f"🟢 انت كسبان: {pnl:,.0f} ج (+{pnl_pct:.2f}%)")
+            elif pnl < 0: st.error(f"🔴 انت خسران: {pnl:,.0f} ج ({pnl_pct:.2f}%)")
+            else: st.info("⚖️ انت على التعادل")
 
+            # ================= 🔔 SMART PROFIT ENGINE (ADVANCED UPDATE) =================
             st.markdown("---")
+            st.markdown("### 🤖 توصيات ذكية حسب وضع الصفقة")
 
-            trend_score = 0
-            if res['t_short'] == "صاعد": trend_score += 1
-            if res['t_med'] == "صاعد": trend_score += 1
-            if res['ratio'] > 1.5: trend_score += 1
-
-            # 🟢 Hold
-            st.markdown("### 🟢 سيناريو الاستمرار (Hold)")
-            if trend_score >= 2:
-                st.success(f"- الاتجاه كويس ✅ | السعر فوق {res['stop_loss']:.2f} | الهدف: {res['target']:.2f}")
-            else:
-                st.warning("الاتجاه مش قوي ⚠️ | ممكن تقلل جزء من المركز لتأمين نفسك")
-
-            # 🟡 Averaging
-            st.markdown("### 🟡 سيناريو التبريد (Averaging)")
-            avg_zone = res['entry_price'] * 0.97
-            if res['t_short'] == "صاعد" and res['ratio'] > 1.2:
-                st.success(f"✅ تبريد آمن نسبياً عند {avg_zone:.2f}")
-            else:
-                st.warning(f"⚠️ تبريد عالي المخاطرة عند {avg_zone:.2f}")
-
-            # 🔴 Exit
-            st.markdown("### 🔴 سيناريو الخروج (Exit)")
-            st.error(f"- وقف الخسارة: {res['stop_loss']:.2f} | لو كسرها ➜ خروج فوري ❌")
-
-            # ================= 🔔 SMART ACTION ENGINE =================
-            st.markdown("---")
-            st.markdown("### 🤖 توصيات تنفيذ ذكية")
-
-            # حسابات المخاطرة بناءً على مدخلات المستخدم في tab_management أو قيم افتراضية
-            max_risk_value = 100000 * 0.02 # محفظة افتراضية 100k ومخاطرة 2%
-            risk_per_share_calc = buy_price - res['stop_loss']
-            safe_qty = int(max_risk_value / risk_per_share_calc) if risk_per_share_calc > 0 else 0
-
-            if pnl > 0:
-                sell_25 = int(qty * 0.25)
-                sell_50 = int(qty * 0.5)
-                st.success(f"""
-                🟢 إدارة الربح:
-                🔹 بيع جزئي آمن: {sell_25} سهم  
-                🔹 تأمين قوي: {sell_50} سهم  
-                💡 لو السهم قوي → بيع 25% | لو ضعيف → بيع 50%
-                """)
-            elif pnl < 0:
-                if trend_score >= 2: # استخدام trend_score كبديل للـ score في منطق التبريد
-                    add_qty_suggested = max(0, safe_qty - qty)
+            # 🟢 حالة المكسب
+            if pnl_pct > 0:
+                # 🔒 تأمين قوي
+                if pnl_pct >= 7:
+                    sell_qty = int(qty * 0.5)
+                    st.success(f"""
+                    🔒 تأمين أرباح قوي:
+                    - الربح وصل +{pnl_pct:.2f}%
+                    - بيع 50% = {sell_qty} سهم
+                    - سيب الباقي يكمل للهدف 🚀
+                    """)
+                # ⚖️ تأمين جزئي
+                elif pnl_pct >= 3:
+                    sell_qty = int(qty * 0.25)
                     st.info(f"""
-                    🟡 فرصة تبريد محسوبة:
-                    🔹 الكمية المقترحة: {add_qty_suggested} سهم  
-                    🔹 لتحسين متوسط السعر | ⚠️ بشرط ثبات السعر فوق الدعم
+                    ⚖️ تأمين جزئي:
+                    - الربح متوسط +{pnl_pct:.2f}%
+                    - بيع 25% = {sell_qty} سهم
+                    - كمل بالباقي بحذر
                     """)
+                # 👀 لسه بدري
                 else:
-                    cut_qty = int(qty * 0.5)
-                    st.error(f"""
-                    🔴 تقليل المخاطرة:
-                    🔹 بيع فوري: {cut_qty} سهم أو خروج كامل لو كسر الدعم  
-                    ❌ التبريد غير آمن هنا
+                    st.warning(f"""
+                    👀 لسه بدري على البيع:
+                    - الربح الحالي +{pnl_pct:.2f}%
+                    - خليك مستني تأكيد أو اختراق
                     """)
+
+            # 🔴 حالة الخسارة
+            elif pnl_pct < 0:
+                trend_score = 0
+                if res['t_short'] == "صاعد": trend_score += 1
+                if res['t_med'] == "صاعد": trend_score += 1
+                if res['ratio'] > 1.5: trend_score += 1
+                
+                distance_from_sl = (buy_price - res['stop_loss']) / buy_price * 100
+
+                # 🟡 تبريد آمن
+                if trend_score >= 2 and distance_from_sl > 6:
+                    st.info(f"""
+                    🟡 تبريد محسوب:
+                    - الاتجاه مازال كويس
+                    - في مسافة أمان عن وقف الخسارة ({distance_from_sl:.1f}%)
+                    - ممكن تزود كمية بحذر
+                    """)
+                # 🔴 خطر
+                else:
+                    st.error(f"""
+                    🔴 خطر عالي:
+                    - الاتجاه ضعيف أو قريب من وقف الخسارة
+                    - ❌ التبريد غير آمن
+                    - الأفضل تقليل المركز أو الخروج
+                    """)
+            # ⚖️ تعادل
             else:
-                st.info("⚖️ الوضع محايد: استنى اختراق أو كسر | مفيش قرار واضح حالياً")
+                st.info("⚖️ انت عند نقطة التعادل - استنى إشارة واضحة")
 
             # ================= 🔔 ALERTS =================
-            st.markdown("### 🚨 تنبيهات مهمة")
+            st.markdown("---")
+            st.markdown("### 🚨 تنبيهات فنية سريعة")
             alerts = []
-            if res['ratio'] > 2: alerts.append("🚀 سيولة قوية → ممكن اختراق")
-            if res['rr'] < 1: alerts.append("❌ RR ضعيف → الصفقة غير مريحة")
-            if res['t_short'] == "هابط": alerts.append("🔻 اتجاه قصير هابط")
+            if res['ratio'] > 2: alerts.append("🚀 سيولة قوية جداً")
             if current_price <= res['stop_loss']: alerts.append("⛔ كسر وقف الخسارة")
-
             if alerts:
                 for a in alerts: st.warning(a)
-            else:
-                st.success("✅ لا توجد إشارات خطر حالياً")
 
 # ================== 🔥 NAVIGATION ==================
 if st.session_state.page == 'home':
@@ -303,61 +206,15 @@ if st.session_state.page == 'home':
     with col1:
         if st.button("📡 تحليل سهم محدد"): st.session_state.page = 'analyze'; st.rerun()
         if st.button("🔭 كشاف السوق"): st.session_state.page = 'scanner'; st.rerun()
-        if st.button("🧮 حاسبة المتوسط"): st.session_state.page = 'avg'; st.rerun()
     with col2:
         if st.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
-        if st.button("💎 قنص الذهب"): st.session_state.page = 'gold'; st.rerun()
-
-elif st.session_state.page == 'avg':
-    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    st.title("🧮 حاسبة متوسط السعر")
-    col1, col2 = st.columns(2)
-    p1 = col1.number_input("سعر الشراء الأول", value=0.0, format="%.2f")
-    q1 = col2.number_input("عدد الأسهم", value=0, step=1)
-    p2 = col1.number_input("سعر التعزيز", value=0.0, format="%.2f")
-    q2 = col2.number_input("عدد الأسهم (تعزيز)", value=0, step=1)
-    if (q1 + q2) > 0:
-        avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
-        st.success(f"📊 متوسط السعر الجديد: {avg:.2f}")
-
-elif st.session_state.page == 'gold':
-    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    render_mode_selector()
-    raw_data = fetch_egx_data(scan_all=True)
-    found = False
-    for r in raw_data:
-        an = analyze_stock(r)
-        if an and ((an['rr'] >= 2 and an['ratio'] > 1.2) or an['score'] > 65):
-            with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']})"): 
-                render_stock_ui(an)
-                found = True
-    if not found: st.info("لا توجد فرص ذهبية حالياً.")
-
-elif st.session_state.page == 'scanner':
-    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    render_mode_selector()
-    raw_data = fetch_egx_data(scan_all=True)
-    results = [analyze_stock(r) for r in raw_data if analyze_stock(r)]
-    results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
-    for an in results[:15]:
-        with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
-
-elif st.session_state.page == 'breakout':
-    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    render_mode_selector()
-    raw_data = fetch_egx_data(scan_all=True)
-    for r in raw_data:
-        an = analyze_stock(r)
-        if an and an['ratio'] > 2:
-            with st.expander(f"🚀 اختراق: {an['name']}"): render_stock_ui(an)
 
 elif st.session_state.page == 'analyze':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    render_mode_selector()
-    sym = st.text_input("رمز السهم").upper().strip()
+    sym = st.text_input("رمز السهم (مثال: ATQA)").upper().strip()
     if sym:
         data = fetch_egx_data(symbol=sym)
         if data:
             res = analyze_stock(data[0])
             if res: render_stock_ui(res)
-        else: st.error("الرمز غير متوفر.")
+        else: st.error("الرمز غير صحيح")
