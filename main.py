@@ -20,7 +20,6 @@ st.markdown("""
     .entry-card-new { background-color: #0d1117; border: 1px solid #3fb950; border-radius: 12px; padding: 15px; text-align: center; margin-bottom: 15px; border-top: 4px solid #3fb950; }
     .target-box { border: 2px solid #58a6ff; border-radius: 12px; padding: 15px; text-align: center; background: #0d1117; margin-top: 10px; font-size: 18px; }
     .plan-container { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin-top: 15px; border-right: 5px solid #238636; }
-    .avg-section { background: rgba(88, 166, 255, 0.05); border-left: 5px solid #58a6ff; padding: 25px; border-radius: 12px; margin: 20px 0; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -103,7 +102,6 @@ def analyze_stock(d_row):
 def render_stock_ui(res):
     st.markdown(f"<div class='stock-header'>{res['name']} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
     
-    # 1. القرار النهائي (Label ذكي)
     if res['rr'] >= 2: st.success("💎 الصفقة قوية - الالتزام بالخطة مهم")
     elif res['rr'] >= 1.5: st.warning("⚖️ صفقة متوسطة - إدارة المخاطر مهمة")
     else: st.error("❌ صفقة ضعيفة")
@@ -111,7 +109,21 @@ def render_stock_ui(res):
     tab_analysis, tab_management = st.tabs(["📊 التحليل الفني", "📉 إدارة المخاطر والسيولة"])
 
     with tab_analysis:
+        # حل المشكلة 1: إرجاع الاتجاهات
+        t_short_c = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
+        t_med_c = "trend-up" if res['t_med'] == "صاعد" else "trend-down"
+        t_long_c = "trend-up" if res['t_long'] == "صاعد" else "trend-down"
+
+        st.markdown(f"""
+        <div style='margin-bottom: 15px;'>
+            <span class='trend-pill {t_short_c}'>قصير: {res['t_short']}</span>
+            <span class='trend-pill {t_med_c}'>متوسط: {res['t_med']}</span>
+            <span class='trend-pill {t_long_c}'>طويل: {res['t_long']}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
         st.markdown(f"<span class='signal-pill {res['sig_cls']}'>{res['signal']}</span>", unsafe_allow_html=True)
+        
         c1, c2, c3 = st.columns(3)
         c1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
         c2.metric("نشاط السيولة", f"{res['ratio']:.1f}x")
@@ -126,6 +138,11 @@ def render_stock_ui(res):
             🏁 <b>المستهدف:</b> {res['target']:.2f} <span style='color:#58a6ff'>(🎯 +{res['target_pct']:.1f}%)</span>
         </div>
         """, unsafe_allow_html=True)
+
+        # تحسين إضافي: عرض المسافات
+        st.caption(f"""
+        📏 المسافة لوقف الخسارة: {res['entry_price'] - res['stop_loss']:.2f} ج | 📈 المسافة للهدف: {res['target'] - res['entry_price']:.2f} ج
+        """)
 
     with tab_management:
         col_port, col_risk = st.columns(2)
@@ -145,38 +162,43 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
+        # حل المشكلة 2: الخطة تظهر دائماً بتحذير
         st.markdown("### 🎯 خطة الدخول الذكية (Pyramiding)")
         if res['rr'] < 1.5:
-            st.error("❌ لا ينصح بالدخول المرحلي")
-        else:
-            # حساب الأوزان والأسعار
-            if res['rr'] >= 2: weights = [0.7, 0.2, 0.1]
-            else: weights = [0.5, 0.3, 0.2]
+            st.warning("⚠️ الصفقة ضعيفة - الدخول المرحلي بحذر شديد")
+        
+        # حل المشكلة 3: أسعار دخول واقعية (أسلوب الـ Range)
+        range_size = res['entry_price'] - res['stop_loss']
+        
+        entry1_price = res['entry_price']
+        entry2_price = res['entry_price'] - (range_size * 0.5) # تعزيز عند منتصف المسافة للدعم
+        entry3_price = res['entry_price'] + (range_size * 0.5) # تأكيد عند اندفاع السعر صعوداً بنفس المسافة
+        
+        # حماية إضافية
+        entry2_price = max(entry2_price, res['stop_loss'] * 1.01)
+        entry3_price = min(entry3_price, res['target'] * 0.98)
 
-            entry1_money = recommended_position_size * weights[0]
-            entry2_money = recommended_position_size * weights[1]
-            entry3_money = recommended_position_size * weights[2]
+        weights = [0.7, 0.2, 0.1] if res['rr'] >= 2 else [0.5, 0.3, 0.2]
 
-            # تحديث الأسعار بناءً على الاقتراح (ربط بمستويات حقيقية)
-            entry1_price = res['entry_price']
-            entry2_price = res['stop_loss'] + (res['entry_price'] - res['stop_loss']) * 0.5
-            entry3_price = res['target'] * 0.95 # تأكيد قبل الهدف بقليل
+        entry1_money = recommended_position_size * weights[0]
+        entry2_money = recommended_position_size * weights[1]
+        entry3_money = recommended_position_size * weights[2]
 
-            entry1_shares = int(entry1_money / entry1_price)
-            entry2_shares = int(entry2_money / entry2_price)
-            entry3_shares = int(entry3_money / entry3_price)
+        entry1_shares = int(entry1_money / entry1_price)
+        entry2_shares = int(entry2_money / entry2_price)
+        entry3_shares = int(entry3_money / entry3_price)
 
-            st.markdown(f"""
-            <div class='plan-container'>
-            🎯 <b>خطة الدخول المرحلية:</b><br><br>
-            🟢 <b>دخول أول (الآن):</b><br>
-            💰 {entry1_money:,.0f} ج ➜ {entry1_shares:,} سهم | 📍 <b>السعر:</b> {entry1_price:.2f}<br><br>
-            🟡 <b>تعزيز (دعم):</b><br>
-            💰 {entry2_money:,.0f} ج ➜ {entry2_shares:,} سهم | 📍 <b>السعر:</b> {entry2_price:.2f}<br><br>
-            🔵 <b>تأكيد (اختراق):</b><br>
-            💰 {entry3_money:,.0f} ج ➜ {entry3_shares:,} سهم | 📍 <b>السعر:</b> {entry3_price:.2f}
-            </div>
-            """, unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class='plan-container'>
+        🎯 <b>توزيع الصفقات المقترح:</b><br><br>
+        🟢 <b>دخول أول (الآن):</b><br>
+        💰 {entry1_money:,.0f} ج ➜ {entry1_shares:,} سهم | 📍 <b>السعر:</b> {entry1_price:.2f}<br><br>
+        🟡 <b>تعزيز (لو نزل للدعم):</b><br>
+        💰 {entry2_money:,.0f} ج ➜ {entry2_shares:,} سهم | 📍 <b>السعر:</b> {entry2_price:.2f}<br><br>
+        🔵 <b>تأكيد (لو اخترق صعوداً):</b><br>
+        💰 {entry3_money:,.0f} ج ➜ {entry3_shares:,} سهم | 📍 <b>السعر:</b> {entry3_price:.2f}
+        </div>
+        """, unsafe_allow_html=True)
 
 # ================== 🔥 NAVIGATION ==================
 if st.session_state.page == 'home':
