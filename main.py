@@ -36,18 +36,20 @@ def go_to(page_name):
     st.session_state.page = page_name
     st.rerun()
 
-# ================== DATA ENGINE ==================
+# ================== DATA ENGINE (FIXED FOR OFF-MARKET) ==================
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
     cols = ["name", "close", "RSI", "volume", "average_volume_10d_calc", "high", "low", "change", "description", "SMA50", "SMA200"]
     if scan_all:
         payload = {
-            "filter": [{"left": "volume", "operation": "greater", "right": 50000}, {"left": "close", "operation": "greater", "right": 0.4}],
+            # في الكشاف العام نترك فلتر الحجم لفلترة الأسهم النشطة فقط
+            "filter": [{"left": "volume", "operation": "greater", "right": 1000}, {"left": "close", "operation": "greater", "right": 0.4}],
             "columns": cols,
             "sort": {"sortBy": "change", "sortOrder": "desc"}, "range": [0, 100]
         }
     else:
+        # هنا تم إزالة فلتر الحجم للبحث الفردي ليعمل في الإجازة
         payload = {
             "symbols": {"tickers": [f"EGX:{symbol.upper()}"], "query": {"types": []}},
             "columns": cols
@@ -77,17 +79,13 @@ def analyze_stock(d_row, is_scan=False):
         trend_long = "صاعد" if sma200 and p > sma200 else "هابط"
         
         # ================== 🔥 تحسين سعر الدخول ==================
-        if p <= s1 * 1.01:
-            real_entry = p
-        elif p < r1:
-            real_entry = p
-        else:
-            real_entry = r1
+        if p <= s1 * 1.01: real_entry = p
+        elif p < r1: real_entry = p
+        else: real_entry = r1
         
         # ================== DATA ==================
         ratio = v / (avg_v or 1)
         rsi_val = rsi if rsi else 0
-        
         trend_ok = p > pp
         volume_ok = ratio > 1
         
@@ -97,7 +95,6 @@ def analyze_stock(d_row, is_scan=False):
         if not volume_ok: t_score -= 15
         t_score = max(t_score, 0)
 
-        # Smart score جديد
         smart_score = 0
         if sma50 and p > sma50: smart_score += 20
         if p > pp: smart_score += 10
@@ -106,20 +103,10 @@ def analyze_stock(d_row, is_scan=False):
         if 40 <= rsi_val <= 60: smart_score += 20
         if p > r1: smart_score += 10
         
-        # ================== 🔥 تحسين الإشارات ==================
         is_breakout = (p > r1 and ratio > 1.3 and trend_med == "صاعد")
-        
-        is_gold = (
-            ratio > 1.5 and
-            45 < rsi_val < 60 and
-            sma50 and p > sma50 and
-            trend_med == "صاعد"
-        )
-        
+        is_gold = (ratio > 1.5 and 45 < rsi_val < 60 and sma50 and p > sma50 and trend_med == "صاعد")
         is_chase = (p > r1 * 1.02)
-        
-        if is_chase:
-            smart_score -= 30
+        if is_chase: smart_score -= 30
         
         smart_score = max(min(smart_score, 100), 0)
 
@@ -129,32 +116,22 @@ def analyze_stock(d_row, is_scan=False):
         else: vol_txt, vol_col = "🔥 زخم انفجاري", "#ffd700"
 
         # ================== Recommendation ==================
-        if rsi_val > 72:
-            rec, col = "🛑 تشبع شراء", "#ff4b4b"
-        elif is_gold:
-            rec, col = "💎 صفقة ذهبية", "#ffd700"
-        elif is_breakout:
-            rec, col = "🚀 اختراق", "#00ffcc"
-        elif t_score >= 75:
-            rec, col = "🚀 شراء قوي", "#00ff00"
-        else:
-            rec, col = "⚖️ انتظار", "#58a6ff"
+        if rsi_val > 72: rec, col = "🛑 تشبع شراء", "#ff4b4b"
+        elif is_gold: rec, col = "💎 صفقة ذهبية", "#ffd700"
+        elif is_breakout: rec, col = "🚀 اختراق", "#00ffcc"
+        elif t_score >= 75: rec, col = "🚀 شراء قوي", "#00ff00"
+        else: rec, col = "⚖️ انتظار", "#58a6ff"
 
         return {
             "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio,
             "vol_txt": vol_txt, "vol_col": vol_col,
             "s1": s1, "s2": s2, "r1": r1, "r2": r2, "pp": pp,
             "t_short": trend_short, "t_med": trend_med, "t_long": trend_long,
-            "real_entry": real_entry,
-            "t_e": s1, "t_t": r1, "t_s": s1 * 0.98, "t_score": t_score,
+            "real_entry": real_entry, "t_e": s1, "t_t": r1, "t_s": s1 * 0.98, "t_score": t_score,
             "s_e": p, "s_t": r2, "s_s": s2, "s_score": smart_score,
-            "rec": rec, "col": col,
-            "is_gold": is_gold,
-            "is_break": is_breakout,
-            "is_chase": is_chase
+            "rec": rec, "col": col, "is_gold": is_gold, "is_break": is_breakout, "is_chase": is_chase
         }
-    except:
-        return None
+    except: return None
 
 # ================== UI RENDERER ==================
 def render_stock_ui(res, title=""):
@@ -168,65 +145,29 @@ def render_stock_ui(res, title=""):
         </div>
     """, unsafe_allow_html=True)
     
-    # لوحة الاتجاهات
     ts_cls = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
     tm_cls = "trend-up" if res['t_med'] == "صاعد" else "trend-down"
     tl_cls = "trend-up" if res['t_long'] == "صاعد" else "trend-down"
-    st.markdown(f"""
-        <div style='margin-bottom:10px;'>
-            <span class='trend-pill {ts_cls}'>قصير: {res['t_short']}</span>
-            <span class='trend-pill {tm_cls}'>متوسط: {res['t_med']}</span>
-            <span class='trend-pill {tl_cls}'>طويل: {res['t_long']}</span>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<div style='margin-bottom:10px;'><span class='trend-pill {ts_cls}'>قصير: {res['t_short']}</span><span class='trend-pill {tm_cls}'>متوسط: {res['t_med']}</span><span class='trend-pill {tl_cls}'>طويل: {res['t_long']}</span></div>", unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns(3)
     c1.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
     c2.metric("RSI", f"{res['rsi']:.1f}")
-    with c3:
-        st.markdown(f"<div class='vol-container'><div style='color:#8b949e;font-size:10px;'>الزخم</div><div style='font-size:16px;font-weight:bold;'>{res['ratio']:.1f}x</div><div style='color:{res['vol_col']};font-size:10px;'>{res['vol_txt']}</div></div>", unsafe_allow_html=True)
+    with c3: st.markdown(f"<div class='vol-container'><div style='color:#8b949e;font-size:10px;'>الزخم</div><div style='font-size:16px;font-weight:bold;'>{res['ratio']:.1f}x</div><div style='color:{res['vol_col']};font-size:10px;'>{res['vol_txt']}</div></div>", unsafe_allow_html=True)
     
-    # سعر الدخول الذكي (محسن)
-    st.markdown(f"""
-        <div class='entry-card-new'>
-            <span style='color:#8b949e; font-size:12px;'>🎯 سعر الدخول الحقيقي المقترح</span><br>
-            <span style='font-size:24px; color:#3fb950; font-weight:bold;'>{res['real_entry']:.2f}</span>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<div class='entry-card-new'><span style='color:#8b949e; font-size:12px;'>🎯 سعر الدخول الحقيقي المقترح</span><br><span style='font-size:24px; color:#3fb950; font-weight:bold;'>{res['real_entry']:.2f}</span></div>", unsafe_allow_html=True)
 
-    if res['is_chase']:
-        st.markdown(f"<div class='warning-box'>⚠️ مطاردة خطر! السعر بعيد جداً عن منطقة الأمان ({res['r1']:.2f})</div>", unsafe_allow_html=True)
+    if res['is_chase']: st.markdown(f"<div class='warning-box'>⚠️ مطاردة خطر! السعر بعيد عن منطقة الأمان ({res['r1']:.2f})</div>", unsafe_allow_html=True)
     
     st.divider()
-    
-    # المستويات
     sc1, sc2, sc3, sc4 = st.columns(4)
-    sc1.metric("دعم 2", f"{res['s2']:.2f}")
-    sc2.metric("دعم 1", f"{res['s1']:.2f}")
-    sc3.metric("مقاومة 1", f"{res['r1']:.2f}")
-    sc4.metric("مقاومة 2", f"{res['r2']:.2f}")
+    sc1.metric("دعم 2", f"{res['s2']:.2f}"); sc2.metric("دعم 1", f"{res['s1']:.2f}"); sc3.metric("مقاومة 1", f"{res['r1']:.2f}"); sc4.metric("مقاومة 2", f"{res['r2']:.2f}")
 
-    # خطة السيولة
     st.markdown("---")
     st.subheader("🛠️ خطة السيولة (إجمالي الـ 20 ألف)")
     budget = st.number_input("ميزانية السهم (جنيه):", value=20000, key=f"plan_{res['name']}_{res['p']}")
     p1, p2, p3 = budget * 0.3, budget * 0.4, budget * 0.3
-    
-    st.markdown(f"""
-    <div class='plan-container'>
-        <div class='plan-step up-line'>
-            <b>📈 سيناريو الصعود (تمركز):</b><br>
-            - ادخل بـ <span class='price-callout'>{p1:,.0f} ج</span> عند {res['real_entry']:.2f}.<br>
-            - لو اخترق {res['r1']:.2f}، زود بـ <span class='price-callout'>{p2:,.0f} ج</span>.<br>
-            - <b>التعزيز:</b> ضخ الـ <span class='price-callout'>{p3:,.0f} ج</span> الباقية فوق <b>{res['r2']:.2f}</b>.
-        </div>
-        <div class='plan-step down-line'>
-            <b>📉 سيناريو الهبوط (تبريد):</b><br>
-            - لو نزل لـ <b>{res['s2']:.2f}</b>، استخدم الـ <span class='price-callout'>{p2:,.0f} ج</span> لتعديل المتوسط.<br>
-            - <b>تأكيد الارتداد:</b> ضخ الـ <span class='price-callout'>{p3:,.0f} ج</span> المتبقية عند العودة لـ <b>{res['s1']:.2f}</b>.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"""<div class='plan-container'><div class='plan-step up-line'><b>📈 سيناريو الصعود:</b><br>- ادخل بـ <span class='price-callout'>{p1:,.0f} ج</span> عند {res['real_entry']:.2f}.<br>- لو اخترق {res['r1']:.2f}، زود بـ <span class='price-callout'>{p2:,.0f} ج</span>.<br>- ضخ الـ <span class='price-callout'>{p3:,.0f} ج</span> الباقية فوق <b>{res['r2']:.2f}</b>.</div><div class='plan-step down-line'><b>📉 سيناريو الهبوط:</b><br>- لو نزل لـ <b>{res['s2']:.2f}</b>، عدل المتوسط بـ <span class='price-callout'>{p2:,.0f} ج</span>.<br>- ضخ الـ <span class='price-callout'>{p3:,.0f} ج</span> المتبقية عند العودة لـ <b>{res['s1']:.2f}</b>.</div></div>""", unsafe_allow_html=True)
 
 # ================== NAVIGATION ==================
 if st.session_state.page == 'home':
@@ -246,14 +187,13 @@ elif st.session_state.page == 'average':
     if old_p > 0 and old_q > 0 and new_p > 0:
         total_old = old_p * old_q
         for label, q in [("بسيط (0.5x)", int(old_q*0.5)), ("متوسط (1:1)", old_q), ("جذري (2:1)", old_q*2)]:
-            cost = q * new_p
-            avg = (total_old + cost) / (old_q + q)
-            st.markdown(f"<div class='avg-card'><b>{label}</b>: شراء {q:,} سهم بتكلفة {cost:,.2f} ج<br>المتوسط الجديد: <span class='price-callout'>{avg:.3f} ج</span></div>", unsafe_allow_html=True)
+            cost = q * new_p; avg = (total_old + cost) / (old_q + q)
+            st.markdown(f"<div class='avg-card'><b>{label}</b>: شراء {q:,} سهم بتكلفة {cost:,.2f} ج<br>المتوسط: <span class='price-callout'>{avg:.3f} ج</span></div>", unsafe_allow_html=True)
         st.divider()
         target = st.number_input("المتوسط المستهدف؟", value=old_p-0.01)
         if new_p < target < old_p:
             needed_q = (old_q * (old_p - target)) / (target - new_p)
-            st.markdown(f"<div class='target-box'><h3>خطة الوصول لهدف {target:.2f}</h3><p>✅ شراء: <b style='color:#3fb950;'>{int(needed_q):,} سهم</b></p><p>✅ مبلغ: <b style='color:#3fb950;'>{(needed_q*new_p):,.2f} ج</b></p></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='target-box'><h3>خطة هدف {target:.2f}</h3><p>✅ شراء: <b style='color:#3fb950;'>{int(needed_q):,} سهم</b></p><p>✅ مبلغ: <b style='color:#3fb950;'>{(needed_q*new_p):,.2f} ج</b></p></div>", unsafe_allow_html=True)
 
 elif st.session_state.page == 'scanner':
     if st.button("🏠"): go_to('home')
@@ -267,14 +207,12 @@ elif st.session_state.page == 'scanner':
 elif st.session_state.page == 'breakout':
     if st.button("🏠"): go_to('home')
     for r in fetch_egx_data(scan_all=True):
-        if (an := analyze_stock(r, True)) and an['is_break']:
-            render_stock_ui(an, f"🚀 اختراق: {an['name']}")
+        if (an := analyze_stock(r, True)) and an['is_break']: render_stock_ui(an, f"🚀 اختراق: {an['name']}")
 
 elif st.session_state.page == 'gold':
     if st.button("🏠"): go_to('home')
     for r in fetch_egx_data(scan_all=True):
-        if (an := analyze_stock(r, True)) and an['is_gold']:
-            render_stock_ui(an, "💎 ذهب")
+        if (an := analyze_stock(r, True)) and an['is_gold']: render_stock_ui(an, "💎 ذهب")
 
 elif st.session_state.page == 'analyze':
     if st.button("🏠"): go_to('home')
@@ -282,3 +220,4 @@ elif st.session_state.page == 'analyze':
     if sym:
         data = fetch_egx_data(symbol=sym)
         if data: render_stock_ui(analyze_stock(data[0]))
+        else: st.warning("لم يتم العثور على بيانات. جرب كتابة الرمز صحيحاً (مثلاً: ATQA)")
