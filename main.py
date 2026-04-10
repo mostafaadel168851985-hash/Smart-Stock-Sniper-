@@ -134,7 +134,12 @@ def analyze_stock(d_row):
 def render_stock_ui(res):
     st.markdown(f"<div class='stock-header'>{res['name']} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
     
-    tab_analysis, tab_management = st.tabs(["📊 التحليل الفني", "📉 إدارة المخاطر والسيولة"])
+    # ✅ تحديث الـ Tabs لإضافة "الوضع الحالي"
+    tab_analysis, tab_management, tab_scenario = st.tabs([
+        "📊 التحليل الفني",
+        "📉 إدارة المخاطر والسيولة",
+        "🧠 الوضع الحالي"
+    ])
 
     with tab_analysis:
         t_short_c = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
@@ -154,12 +159,10 @@ def render_stock_ui(res):
         c1, c2, c3 = st.columns(3)
         c1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
         
-        # ✅ تقييم السيولة المحدث
         vol_label, vol_desc = get_volume_rating(res['ratio'])
         c2.metric("نشاط السيولة", f"{res['ratio']:.1f}x {vol_label}")
         with c2: st.caption(f"📊 {vol_desc}")
         
-        # ✅ تقييم RR المحدث
         rr_label, rr_desc = get_rr_rating(res['rr'])
         c3.metric("R/R Ratio", f"{res['rr']} {rr_label}")
         with c3: st.caption(f"🧠 {rr_desc}")
@@ -209,43 +212,74 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
-        st.markdown("---")
-        st.markdown("### 🧮 تعديل متوسط السعر")
-        c_avg1, c_avg2 = st.columns(2)
-        add_price = c_avg1.number_input("سعر التعزيز الجديد", value=res['p'], key=f"ap_{res['name']}")
-        add_qty = c_avg2.number_input("عدد الأسهم الجديدة", value=0, key=f"aq_{res['name']}")
+    # 🔥 الكود الجديد للـ Tab الثالث (الوضع الحالي)
+    with tab_scenario:
+        st.markdown("### 🧠 تحليل وضعك الحالي")
+        col1, col2 = st.columns(2)
+        buy_price = col1.number_input("سعر الشراء", value=res['p'], key=f"buy_{res['name']}")
+        qty = col2.number_input("عدد الأسهم", value=100, step=1, key=f"qty_{res['name']}")
 
-        if add_qty > 0:
-            new_total_qty = shares_to_buy + add_qty
-            new_total_cost = (shares_to_buy * res['entry_price']) + (add_qty * add_price)
-            new_avg = new_total_cost / new_total_qty
-            st.info(f"📊 متوسط السعر بعد التعزيز: {new_avg:.2f}")
+        if qty > 0 and buy_price > 0:
+            current_price = res['p']
+            pnl = (current_price - buy_price) * qty
+            pnl_pct = ((current_price - buy_price) / buy_price) * 100
 
-        range_size = res['entry_price'] - res['stop_loss']
-        e1_p, e2_p = res['entry_price'], max(res['entry_price'] - (range_size * 0.5), res['stop_loss'] * 1.02)
-        e3_p = res['entry_price'] + (res['target'] - res['entry_price']) * 0.3
+            # 🟢 تحديد الحالة
+            if pnl > 0:
+                st.success(f"🟢 انت كسبان: {pnl:,.0f} ج (+{pnl_pct:.2f}%)")
+            elif pnl < 0:
+                st.error(f"🔴 انت خسران: {pnl:,.0f} ج ({pnl_pct:.2f}%)")
+            else:
+                st.info("⚖️ انت على التعادل")
 
-        if res['rr'] >= 2: weights = [0.7, 0.2, 0.1]
-        elif res['rr'] >= 1.5: weights = [0.5, 0.3, 0.2]
-        else: weights = [0.3, 0.4, 0.3]
+            st.markdown("---")
 
-        current_total_val = shares_to_buy * res['entry_price']
-        e1_m, e2_m, e3_m = current_total_val * weights[0], current_total_val * weights[1], current_total_val * weights[2]
-        e1_s, e2_s, e3_s = int(e1_m / e1_p), int(e2_m / e2_p), int(e3_m / e3_p)
+            # 🧠 تقييم الاتجاه
+            trend_score = 0
+            if res['t_short'] == "صاعد": trend_score += 1
+            if res['t_med'] == "صاعد": trend_score += 1
+            if res['ratio'] > 1.5: trend_score += 1
 
-        st.markdown("### 🏹 خطة التنفيذ المباشرة")
-        st.markdown(f"""
-        <div class='plan-container'>
-        🟢 <b>لو السعر ≈ {e1_p:.2f} ج ➜ اشتري (دخول أساسي)</b><br>
-        📦 الكمية: {e1_s:,} سهم | 💰 القيمة: {e1_m:,.0f} ج<br><br>
+            # 🟢 Hold
+            st.markdown("### 🟢 سيناريو الاستمرار (Hold)")
+            if trend_score >= 2:
+                st.success(f"""
+                - الاتجاه كويس ✅
+                - خليك مستمر طالما السعر فوق {res['stop_loss']:.2f}
+                - الهدف: {res['target']:.2f}
+                """)
+            else:
+                st.warning("""
+                الاتجاه مش قوي ⚠️
+                ممكن تقلل جزء من المركز لتأمين نفسك
+                """)
 
-        🟡 <b>لو السعر نزل لـ {e2_p:.2f} ج ➜ اشتري (تعزيز دعم)</b><br>
-        📦 الكمية: {e2_s:,} سهم | 💰 القيمة: {e2_m:,.0f} ج<br><br>
+            # 🟡 Averaging
+            st.markdown("### 🟡 سيناريو التبريد (Averaging)")
+            avg_zone = res['entry_price'] * 0.97
+            if res['t_short'] == "صاعد" and res['ratio'] > 1.2:
+                st.success(f"""
+                ✅ تبريد آمن نسبياً
+                - منطقة التبريد: {avg_zone:.2f}
+                - الاتجاه بدأ يدعم الدخول
+                - ممكن تحسن متوسط السعر
+                """)
+            else:
+                st.warning(f"""
+                ⚠️ تبريد عالي المخاطرة
+                - منطقة التبريد: {avg_zone:.2f}
+                - الاتجاه مش واضح أو هابط
+                - ممكن تزود الخسارة
+                🎯 الأفضل: استنى إشارة صعود أو سيولة أعلى
+                """)
 
-        🔵 <b>لو السعر اخترق {e3_p:.2f} ج ➜ اشتري (تأكيد اختراق)</b><br>
-        📦 الكمية: {e3_s:,} سهم | 💰 القيمة: {e3_m:,.0f} ج
-        </div>
-        """, unsafe_allow_html=True)
+            # 🔴 Exit
+            st.markdown("### 🔴 سيناريو الخروج (Exit)")
+            st.error(f"""
+            - وقف الخسارة: {res['stop_loss']:.2f}
+            - لو كسرها ➜ خروج فوري ❌
+            💡 الهدف: حماية رأس المال
+            """)
 
 # ================== 🔥 NAVIGATION ==================
 if st.session_state.page == 'home':
