@@ -31,7 +31,6 @@ if "mode" not in st.session_state:
 if 'page' not in st.session_state: 
     st.session_state.page = 'home'
 
-# --- المشكلة 1: جعل المود فوق وواضح (Main UI) ---
 def render_mode_selector():
     st.markdown("### 🧠 اختر أسلوب التداول")
     m_col1, m_col2, m_col3 = st.columns(3)
@@ -91,7 +90,7 @@ def analyze_stock(d_row, is_scanner=False):
         
         entry_min = s1
         entry_max = s1 * 1.01
-        if p > r1: entry_min, entry_max = p * 0.99, p # في حالة الاختراق
+        if p > r1: entry_min, entry_max = p * 0.99, p 
         
         entry_price = (entry_min + entry_max) / 2
         stop_loss = min(s2, entry_price * 0.97)
@@ -101,7 +100,6 @@ def analyze_stock(d_row, is_scanner=False):
         if loss_ps <= 0: return None
         rr = round(profit_ps / loss_ps, 2)
 
-        # تطبيق شروط النمط
         mode = st.session_state.mode
         if is_scanner:
             if mode == "🛡️ محافظ (محترف)" and (rr < 1.8 or t_med != "صاعد"): return None
@@ -114,7 +112,6 @@ def analyze_stock(d_row, is_scanner=False):
         risk_pct = (entry_price - stop_loss) / entry_price * 100
         target_pct = (target - entry_price) / entry_price * 100
         
-        # تحديد Gold Stock
         g_rr, g_rat = (1.8, 1.5) if mode == "🛡️ محافظ (محترف)" else (1.5, 1.3) if mode == "⚖️ متوازن" else (1.3, 1.1)
         is_gold = (ratio > g_rat and 45 < (rsi or 0) < 65 and t_med == "صاعد" and rr >= g_rr)
 
@@ -127,17 +124,19 @@ def analyze_stock(d_row, is_scanner=False):
         }
     except: return None
 
-# ================== UI RENDERER (THE MASTERPIECE) ==================
+# ================== UI RENDERER ==================
 def render_stock_ui(res):
     st.markdown(f"<div class='stock-header'>{res['name']} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
     decision, color = get_final_decision(res)
     st.markdown(f"<div style='background:{color};padding:15px;border-radius:10px;text-align:center;font-size:20px;font-weight:bold;margin-bottom:10px;color:white'>{decision}</div>", unsafe_allow_html=True)
 
-    # --- 🏆 اقتراح Tabs: تنظيم Flow التفكير ---
     tab_analysis, tab_management = st.tabs(["📊 التحليل الفني", "📉 إدارة الصفقة والمتوسط"])
 
     with tab_analysis:
         st.markdown(f"<span class='signal-pill {res['sig_cls']}'>{res['signal']}</span>", unsafe_allow_html=True)
+        # --- ✨ Mini hint في التحليل ---
+        st.caption(f"💰 R/R: {res['rr']} | Target: +{res['target_pct']:.1f}% | Risk: -{res['risk_pct']:.1f}%")
+        
         t_short_c = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
         t_med_c = "trend-up" if res['t_med'] == "صاعد" else "trend-down"
         t_long_c = "trend-up" if res['t_long'] == "صاعد" else "trend-down"
@@ -161,7 +160,6 @@ def render_stock_ui(res):
     with tab_management:
         budget = st.number_input(f"الميزانية المخصصة (ج):", value=10000, key=f"v_{res['name']}")
         
-        # --- المشكلة 2: استرجاع وتنظيم حاسبة المتوسط الاحترافية ---
         st.markdown("<div class='avg-section'>", unsafe_allow_html=True)
         st.subheader("📉 حاسبة التعديل الذكية")
         col_old_p, col_old_q = st.columns(2)
@@ -171,9 +169,9 @@ def render_stock_ui(res):
         if old_p > 0 and old_q > 0:
             current_v = old_q * res['p']; cost_v = old_q * old_p; pnl = current_v - cost_v
             st.info(f"📊 موقفك الحالي: {'🟢 ربح' if pnl>=0 else '🔴 خسارة'} {pnl:,.0f} ج")
+            # --- إصلاح Syntax Error باستخدام علامات تنصيص فردية بالخارج ---
             if res['rr'] < 1.5: st.error('⚠️ تحذير: السهم ضعيف فنياً - التعديل قد يعني "حبس" سيولة في مكان خاطئ.')
 
-            # 🤖 سيناريوهات جاهزة حسب السيولة المحددة
             st.markdown("### 🤖 سيناريوهات التعديل المقترحة")
             for pct in [0.25, 0.5, 1.0]:
                 money = budget * pct
@@ -182,7 +180,6 @@ def render_stock_ui(res):
                     n_avg = ((old_p * old_q) + (res['entry_price'] * sh)) / (old_q + sh)
                     st.write(f"🔹 استثمار {int(pct*100)}% ({money:,.0f}ج) ➜ شراء **{sh}** سهم ➜ المتوسط الجديد: **{n_avg:.2f}**")
 
-            # 🎯 Target Average & 🔁 Reverse
             st.markdown("---")
             col_tar, col_rev = st.columns(2)
             with col_tar:
@@ -199,23 +196,33 @@ def render_stock_ui(res):
                     st.info(f"📊 المتوسط الجديد = **{rev_avg:.2f}**")
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # خطة السيولة بناءً على RR
         entry_pct = 0.7 if res['rr'] >= 2 else 0.5 if res['rr'] >= 1.5 else 0.3
         entry_money = budget * entry_pct; reserve = budget - entry_money
         num_shares = max(1, int(entry_money / res['entry_price']))
+
+        # --- 🧠 حساب الربح والخسارة للصفقة الجديدة ---
+        profit = (res['target'] - res['entry_price']) * num_shares
+        loss = (res['entry_price'] - res['stop_loss']) * num_shares
+        profit_pct = (res['target'] - res['entry_price']) / res['entry_price'] * 100
+        loss_pct = (res['entry_price'] - res['stop_loss']) / res['entry_price'] * 100
 
         st.markdown(f"""
         <div class='plan-container'>
         💼 <b>خطة السيولة (Risk-Based):</b><br>
         ✅ دخول أول ({int(entry_pct*100)}%): {entry_money:,.0f} ج لشراء <b>{num_shares:,} سهم</b><br>
         🛡️ احتياطي ({int((1-entry_pct)*100)}%): {reserve:,.0f} ج
+        <br><br>
+        📊 <b>تقييم الصفقة (للدخول الأول):</b><br>
+        🟢 <b>الربح المتوقع:</b> {profit:,.0f} ج ({profit_pct:.1f}%)<br>
+        🔴 <b>الخسارة المحتملة:</b> {loss:,.0f} ج ({loss_pct:.1f}%)<br>
+        ⚖️ <b>نسبة العائد إلى المخاطرة:</b> {res['rr']} R
         </div>
         """, unsafe_allow_html=True)
 
 # ================== 🔥 NAVIGATION ==================
 if st.session_state.page == 'home':
     st.title("🏹 Sniper Elite v15.8 Pro")
-    render_mode_selector() # عرض المود في الواجهة الرئيسية
+    render_mode_selector()
     col1, col2 = st.columns(2)
     with col1:
         if st.button("📡 تحليل سهم محدد"): st.session_state.page = 'analyze'; st.rerun()
@@ -226,7 +233,7 @@ if st.session_state.page == 'home':
 
 elif st.session_state.page == 'analyze':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    sym = st.text_input("رمز السهم (مثلاً: ATQA)").upper().strip()
+    sym = st.text_input("رمز السهم").upper().strip()
     if sym:
         data = fetch_egx_data(symbol=sym)
         if data:
@@ -238,10 +245,7 @@ elif st.session_state.page == 'scanner':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     raw_data = fetch_egx_data(scan_all=True)
-    results = []
-    for r in raw_data:
-        an = analyze_stock(r, is_scanner=True)
-        if an: results.append(an)
+    results = [analyze_stock(r, is_scanner=True) for r in raw_data if analyze_stock(r, is_scanner=True)]
     results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
     for an in results[:15]:
         decision, _ = get_final_decision(an)
