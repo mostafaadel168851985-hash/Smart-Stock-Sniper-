@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v15.3", layout="wide")
+st.set_page_config(page_title="EGX Sniper Pro v15.4", layout="wide")
 
 st.markdown("""
     <style>
@@ -39,15 +39,22 @@ def get_rr_status(rr):
     elif rr >= 1.8: return "مقبول 👍", "rr-fair"
     else: return "خطر / عائد ضعيف ⚠️", "rr-bad"
 
+# 🔥 تحسين الـ Decision Engine المطور
 def get_final_decision(res):
     rr = res["rr"]
     trend = res["t_med"]
     ratio = res["ratio"]
+
+    # 4. تحسين صغير بس عبقري: تجاهل الصفقات الضعيفة جداً
+    if rr < 1.2:
+        return "🚫 صفقة سيئة جداً", "#6e7681"
+
     if rr >= 2.5 and trend == "صاعد" and ratio > 1.5:
         return "🚀 فرصة قوية جدًا", "#0f5132"
     elif rr >= 2 and trend == "صاعد":
         return "🟢 ادخل دلوقتي", "#238636"
-    elif rr >= 1.5:
+    # 3. تحسين "راقب": يجب أن يكون التريند صاعداً لترشيح المراقبة
+    elif rr >= 1.5 and trend == "صاعد":
         return "🟡 راقب", "#d29922"
     else:
         return "🔴 ابعد", "#f85149"
@@ -79,12 +86,6 @@ def analyze_stock(d_row, is_scanner=False):
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
         t_long = "صاعد" if (sma200 and p > sma200) else "هابط"
 
-        if is_scanner:
-            if ratio < 0.8: return None 
-            if chg < -2: return None 
-            if t_med != "صاعد": return None 
-
-        # حساب المستويات قبل تحديد الإشارة لضمان توفر الـ RR
         pp = (p + (h or p) + (l or p)) / 3
         s1, r1 = (2 * pp) - (h or p), (2 * pp) - (l or p)
         s2 = pp - ((h or p) - (l or p))
@@ -103,7 +104,7 @@ def analyze_stock(d_row, is_scanner=False):
         if loss_per_share <= 0: return None
         rr = round(profit_per_share / loss_per_share, 2)
 
-        # 🔥 تعديل الـ Signal بناءً على الـ RR والتريند
+        # 🔥 تحسين الـ Signal
         if t_short == "صاعد" and t_med == "صاعد" and rr >= 1.8:
             signal, sig_cls = "شراء قوي 🔥", "buy-strong"
         elif t_short == "صاعد" and rr >= 1.5:
@@ -111,7 +112,11 @@ def analyze_stock(d_row, is_scanner=False):
         else:
             signal, sig_cls = "انتظار ⏳", "wait"
 
-        if is_scanner and rr < 1.8: return None 
+        if is_scanner and (rr < 1.8 or t_med != "صاعد"): return None 
+
+        # حساب النسب المئوية الجديدة
+        risk_pct = (entry_price - stop_loss) / entry_price * 100
+        target_pct = (target - entry_price) / entry_price * 100
 
         rr_label, rr_class = get_rr_status(rr)
         score = 0
@@ -130,6 +135,7 @@ def analyze_stock(d_row, is_scanner=False):
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}",
             "entry_price": entry_price, "stop_loss": stop_loss, "target": target,
             "rr": rr, "rr_label": rr_label, "rr_class": rr_class,
+            "risk_pct": risk_pct, "target_pct": target_pct,
             "vol_icon": "🔥 انفجاري" if ratio > 2 else ("⚡ نشط" if ratio > 1.2 else "⚪ هادئ")
         }
     except: return None
@@ -152,7 +158,16 @@ def render_stock_ui(res):
     c2.metric("السيولة", res['vol_icon'], f"{res['ratio']:.1f}x")
     c3.metric("قوة RSI", f"{res['rsi']:.1f}")
 
-    st.markdown(f"<div class='entry-card-new'>🎯 <b>نطاق الدخول:</b> {res['entry_range']}<br>🛑 <b>وقف الخسارة:</b> {res['stop_loss']:.2f}</div><div class='target-box'>🏁 <b>الهدف المتوقع:</b> {res['target']:.2f}</div>", unsafe_allow_html=True)
+    # 🔥 عرض نسبة الخسارة والهدف الجديدة
+    st.markdown(f"""
+    <div class='entry-card-new'>
+        🎯 <b>نطاق الدخول:</b> {res['entry_range']}<br>
+        🛑 <b>وقف الخسارة:</b> {res['stop_loss']:.2f} <span style='color:#f85149'>(⚠️ {res['risk_pct']:.1f}%)</span>
+    </div>
+    <div class='target-box'>
+        🏁 <b>الهدف المتوقع:</b> {res['target']:.2f} <span style='color:#58a6ff'>(🎯 +{res['target_pct']:.1f}%)</span>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("<div class='avg-section'>", unsafe_allow_html=True)
     st.subheader("📉 حاسبة المتوسط الذكي")
@@ -165,7 +180,7 @@ def render_stock_ui(res):
         if entry_p < target_avg < old_p:
             req_q = (old_q * (old_p - target_avg)) / (target_avg - entry_p)
             cost = req_q * entry_p
-            st.success(f"🎯 **الحل:** اشترِ **{int(req_q):,} سهم** عند {entry_p:.2f} | 💰 **التكلفة:** {cost:,.0f} ج")
+            st.success(f"🎯 **الحل:** اشترِ **{int(req_q):,} سهم** | 💰 **التكلفة:** {cost:,.0f} ج")
     st.markdown("</div>", unsafe_allow_html=True)
 
     budget = st.number_input(f"الميزانية لـ {res['name']}:", value=10000, key=f"v_{res['name']}")
@@ -186,7 +201,7 @@ def render_stock_ui(res):
 
 # ================== NAVIGATION ==================
 if st.session_state.page == 'home':
-    st.title("🏹 Sniper Elite v15.3 Pro")
+    st.title("🏹 Sniper Elite v15.4 Pro")
     if st.button("📡 تحليل سهم"): st.session_state.page = 'analyze'; st.rerun()
     if st.button("🔭 كشاف السوق"): st.session_state.page = 'scanner'; st.rerun()
     if st.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
