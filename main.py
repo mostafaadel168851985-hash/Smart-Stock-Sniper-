@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v15.6", layout="wide")
+st.set_page_config(page_title="EGX Sniper Pro v15.7", layout="wide")
 
 st.markdown("""
     <style>
@@ -31,6 +31,15 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# استدعاء الوضع المختار من الـ Sidebar ليكون متاحاً في كل الصفحات
+with st.sidebar:
+    st.header("🧠 إعدادات القناص")
+    trading_mode = st.radio(
+        "أسلوب التداول الحالي:",
+        ["🛡️ محافظ (محترف)", "⚖️ متوازن", "🚀 هجومي"],
+        help="🛡️ يركز على أعلى جودة فقط\n⚖️ توازن بين المخاطرة والفرص\n🚀 يبحث عن أي فرصة دخول إيجابية"
+    )
+
 if 'page' not in st.session_state: st.session_state.page = 'home'
 
 # ================== 🔥 HELPER FUNCTIONS ==================
@@ -46,7 +55,6 @@ def get_final_decision(res):
     t_long = res["t_long"]
     ratio = res["ratio"]
     
-    # تحسين القرار النهائي: فلترة الاتجاه العام الهابط
     if t_long == "هابط" and rr < 2:
         return "⚠️ اتجاه عام هابط", "#d29922"
     if rr < 1.2: 
@@ -74,7 +82,7 @@ def fetch_egx_data(symbol=None, scan_all=False):
         return r.get("data", [])
     except: return []
 
-# ================== 🔥 ANALYSIS ENGINE ==================
+# ================== 🔥 ANALYSIS ENGINE (MODIFIED FOR MODES) ==================
 def analyze_stock(d_row, is_scanner=False):
     try:
         d = d_row.get('d', [])
@@ -105,11 +113,18 @@ def analyze_stock(d_row, is_scanner=False):
         if loss_per_share <= 0: return None
         rr = round(profit_per_share / loss_per_share, 2)
 
+        # --- 🧠 2. تطبيق شروط الـ Mode في الكشاف ---
+        if is_scanner:
+            if trading_mode == "🛡️ محافظ (محترف)":
+                if rr < 1.8 or t_med != "صاعد": return None
+            elif trading_mode == "⚖️ متوازن":
+                if rr < 1.5 or t_med != "صاعد": return None
+            elif trading_mode == "🚀 هجومي":
+                if rr < 1.2: return None  # يسمح بدخول حتى لو الترند هابط لحظياً
+
         if t_short == "صاعد" and t_med == "صاعد" and rr >= 1.8: signal, sig_cls = "شراء قوي 🔥", "buy-strong"
         elif t_short == "صاعد" and rr >= 1.5: signal, sig_cls = "شراء حذر ⚠️", "buy-caution"
         else: signal, sig_cls = "انتظار ⏳", "wait"
-
-        if is_scanner and (rr < 1.8 or t_med != "صاعد"): return None 
 
         risk_pct = (entry_price - stop_loss) / entry_price * 100
         target_pct = (target - entry_price) / entry_price * 100
@@ -123,11 +138,18 @@ def analyze_stock(d_row, is_scanner=False):
         if 40 < (rsi or 0) < 65: score += 15
         if rr > 1.8: score += 10
 
+        # --- 🧨 3. تحديد الـ Gold Stock حسب المود ---
+        if trading_mode == "🛡️ محافظ (محترف)": g_rr, g_rat = 1.8, 1.5
+        elif trading_mode == "⚖️ متوازن": g_rr, g_rat = 1.5, 1.3
+        else: g_rr, g_rat = 1.3, 1.1
+        
+        is_gold = (ratio > g_rat and 45 < (rsi or 0) < 65 and t_med == "صاعد" and rr >= g_rr)
+
         return {
             "name": name, "desc": desc, "p": p, "rsi": rsi or 0, "chg": chg, "ratio": ratio,
             "score": score, "signal": signal, "sig_cls": sig_cls,
             "t_short": t_short, "t_med": t_med, "t_long": t_long,
-            "is_gold": (ratio > 1.5 and 45 < (rsi or 0) < 65 and t_med == "صاعد" and rr >= 1.8),
+            "is_gold": is_gold,
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}",
             "entry_price": entry_price, "stop_loss": stop_loss, "target": target,
             "rr": rr, "rr_label": rr_label, "rr_class": rr_class,
@@ -164,125 +186,60 @@ def render_stock_ui(res):
     </div>
     """, unsafe_allow_html=True)
 
-    # الميزانية المستخدمة في الحسابات
-    budget = st.number_input(f"الميزانية المخصصة لهذا السهم (ج):", value=10000, key=f"v_{res['name']}")
+    budget = st.number_input(f"الميزانية المخصصة للسهم:", value=10000, key=f"v_{res['name']}")
 
-    # 📉 حاسبة المتوسط الذكي - النسخة الاحترافية v15.6
     st.markdown("<div class='avg-section'>", unsafe_allow_html=True)
     st.subheader("📉 إدارة المتوسط والتعديل")
-    
     col_a, col_b = st.columns(2)
     old_p = col_a.number_input("متوسط سعر الشراء الحالي", value=0.0, key=f"ap_{res['name']}")
-    old_q = col_b.number_input("الكمية التي تملكها حالياً", value=0, key=f"aq_{res['name']}")
+    old_q = col_b.number_input("الكمية الحالية", value=0, key=f"aq_{res['name']}")
     
     if old_p > 0 and old_q > 0:
-        # 🧨 3. إظهار الربح/الخسارة الحالي
-        current_value = old_q * res['p']
-        cost_value = old_q * old_p
-        pnl = current_value - cost_value
+        pnl = (old_q * res['p']) - (old_q * old_p)
         pnl_color = "#3fb950" if pnl >= 0 else "#f85149"
-        
-        st.markdown(f"""
-        <div class='pnl-box'>
-            📊 <b>موقفك الحالي:</b><br>
-            💰 القيمة الحالية: {current_value:,.0f} ج | التكلفة: {cost_value:,.0f} ج<br>
-            <span style='color:{pnl_color}; font-size:18px; font-weight:bold;'>
-                {"🟢 ربح" if pnl >= 0 else "🔴 خسارة"}: {pnl:,.0f} ج
-            </span>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"<div class='pnl-box'>{"🟢 ربح" if pnl >= 0 else "🔴 خسارة"}: <b>{pnl:,.0f} ج</b></div>", unsafe_allow_html=True)
 
-        # 🧨 2. تحذير التعديل في صفقة وحشة
         if res['rr'] < 1.5:
-            st.error("⚠️ تحذير: أنت تحاول التعديل في صفقة ذات عائد ضعيف (RR < 1.5) - الأفضل إعادة تقييم القرار بدلاً من حبس سيولة إضافية.")
+            st.warning("⚠️ تحذير: الصفقة ضعيفة فنياً، التعديل قد لا يكون الخيار الأمثل.")
 
         entry_p = res['entry_price']
+        scenarios = [("💰 25% من السيولة", budget * 0.25), ("💰 50% من السيولة", budget * 0.5), ("💰 100% من السيولة", budget)]
         
-        # 🤖 1. سيناريوهات جاهزة (Auto Scenarios - Personalized)
-        st.markdown("### 🤖 سيناريوهات التعديل حسب محفظتك")
-        scenarios = [
-            ("💰 25% من ميزانيتك", budget * 0.25),
-            ("💰 50% من ميزانيتك", budget * 0.5),
-            ("💰 100% من ميزانيتك", budget),
-        ]
-        
-        best_scenario = None
-        best_avg = old_p
-
+        best_scenario, best_avg = None, old_p
         for label, amount in scenarios:
             sh = int(amount / entry_p)
             if sh > 0:
                 n_avg = ((old_p * old_q) + (entry_p * sh)) / (old_q + sh)
-                st.write(f"{label} ➜ تشتري **{sh}** سهم ➜ متوسطك = **{n_avg:.2f}**")
-                # 🧨 5. لمسة احتراف: تحديد أفضل سيناريو
-                if n_avg < best_avg:
-                    best_avg = n_avg
-                    best_scenario = label
-
-        if best_scenario:
-            st.success(f"🏆 أفضل سيناريو لتقليل المتوسط بشكل فعال: **{best_scenario}**")
+                st.write(f"{label} ➜ شراء **{sh}** سهم ➜ متوسط: **{n_avg:.2f}**")
+                if n_avg < best_avg: best_avg = n_avg; best_scenario = label
         
-        # 🎯 2. الهدف المطلوب (Target Average)
-        st.markdown("---")
-        target_avg = st.number_input("أدخل المتوسط المستهدف للوصول إليه:", value=round(old_p * 0.98, 2), key=f"tar_{res['name']}")
-        if entry_p < target_avg < old_p:
-            req_q = (old_q * (old_p - target_avg)) / (target_avg - entry_p)
-            st.success(f"🎯 اشترِ **{int(req_q):,} سهم** إضافي عند {entry_p:.2f} للوصول لهدفك.")
-            
-        # 🔁 3. Reverse Calculator
-        st.markdown("### 🔁 احسب المتوسط حسب الكمية")
-        new_shares = st.number_input("لو قررت شراء كمية محددة، أدخل عدد الأسهم هنا:", value=0, key=f"rev_{res['name']}")
-        if new_shares > 0:
-            rev_avg = ((old_p * old_q) + (entry_p * new_shares)) / (old_q + new_shares)
-            st.info(f"📊 المتوسط الجديد بعد الشراء سيصبح = **{rev_avg:.2f}**")
+        if best_scenario: st.success(f"🏆 الأفضل لتقليل المتوسط: {best_scenario}")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ⚖️ سيناريوهات السيولة الذكية (Risk-Based Entry)
-    if res['rr'] >= 2: first_entry_pct = 0.7
-    elif res['rr'] >= 1.5: first_entry_pct = 0.5
-    else: first_entry_pct = 0.3
-
-    entry_money = budget * first_entry_pct
-    reserve = budget - entry_money
-    num_shares = max(1, int(entry_money / res['entry_price']))
-
-    st.markdown(f"""
-    <div class='plan-container'>
-    💼 <b>خطة السيولة الاحترافية:</b><br><br>
-    ✅ <b>دخول أول ({int(first_entry_pct*100)}%):</b> {entry_money:,.0f} ج (لشراء {num_shares:,} سهم)<br>
-    🛡️ <b>احتياطي سيولة ({int((1-first_entry_pct)*100)}%):</b> {reserve:,.0f} ج<br><hr>
-    🟢 <b>ربح مستهدف (للدخول الأول):</b> {(res['target'] - res['entry_price']) * num_shares:,.2f} ج<br>
-    🔴 <b>مخاطرة الوقف (للدخول الأول):</b> {(res['entry_price'] - res['stop_loss']) * num_shares:,.2f} ج
-    </div>
-    """, unsafe_allow_html=True)
-
 # ================== NAVIGATION ==================
 if st.session_state.page == 'home':
-    st.title("🏹 Sniper Elite v15.6 Pro")
+    st.title("🏹 Sniper Elite v15.7 Pro")
+    st.info(f"المود النشط حالياً: **{trading_mode}**")
     if st.button("📡 تحليل سهم"): st.session_state.page = 'analyze'; st.rerun()
     if st.button("🔭 كشاف السوق"): st.session_state.page = 'scanner'; st.rerun()
     if st.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
     if st.button("💎 قنص الذهب"): st.session_state.page = 'gold'; st.rerun()
-    if st.button("🧮 حاسبة المتوسط المستهدف"): st.session_state.page = 'target_avg'; st.rerun()
 
 elif st.session_state.page == 'analyze':
     if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
-    sym = st.text_input("أدخل رمز السهم (مثلاً: ATQA)").upper().strip()
+    sym = st.text_input("رمز السهم").upper().strip()
     if sym:
         data = fetch_egx_data(symbol=sym)
         if data:
             res = analyze_stock(data[0], is_scanner=False)
             if res: render_stock_ui(res)
-        else: st.error("عفواً، الرمز غير صحيح أو غير متوفر في بيانات السوق حالياً.")
+        else: st.error("سهم غير موجود")
 
 elif st.session_state.page == 'scanner':
     if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
     raw_data = fetch_egx_data(scan_all=True)
-    results = []
-    for r in raw_data:
-        an = analyze_stock(r, is_scanner=True)
-        if an: results.append(an)
+    results = [analyze_stock(r, is_scanner=True) for r in raw_data if analyze_stock(r, is_scanner=True)]
     results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
     for an in results[:15]:
         decision, _ = get_final_decision(an)
@@ -299,21 +256,15 @@ elif st.session_state.page == 'gold':
 
 elif st.session_state.page == 'breakout':
     if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
+    
+    # --- 🧨 4. الاختراقات (Breakout) حسب المود ---
+    if trading_mode == "🛡️ محافظ (محترف)": sc_min, rr_min = 75, 1.8
+    elif trading_mode == "⚖️ متوازن": sc_min, rr_min = 65, 1.5
+    else: sc_min, rr_min = 55, 1.3
+    
     raw_data = fetch_egx_data(scan_all=True)
     for r in raw_data:
         an = analyze_stock(r, is_scanner=True)
-        if an and an['score'] > 75 and an['rr'] > 1.8:
+        if an and an['score'] >= sc_min and an['rr'] >= rr_min:
             decision, _ = get_final_decision(an)
             with st.expander(f"🚀 {decision} | {an['name']}"): render_stock_ui(an)
-
-elif st.session_state.page == 'target_avg':
-    if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
-    st.header("🧮 حاسبة المتوسط العام")
-    col1, col2 = st.columns(2)
-    cur_p = col1.number_input("سعر الشراء الحالي", 0.0); cur_q = col1.number_input("الكمية الحالية", 0)
-    mkt_p = col2.number_input("سعر السوق الحالي", 0.0); tar_a = col2.number_input("المتوسط المطلوب", 0.0)
-    if cur_p > 0 and cur_q > 0 and mkt_p > 0 and tar_a > 0:
-        if mkt_p >= tar_a: st.warning("⚠️ لا يمكن التعديل بسعر أعلى من المتوسط المطلوب")
-        else:
-            req_q = (cur_q * (cur_p - tar_a)) / (tar_a - mkt_p)
-            st.success(f"✅ اشترِ **{int(req_q):,}** سهم بتكلفة **{(req_q * mkt_p):,.0f}** ج")
