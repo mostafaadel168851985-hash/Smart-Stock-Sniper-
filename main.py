@@ -171,7 +171,7 @@ def render_stock_ui(res):
         if old_p > 0 and old_q > 0:
             current_v = old_q * res['p']; cost_v = old_q * old_p; pnl = current_v - cost_v
             st.info(f"📊 موقفك الحالي: {'🟢 ربح' if pnl>=0 else '🔴 خسارة'} {pnl:,.0f} ج")
-            if res['rr'] < 1.5: st.error("⚠️ تحذير: السهم ضعيف فنياً - التعديل قد يعني "حبس" سيولة في مكان خاطئ.")
+            if res['rr'] < 1.5: st.error('⚠️ تحذير: السهم ضعيف فنياً - التعديل قد يعني "حبس" سيولة في مكان خاطئ.')
 
             # 🤖 سيناريوهات جاهزة حسب السيولة المحددة
             st.markdown("### 🤖 سيناريوهات التعديل المقترحة")
