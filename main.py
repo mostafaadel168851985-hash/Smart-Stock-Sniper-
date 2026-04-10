@@ -134,7 +134,6 @@ def render_stock_ui(res):
 
     with tab_analysis:
         st.markdown(f"<span class='signal-pill {res['sig_cls']}'>{res['signal']}</span>", unsafe_allow_html=True)
-        # --- ✨ Mini hint في التحليل ---
         st.caption(f"💰 R/R: {res['rr']} | Target: +{res['target_pct']:.1f}% | Risk: -{res['risk_pct']:.1f}%")
         
         t_short_c = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
@@ -169,7 +168,6 @@ def render_stock_ui(res):
         if old_p > 0 and old_q > 0:
             current_v = old_q * res['p']; cost_v = old_q * old_p; pnl = current_v - cost_v
             st.info(f"📊 موقفك الحالي: {'🟢 ربح' if pnl>=0 else '🔴 خسارة'} {pnl:,.0f} ج")
-            # --- إصلاح Syntax Error باستخدام علامات تنصيص فردية بالخارج ---
             if res['rr'] < 1.5: st.error('⚠️ تحذير: السهم ضعيف فنياً - التعديل قد يعني "حبس" سيولة في مكان خاطئ.')
 
             st.markdown("### 🤖 سيناريوهات التعديل المقترحة")
@@ -200,11 +198,14 @@ def render_stock_ui(res):
         entry_money = budget * entry_pct; reserve = budget - entry_money
         num_shares = max(1, int(entry_money / res['entry_price']))
 
-        # --- 🧠 حساب الربح والخسارة للصفقة الجديدة ---
+        # --- 🧠 حساب الربح والخسارة وتطبيق التعديل اللوني ---
         profit = (res['target'] - res['entry_price']) * num_shares
         loss = (res['entry_price'] - res['stop_loss']) * num_shares
-        profit_pct = (res['target'] - res['entry_price']) / res['entry_price'] * 100
-        loss_pct = (res['entry_price'] - res['stop_loss']) / res['entry_price'] * 100
+        profit_pct = (res['target'] - res['entry_price']) / (res['entry_price'] or 1) * 100
+        loss_pct = (res['entry_price'] - res['stop_loss']) / (res['entry_price'] or 1) * 100
+        
+        profit_color = "#3fb950"
+        loss_color = "#f85149"
 
         st.markdown(f"""
         <div class='plan-container'>
@@ -213,9 +214,13 @@ def render_stock_ui(res):
         🛡️ احتياطي ({int((1-entry_pct)*100)}%): {reserve:,.0f} ج
         <br><br>
         📊 <b>تقييم الصفقة (للدخول الأول):</b><br>
-        🟢 <b>الربح المتوقع:</b> {profit:,.0f} ج ({profit_pct:.1f}%)<br>
-        🔴 <b>الخسارة المحتملة:</b> {loss:,.0f} ج ({loss_pct:.1f}%)<br>
-        ⚖️ <b>نسبة العائد إلى المخاطرة:</b> {res['rr']} R
+        <span style="color:{profit_color}; font-size:18px;">
+        🟢 <b>الربح المتوقع:</b> {profit:,.0f} ج ({profit_pct:.1f}%)
+        </span><br>
+        <span style="color:{loss_color}; font-size:18px;">
+        🔴 <b>الخسارة المحتملة:</b> {loss:,.0f} ج ({loss_pct:.1f}%)
+        </span><br><br>
+        ⚖️ <b>R/R:</b> {res['rr']} R
         </div>
         """, unsafe_allow_html=True)
 
