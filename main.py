@@ -2,15 +2,16 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & MODERN STYLE ==================
-st.set_page_config(page_title="🤖 Sniper AI v20.1", layout="wide")
+st.set_page_config(page_title="🤖 Sniper AI v20.2", layout="wide")
 
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 15px; height: 3.8em; font-weight: bold; border: 1px solid #30363d; }
-    .metric-card { background: #161b22; padding: 20px; border-radius: 15px; border: 1px solid #30363d; text-align: center; }
-    .entry-box { background: rgba(31, 111, 235, 0.1); border: 1px solid #58a6ff; padding: 15px; border-radius: 12px; text-align: center; }
-    .chase-box { background: rgba(248, 81, 73, 0.15); border: 2px solid #f85149; padding: 15px; border-radius: 12px; text-align: center; }
-    .avg-result { background: #1c2128; border-right: 5px solid #3fb950; padding: 15px; border-radius: 10px; margin-top: 10px; }
+    .entry-card { padding: 15px; border-radius: 12px; margin-bottom: 10px; border: 1px solid #30363d; text-align: center; }
+    .support-entry { background: rgba(35, 134, 54, 0.1); border-left: 5px solid #3fb950; }
+    .break-entry { background: rgba(31, 111, 235, 0.1); border-left: 5px solid #58a6ff; }
+    .current-p { background: rgba(173, 186, 199, 0.1); border-left: 5px solid #adbac7; }
+    .chase-alert { background: rgba(248, 81, 73, 0.15); border: 2px solid #f85149; padding: 15px; border-radius: 12px; text-align: center; color: #f85149; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -39,12 +40,12 @@ def analyze_stock(d_row):
         r1,s1,r2,s2 = (2*pp)-l,(2*pp)-h, pp+(h-l),pp-(h-l)
         ratio, rsi_val = v/(avg_v or 1), rsi or 0
         
-        is_chase = (p > r1 * 1.025) or (chg > 6 and rsi_val > 70)
+        is_chase = (p > r1 * 1.02) or (chg > 6 and rsi_val > 70)
         score = 0
         if not is_chase:
             if p > sma50: score += 30
             if ratio > 1.2: score += 20
-            if 40 < rsi_val < 60: score += 20
+            if 40 < rsi_val < 62: score += 20
         
         return {
             "name":name,"desc":desc,"p":p,"rsi":rsi_val,"chg":chg,"ratio":ratio,
@@ -55,93 +56,66 @@ def analyze_stock(d_row):
 
 # ================== UI RENDERER ==================
 def render(an):
-    # تنبيه المطاردة
+    # 1. تنبيه المطاردة (بشكل مودرن)
     if an['is_chase']:
-        st.markdown(f"<div class='chase-box'>🚨 **تنبيه مطاردة:** السعر الحالي ({an['p']:.2f}) مرتفع جداً. انتظر تصحيح للمقومات.</div>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<div class='entry-box'>✅ **نقطة دخول:** السعر الحالي {an['p']:.2f} مناسب للتمركز.</div>", unsafe_allow_html=True)
-
+        st.markdown(f"<div class='chase-alert'>🚨 تنبيه مطاردة خطرة: السعر ابتعد عن مناطق الأمان</div>", unsafe_allow_html=True)
+    
     st.write("")
-    c_h1, c_h2 = st.columns([3, 1])
-    c_h1.title(f"{an['name']} | {an['desc']}")
-    c_h2.markdown(f"<div class='metric-card'>AI Score<br><b style='font-size:25px;'>{an['t_score']}%</b></div>", unsafe_allow_html=True)
+    
+    # 2. خطة الدخول المقترحة (التعديل الجديد)
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(f"<div class='entry-card support-entry'>🎯 دخول آمن (دعم)<br><b style='font-size:20px;'>{an['s1']:.2f}</b></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='entry-card break-entry'>🚀 دخول اختراق<br><b style='font-size:20px;'>{an['r1']:.2f}</b></div>", unsafe_allow_html=True)
+    c3.markdown(f"<div class='entry-card current-p'>📊 السعر الحالي<br><b style='font-size:20px;'>{an['p']:.2f}</b></div>", unsafe_allow_html=True)
 
-    # مستويات الدعم والمقاومة التاريخية
+    # 3. الهيدر والـ Score
     st.markdown("---")
-    st.subheader("📊 المستويات الفنية (Historical Levels)")
-    sc1, sc2, sc3, sc4 = st.columns(4)
-    sc1.metric("دعم 2 (قوي)", f"{an['s2']:.2f}")
-    sc2.metric("دعم 1", f"{an['s1']:.2f}")
-    sc3.metric("مقاومة 1", f"{an['r1']:.2f}")
-    sc4.metric("مقاومة 2", f"{an['r2']:.2f}")
+    ch1, ch2 = st.columns([3, 1])
+    ch1.title(f"{an['name']} | <small>{an['desc']}</small>")
+    color = "#3fb950" if an['t_score'] > 60 else "#d29922" if an['t_score'] > 40 else "#f85149"
+    ch2.markdown(f"<div style='border:2px solid {color}; border-radius:15px; text-align:center; padding:10px;'>AI Confidence<br><b style='color:{color}; font-size:25px;'>{an['t_score']}%</b></div>", unsafe_allow_html=True)
 
-    # التبويبات
+    # 4. التبويبات
     st.markdown("---")
-    t1, t2, t3 = st.tabs(["🎯 خطة العمليات", "💰 ميزانية الـ 20 ألف", "🧮 حاسبة المتوسط الذكية"])
+    t1, t2, t3 = st.tabs(["🎯 الأهداف والوقف", "💰 المحفظة (20k)", "🧮 الحاسبة الذكية v12.7"])
     
     with t1:
-        st.success(f"🎯 الأهداف: هدف أول {an['r1']:.2f} | هدف ثانٍ {an['r2']:.2f}")
-        st.error(f"🛑 الوقف: كسر مستوى {an['s1']:.2f}")
+        cc1, cc2 = st.columns(2)
+        cc1.success(f"**الأهداف:** {an['r1']:.2f} ثم {an['r2']:.2f}")
+        cc2.error(f"**وقف الخسارة:** كسر {an['s2']:.2f} بإغلاق")
     
     with t2:
-        st.write("تقسيم ميزانية 20,000 ج:")
-        st.write(f"- 7000 ج عند سعر {an['p']:.2f}")
-        st.write(f"- 7000 ج عند اختراق {an['r1']:.2f}")
-        st.write(f"- 6000 ج سيولة طوارئ عند {an['s2']:.2f}")
+        st.write("تقسيم السيولة لهذا السهم:")
+        st.info(f"شراء 35% عند {an['p']:.2f} | تعزيز 35% عند {an['r1']:.2f} | تبريد 30% عند {an['s2']:.2f}")
 
     with t3:
-        st.subheader("🛠️ حاسبة المتوسط المستهدف")
+        st.subheader("🛠️ مساعد التعديل وحساب المتوسط")
         cp1, cp2 = st.columns(2)
-        old_p = cp1.number_input("سعرك القديم", value=float(an['p'] + 1.0), step=0.01, key=f"op_{an['name']}")
-        old_q = cp2.number_input("كميتك الحالية", value=1000, step=10, key=f"oq_{an['name']}")
+        old_p = cp1.number_input("سعرك القديم", value=float(an['p'] + 0.5), key=f"op_{an['name']}")
+        old_q = cp2.number_input("كميتك الحالية", value=1000, key=f"oq_{an['name']}")
         
-        target_avg = st.number_input("المتوسط الذي تريد الوصول إليه؟", value=float(an['p'] + 0.5), step=0.01, key=f"tg_{an['name']}")
+        target_avg = st.number_input("المتوسط المستهدف؟", value=float(an['p'] + 0.2), step=0.01, key=f"tg_{an['name']}")
         
-        # --- منطق حساب المتوسط (The Fix) ---
-        current_p = float(an['p'])
-        
-        if target_avg <= current_p:
-            st.warning(f"⚠️ لا يمكن الوصول لمتوسط {target_avg} لأن السعر الحالي للسوق هو {current_p}. المتوسط يجب أن يكون دائماً أعلى من سعر الشراء الجديد.")
-        elif target_avg >= old_p:
-            st.info("سعر المتوسط المستهدف أعلى من سعرك الحالي بالفعل، لست بحاجة للتعديل.")
+        curr_p = float(an['p'])
+        if target_avg > curr_p and target_avg < old_p:
+            needed_q = (old_q * (old_p - target_avg)) / (target_avg - curr_p)
+            cost = needed_q * curr_p
+            st.success(f"للوصول لمتوسط {target_avg:.2f}: اشترِ {int(needed_q):,} سهم بتكلفة {cost:,.0f} ج")
         else:
-            # المعادلة: New_Qty = (Old_Qty * (Old_Price - Target)) / (Target - Current_Price)
-            needed_q = (old_q * (old_p - target_avg)) / (target_avg - current_p)
-            total_cost = needed_q * current_p
-            
-            st.markdown(f"""
-            <div class='avg-result'>
-            💡 <b>النتيجة:</b> لكي يصبح متوسطك <b>{target_avg:.2f}</b> ج:<br>
-            ✅ يجب شراء: <b>{int(needed_q):,} سهم</b><br>
-            💸 التكلفة المطلوبة: <b>{total_cost:,.0f} ج</b>
-            </div>
-            """, unsafe_allow_html=True)
+            st.warning("تأكد أن المتوسط المستهدف بين سعرك القديم وسعر السوق الحالي.")
 
 # ================== PAGES ==================
 if st.session_state.page == 'home':
-    st.title("🏹 Sniper AI v20.1 Pro")
+    st.title("🏹 Sniper AI v20.2")
     c1, c2 = st.columns(2)
-    if c1.button("🏠 الرئيسية"): go_to('home')
     if c1.button("🔍 تحليل سهم"): go_to('analyze')
     if c2.button("🔭 كشاف السوق"): go_to('scanner')
     if c1.button("🚀 الاختراقات"): go_to('breakout')
     if c2.button("💎 قنص الذهب"): go_to('gold')
 
 elif st.session_state.page == 'analyze':
-    if st.button("🔙 عودة"): go_to('home')
+    if st.button("🏠 الرئيسية"): go_to('home')
     q = st.text_input("ادخل الرمز").upper()
     if q:
         data = fetch_egx_data(query_val=q)
         if data: render(analyze_stock(data[0]))
-        else: st.error("لم يتم العثور على السهم.")
-
-elif st.session_state.page in ['scanner', 'breakout', 'gold']:
-    if st.button("🏠 الرئيسية"): go_to('home')
-    for r in fetch_egx_data(scan_all=True):
-        an = analyze_stock(r)
-        if not an: continue
-        show = (st.session_state.page == 'scanner' and an['t_score'] > 45) or \
-               (st.session_state.page == 'breakout' and an['p'] > an['r1'] and not an['is_chase']) or \
-               (st.session_state.page == 'gold' and an['ratio'] > 1.5)
-        if show:
-            with st.expander(f"📌 {an['name']} | Score: {an['t_score']}%"): render(an)
