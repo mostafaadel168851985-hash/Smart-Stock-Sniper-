@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v14.8", layout="wide")
+st.set_page_config(page_title="EGX Sniper Pro v14.9", layout="wide")
 
 st.markdown("""
     <style>
@@ -62,8 +62,10 @@ def analyze_stock(d_row, is_scanner=False):
         
         ratio = v / (avg_v or 1)
         
-        # 1. فلتر السيولة المحسن (يعمل فقط في السكنر)
-        if is_scanner and ratio < 0.8: return None 
+        # 1. فلاتر السكانر (سيولة + منع الأسهم المنهارة)
+        if is_scanner:
+            if ratio < 0.8: return None 
+            if chg < -2: return None # ❗ فلتر "سهم واقع من فوق"
 
         # الاتجاهات
         t_short = "صاعد" if (sma20 and p > sma20) else "هابط"
@@ -75,42 +77,48 @@ def analyze_stock(d_row, is_scanner=False):
         elif t_short == "صاعد": signal, sig_cls = "شراء حذر ⚠️", "buy-caution"
         else: signal, sig_cls = "انتظار ⏳", "wait"
 
-        # حساب Pivot Points للدخول
+        # حساب Pivot Points
         pp = (p + (h or p) + (l or p)) / 3
         s1, r1 = (2 * pp) - (h or p), (2 * pp) - (l or p)
         s2 = pp - ((h or p) - (l or p))
         
-        # الحفاظ على نطاق السعر الأصلي
+        # نطاق الدخول
         if p < r1: entry_min, entry_max = s1 * 0.995, s1 * 1.01
         elif p <= r1 * 1.02: entry_min, entry_max = r1, r1 * 1.01
         else: entry_min, entry_max = p * 0.99, p
         
         entry_price = (entry_min + entry_max) / 2
         
-        # 2. حماية وقف الخسارة الذكية (Stop Loss)
+        # 2. حماية وقف الخسارة الذكية
         stop_loss = min(s2, entry_price * 0.97)
         
-        # 3. الهدف المعتمد على الـ Price Action
-        if p < r1: target = r1
-        else: target = r1 + (r1 - s1)
+        # 3. الهدف الواقعي (Realistic Target)
+        range_size = r1 - s1
+        if p < r1: 
+            target = r1
+        else: 
+            target = r1 + (range_size * 0.7) # ❗ تعديل الـ 0.7 لواقعية السوق المصري
 
-        # 4. حساب RR الصحيح
+        # 4. حساب RR
         profit_per_share = target - entry_price
         loss_per_share = entry_price - stop_loss
         
         if loss_per_share <= 0: return None
         rr = round(profit_per_share / loss_per_share, 2)
         
-        # 5. فلتر RR (يعمل فقط في السكنر)
+        # 5. فلتر RR للسكانر
         if is_scanner and rr < 1.5: return None
 
         rr_label, rr_class = get_rr_status(rr)
 
+        # 6. نظام الـ Scoring الجديد (أوزان الاتجاهات + انفجار السيولة)
         score = 0
-        if t_med == "صاعد": score += 30
-        if ratio > 1.2: score += 30
-        if 40 < (rsi or 0) < 65: score += 20
-        if rr > 1.5: score += 20
+        if t_med == "صاعد": score += 25 # ❗ تعديل الوزن
+        if t_long == "صاعد": score += 15 # ❗ إضافة وزن للاتجاه الطويل
+        if ratio > 1.2: score += 20
+        if ratio > 2: score += 15 # ❗ Volume Explosion Flag
+        if 40 < (rsi or 0) < 65: score += 15
+        if rr > 1.5: score += 10
 
         return {
             "name": name, "desc": desc, "p": p, "rsi": rsi or 0, "chg": chg, "ratio": ratio,
@@ -120,7 +128,7 @@ def analyze_stock(d_row, is_scanner=False):
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}",
             "entry_price": entry_price, "stop_loss": stop_loss, "target": target,
             "rr": rr, "rr_label": rr_label, "rr_class": rr_class,
-            "vol_icon": "🔥 انفجاري" if ratio > 1.5 else "⚪ هادئ"
+            "vol_icon": "🔥 انفجاري" if ratio > 2 else ("⚡ نشط" if ratio > 1.2 else "⚪ هادئ")
         }
     except: return None
 
@@ -149,11 +157,11 @@ def render_stock_ui(res):
     <div class='target-box'>🏁 <b>الهدف المتوقع:</b> {res['target']:.2f}</div>
     """, unsafe_allow_html=True)
 
-    budget = st.number_input(f"الميزانية لسهم {res['name']}:", value=10000, key=f"v_{res['name']}")
-    num_shares = budget / res['entry_price']
+    budget = st.number_input(f"الميزانية لـ {res['name']}:", value=10000, key=f"v_{res['name']}")
+    num_shares = int(budget / res['entry_price'])
     st.markdown(f"""
         <div class='plan-container'>
-            💎 <b>الكمية:</b> {int(num_shares):,} سهم<br>
+            💎 <b>الكمية:</b> {num_shares:,} سهم<br>
             <span style='color:#3fb950'>🟢 ربح محتمل: {(res['target'] - res['entry_price']) * num_shares:,.2f} ج</span><br>
             <span style='color:#f85149'>🔴 خسارة محتملة: {(res['entry_price'] - res['stop_loss']) * num_shares:,.2f} ج</span>
         </div>
@@ -161,7 +169,7 @@ def render_stock_ui(res):
 
 # ================== NAVIGATION ==================
 if st.session_state.page == 'home':
-    st.title("🏹 Sniper Elite v14.8")
+    st.title("🏹 Sniper Elite v14.9")
     if st.button("📡 تحليل سهم"): st.session_state.page = 'analyze'; st.rerun()
     if st.button("🔭 كشاف السوق"): st.session_state.page = 'scanner'; st.rerun()
     if st.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
@@ -174,7 +182,6 @@ elif st.session_state.page == 'analyze':
     if sym:
         data = fetch_egx_data(symbol=sym)
         if data:
-            # هنا is_scanner=False عشان السهم يظهر مهما كانت جودته
             res = analyze_stock(data[0], is_scanner=False)
             if res: render_stock_ui(res)
             else: st.warning("السهم لا تتوفر له بيانات كافية للتحليل")
@@ -183,10 +190,18 @@ elif st.session_state.page == 'analyze':
 elif st.session_state.page == 'scanner':
     if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
     raw_data = fetch_egx_data(scan_all=True)
+    results = []
     for r in raw_data:
         an = analyze_stock(r, is_scanner=True)
         if an and an['score'] >= 55:
-            with st.expander(f"⭐ {an['score']} | {an['name']} | RR: {an['rr']}"): render_stock_ui(an)
+            results.append(an)
+    
+    # ❗ ترتيب النتائج حسب الـ Score ثم الـ RR
+    results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
+    
+    for an in results[:15]: # عرض أفضل 15 فرصة
+        with st.expander(f"⭐ {an['score']} | {an['name']} | RR: {an['rr']} | {an['vol_icon']}"):
+            render_stock_ui(an)
 
 elif st.session_state.page == 'gold':
     if st.button("🏠"): st.session_state.page = 'home'; st.rerun()
@@ -201,7 +216,6 @@ elif st.session_state.page == 'breakout':
     raw_data = fetch_egx_data(scan_all=True)
     for r in raw_data:
         an = analyze_stock(r, is_scanner=True)
-        # 6. شرط الاختراق القوي
         if an and an['score'] > 70 and an['rr'] > 1.5 and an['t_med'] == "صاعد":
             with st.expander(f"🚀 اختراق: {an['name']}"): render_stock_ui(an)
 
