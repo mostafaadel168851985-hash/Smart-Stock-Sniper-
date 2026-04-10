@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (v13.1 PRO FILTER) ==================
-st.set_page_config(page_title="EGX Sniper Elite v13.1", layout="wide")
+# ================== CONFIG & STYLE (v13.0 HISTORICAL PRO) ==================
+st.set_page_config(page_title="EGX Sniper Elite v13.0", layout="wide")
 
 st.markdown("""
     <style>
@@ -25,10 +25,11 @@ def go_to(page_name):
     st.session_state.page = page_name
     st.rerun()
 
-# ================== 🔥 DATA ENGINE ==================
+# ================== 🔥 DATA ENGINE (V13 - HISTORICAL) ==================
 @st.cache_data(ttl=300)
 def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
+    # إضافة أعمدة تاريخية: قمة وقاع (شهر وسنة) + أداء الفترات
     cols = [
         "name","close","RSI","volume","average_volume_10d_calc","high","low","change","description",
         "SMA20","SMA50","SMA200",
@@ -49,15 +50,13 @@ def fetch_egx_data(symbol=None, scan_all=False):
 # ================== 🔥 ANALYSIS ENGINE ==================
 def analyze_stock(d_row):
     try:
+        # تفريغ البيانات الجديدة
         d = d_row['d']
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200, h_1m, l_1m, h_52w, l_52w, perf_w, perf_m = d
         
         if p is None: return None
-
-        # ✳️ 4. منع الأسهم الضعيفة (Skip)
-        if perf_w and perf_w < -5: return None
         
-        # حساب الدعوم اللحظية
+        # حساب الدعوم اللحظية (Pivots)
         pp = (p + h + l) / 3
         s1, r1 = (2 * pp) - h, (2 * pp) - l
         s2, r2 = pp - (h - l), pp + (h - l)
@@ -70,15 +69,17 @@ def analyze_stock(d_row):
         ratio = v / (avg_v or 1)
         rsi_val = rsi if rsi else 0
         
-        # ✳️ 1. فلتر القمة السنوية الجديد
-        at_year_high = (p >= h_52w * 0.97 and ratio > 1.2) if h_52w else False
-        at_month_high = (p >= h_1m * 0.99) if h_1m else False
+        # رصد "الاختراقات التاريخية"
+        at_month_high = p >= (h_1m * 0.99) if h_1m else False
+        at_year_high = p >= (h_52w * 0.99) if h_52w else False
         
         # نظام الدخول
         near_support = p <= s1 * 1.02
         is_strong_break = (p > r1 and ratio > 1.3 and chg > 0.5 and trend_med == "صاعد")
+        is_early_break = (p >= r1 * 0.97 and not is_strong_break and trend_med == "صاعد")
         is_chase = (p > r1 * 1.02)
 
+        # تحديد منطقة الدخول
         if near_support: entry_min, entry_max = s1 * 0.99, s1 * 1.01
         elif is_strong_break: entry_min, entry_max = r1, r1 * 1.01
         else: entry_min, entry_max = p * 0.99, p * 1.01
@@ -87,21 +88,14 @@ def analyze_stock(d_row):
         risk, reward = (entry_avg - s2), (r2 - entry_avg)
         rr = round(reward / risk, 2) if risk > 0 else 0
 
-        # ================== 🧠 SMART SCORE (تعديلاتك) ==================
+        # Smart Score مع دمج التاريخ
         smart_score = 0
-        # ✳️ 3. فلتر الاتجاه الثلاثي
-        if trend_short == "صاعد" and trend_med == "صاعد": smart_score += 10
-        if trend_long == "صاعد": smart_score += 10
-        
-        # ✳️ 2. قوة الأداء
-        if perf_m and perf_m > 10: smart_score += 10
-        
+        if trend_med == "صاعد": smart_score += 25
         if ratio > 1.3: smart_score += 20
-        if 40 <= rsi_val <= 65: smart_score += 15
-        if at_year_high: smart_score += 20 
+        if 40 <= rsi_val <= 60: smart_score += 15
+        if at_month_high: smart_score += 15 # السهم القوي تاريخياً بياخد سكور أعلى
         if near_support: smart_score += 15
-        if is_chase: smart_score -= 40
-        
+        if is_chase: smart_score -= 30
         smart_score = max(min(smart_score, 100), 0)
 
         return {
@@ -113,8 +107,8 @@ def analyze_stock(d_row):
             "s_score": smart_score, "rr": rr, "rr_rating": "🔥 ممتازة" if rr >= 2 else "👍 مقبولة" if rr >= 1.5 else "⚠️ ضعيفة",
             "entry_min": entry_min, "entry_max": entry_max, "entry_avg": entry_avg,
             "stop_loss": s2, "target1": r1, "target2": r2,
-            "at_year_high": at_year_high, "at_month_high": at_month_high,
-            "is_strong_break": is_strong_break, "is_chase": is_chase
+            "at_month_high": at_month_high, "at_year_high": at_year_high,
+            "is_strong_break": is_strong_break, "is_early_break": is_early_break, "is_chase": is_chase
         }
     except: return None
 
@@ -125,18 +119,20 @@ def render_stock_ui(res, title=""):
     
     st.markdown(f"<div class='stock-header'>{res['name']} | {res['desc'][:20]} <span style='color:#ffd700; float:left;'>Score: {res['s_score']}</span></div>", unsafe_allow_html=True)
     
+    # عرض الاتجاهات
     ts_cls = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
     tm_cls = "trend-up" if res['t_med'] == "صاعد" else "trend-down"
     tl_cls = "trend-up" if res['t_long'] == "صاعد" else "trend-down"
     st.markdown(f"<span class='trend-pill {ts_cls}'>قصير: {res['t_short']}</span><span class='trend-pill {tm_cls}'>متوسط: {res['t_med']}</span><span class='trend-pill {tl_cls}'>طويل: {res['t_long']}</span>", unsafe_allow_html=True)
 
+    # 🏛️ القسم التاريخي (جديد)
     c1, c2 = st.columns(2)
     with c1:
         st.markdown(f"""
         <div class='hist-box'>
         📅 <b>نطاق شهر:</b> {res['l_1m']:.2f} — {res['h_1m']:.2f}<br>
         🏆 <b>قمة سنة:</b> {res['h_52w']:.2f} 
-        {"<span style='color:#00ffcc;'> (قوة اختراق!)</span>" if res['at_year_high'] else ""}
+        {"<span style='color:#00ffcc;'> (قريب!)</span>" if res['at_year_high'] else ""}
         </div>
         """, unsafe_allow_html=True)
     with c2:
@@ -147,11 +143,13 @@ def render_stock_ui(res, title=""):
         </div>
         """, unsafe_allow_html=True)
 
+    # الأرقام الأساسية
     m1, m2, m3 = st.columns(3)
     m1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
     m2.metric("RSI", f"{res['rsi']:.1f}")
     with m3: st.markdown(f"<div class='vol-container'>الزخم: <b>{res['ratio']:.1f}x</b></div>", unsafe_allow_html=True)
 
+    # كارت الدخول
     st.markdown(f"""
     <div class='entry-card-new'>
     🎯 <b>منطقة الدخول الذكية:</b> {res['entry_min']:.2f} → {res['entry_max']:.2f}<br>
@@ -162,7 +160,7 @@ def render_stock_ui(res, title=""):
 
 # ================== NAVIGATION ==================
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Elite v13.1")
+    st.title("🏹 EGX Sniper Elite v13.0")
     c1, c2 = st.columns(2)
     if c1.button("📡 تحليل سهم محدد"): go_to('analyze')
     if c2.button("🔭 كشاف السوق الكامل"): go_to('scanner')
@@ -174,41 +172,24 @@ elif st.session_state.page == 'analyze':
     sym = st.text_input("رمز السهم").upper().strip()
     if sym:
         data = fetch_egx_data(symbol=sym)
-        if data: 
-            res = analyze_stock(data[0])
-            if res: render_stock_ui(res)
-            else: st.warning("السهم مستبعد حالياً بسبب ضعف الأداء (Perf.W < -5%)")
+        if data: render_stock_ui(analyze_stock(data[0]))
         else: st.error("سهم غير موجود")
 
 elif st.session_state.page == 'scanner':
     if st.button("🏠"): go_to('home')
     if st.button("🔍 فحص الفرص"):
         data = fetch_egx_data(scan_all=True)
-        results = [an for r in data if (an := analyze_stock(r)) and an['s_score'] >= 55]
+        results = [an for r in data if (an := analyze_stock(r)) and an['s_score'] >= 60]
         results.sort(key=lambda x: x['s_score'], reverse=True)
         for an in results:
             with st.expander(f"⭐ {an['s_score']} | {an['name']} | RR: {an['rr']}"): render_stock_ui(an)
 
 elif st.session_state.page == 'breakout':
     if st.button("🏠"): go_to('home')
+    st.info("سحب الأسهم التي تخترق قمم شهرية أو سنوية بزخم عالي")
     data = fetch_egx_data(scan_all=True)
-    found = False
     for r in data:
         an = analyze_stock(r)
-        if an and (an['at_year_high'] or an['at_month_high']):
-            tag = "🚀 اختراق قمة سنة (بزخم)" if an['at_year_high'] else "🔥 اختراق قمة شهر"
+        if an and (an['at_month_high'] or an['at_year_high']) and an['ratio'] > 1.2:
+            tag = "🚀 اختراق قمة سنة" if an['at_year_high'] else "🔥 اختراق قمة شهر"
             render_stock_ui(an, tag)
-            found = True
-    if not found: st.write("لا توجد اختراقات تاريخية حالياً")
-
-elif st.session_state.page == 'average':
-    if st.button("🏠"): go_to('home')
-    st.subheader("🧮 مساعد متوسط التكلفة")
-    c1, c2, c3 = st.columns(3)
-    old_p, old_q = c1.number_input("سعر الشراء القديم", 0.0), c2.number_input("كمية الأسهم", 0)
-    new_p = c3.number_input("سعر الشراء الجديد", 0.0)
-    if old_p > 0 and old_q > 0 and new_p > 0:
-        total_old = old_p * old_q
-        for label, q in [("تعديل بسيط (0.5x)", int(old_q*0.5)), ("تعديل متوازن (1:1)", old_q), ("تعديل قوي (2:1)", old_q*2)]:
-            cost, avg = q * new_p, (total_old + (q * new_p)) / (old_q + q)
-            st.markdown(f"**{label}**: متوسط جديد {avg:.3f} ج")
