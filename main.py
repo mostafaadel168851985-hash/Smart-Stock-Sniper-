@@ -211,81 +211,78 @@ def render_stock_ui(res):
         if qty > 0 and buy_price > 0:
             current_price = res['p']
             pnl = (current_price - buy_price) * qty
-            
-            # ================= 🔔 SMART PROFIT ENGINE (ADVANCED) =================
-
-            st.markdown("---")
-            st.markdown("### 🤖 توصيات ذكية حسب وضع الصفقة")
-
-            # حساب نسبة الربح
             pnl_pct = ((current_price - buy_price) / buy_price) * 100
 
-            # 🟢 حالة المكسب
-            if pnl_pct > 0:
-
-                # 🔒 تأمين قوي
-                if pnl_pct >= 7:
-                    sell_qty = int(qty * 0.5)
-                    st.success(f"""
-                    🔒 تأمين أرباح قوي:
-                    - الربح وصل +{pnl_pct:.2f}%
-                    - بيع 50% = {sell_qty} سهم
-                    - سيب الباقي يكمل للهدف 🚀
-                    """)
-
-                # ⚖️ تأمين جزئي
-                elif pnl_pct >= 3:
-                    sell_qty = int(qty * 0.25)
-                    st.info(f"""
-                    ⚖️ تأمين جزئي:
-                    - الربح متوسط +{pnl_pct:.2f}%
-                    - بيع 25% = {sell_qty} سهم
-                    - كمل بالباقي بحذر
-                    """)
-
-                # 👀 لسه بدري
-                else:
-                    st.warning(f"""
-                    👀 لسه بدري على البيع:
-                    - الربح الحالي +{pnl_pct:.2f}%
-                    - خليك مستني تأكيد أو اختراق
-                    """)
-
-            # 🔴 حالة الخسارة
-            elif pnl_pct < 0:
-
-                trend_score = 0
-                if res['t_short'] == "صاعد": trend_score += 1
-                if res['t_med'] == "صاعد": trend_score += 1
-                if res['ratio'] > 1.5: trend_score += 1
-
-                distance_from_sl = (buy_price - res['stop_loss']) / buy_price * 100
-
-                # 🟡 تبريد آمن
-                if trend_score >= 2 and distance_from_sl > 6:
-                    st.info(f"""
-                    🟡 تبريد محسوب:
-                    - الاتجاه مازال كويس
-                    - في مسافة أمان عن وقف الخسارة ({distance_from_sl:.1f}%)
-                    - ممكن تزود كمية بحذر
-                    """)
-
-                # 🔴 خطر
-                else:
-                    st.error(f"""
-                    🔴 خطر عالي:
-                    - الاتجاه ضعيف أو قريب من وقف الخسارة
-                    - ❌ التبريد غير آمن
-                    - الأفضل تقليل المركز أو الخروج
-                    """)
-
-            # ⚖️ تعادل
+            if pnl > 0:
+                st.success(f"🟢 انت كسبان: {pnl:,.0f} ج (+{pnl_pct:.2f}%)")
+            elif pnl < 0:
+                st.error(f"🔴 انت خسران: {pnl:,.0f} ج ({pnl_pct:.2f}%)")
             else:
-                st.info("⚖️ انت عند نقطة التعادل - استنى إشارة واضحة")
+                st.info("⚖️ انت على التعادل")
 
             st.markdown("---")
 
-            # ================= 🚨 تنبيهات فنية إضافية =================
+            trend_score = 0
+            if res['t_short'] == "صاعد": trend_score += 1
+            if res['t_med'] == "صاعد": trend_score += 1
+            if res['ratio'] > 1.5: trend_score += 1
+
+            # 🟢 Hold
+            st.markdown("### 🟢 سيناريو الاستمرار (Hold)")
+            if trend_score >= 2:
+                st.success(f"- الاتجاه كويس ✅ | السعر فوق {res['stop_loss']:.2f} | الهدف: {res['target']:.2f}")
+            else:
+                st.warning("الاتجاه مش قوي ⚠️ | ممكن تقلل جزء من المركز لتأمين نفسك")
+
+            # 🟡 Averaging
+            st.markdown("### 🟡 سيناريو التبريد (Averaging)")
+            avg_zone = res['entry_price'] * 0.97
+            if res['t_short'] == "صاعد" and res['ratio'] > 1.2:
+                st.success(f"✅ تبريد آمن نسبياً عند {avg_zone:.2f}")
+            else:
+                st.warning(f"⚠️ تبريد عالي المخاطرة عند {avg_zone:.2f}")
+
+            # 🔴 Exit
+            st.markdown("### 🔴 سيناريو الخروج (Exit)")
+            st.error(f"- وقف الخسارة: {res['stop_loss']:.2f} | لو كسرها ➜ خروج فوري ❌")
+
+            # ================= 🔔 SMART ACTION ENGINE =================
+            st.markdown("---")
+            st.markdown("### 🤖 توصيات تنفيذ ذكية")
+
+            # حسابات المخاطرة بناءً على مدخلات المستخدم في tab_management أو قيم افتراضية
+            max_risk_value = 100000 * 0.02 # محفظة افتراضية 100k ومخاطرة 2%
+            risk_per_share_calc = buy_price - res['stop_loss']
+            safe_qty = int(max_risk_value / risk_per_share_calc) if risk_per_share_calc > 0 else 0
+
+            if pnl > 0:
+                sell_25 = int(qty * 0.25)
+                sell_50 = int(qty * 0.5)
+                st.success(f"""
+                🟢 إدارة الربح:
+                🔹 بيع جزئي آمن: {sell_25} سهم  
+                🔹 تأمين قوي: {sell_50} سهم  
+                💡 لو السهم قوي → بيع 25% | لو ضعيف → بيع 50%
+                """)
+            elif pnl < 0:
+                if trend_score >= 2: # استخدام trend_score كبديل للـ score في منطق التبريد
+                    add_qty_suggested = max(0, safe_qty - qty)
+                    st.info(f"""
+                    🟡 فرصة تبريد محسوبة:
+                    🔹 الكمية المقترحة: {add_qty_suggested} سهم  
+                    🔹 لتحسين متوسط السعر | ⚠️ بشرط ثبات السعر فوق الدعم
+                    """)
+                else:
+                    cut_qty = int(qty * 0.5)
+                    st.error(f"""
+                    🔴 تقليل المخاطرة:
+                    🔹 بيع فوري: {cut_qty} سهم أو خروج كامل لو كسر الدعم  
+                    ❌ التبريد غير آمن هنا
+                    """)
+            else:
+                st.info("⚖️ الوضع محايد: استنى اختراق أو كسر | مفيش قرار واضح حالياً")
+
+            # ================= 🔔 ALERTS =================
             st.markdown("### 🚨 تنبيهات مهمة")
             alerts = []
             if res['ratio'] > 2: alerts.append("🚀 سيولة قوية → ممكن اختراق")
@@ -296,7 +293,7 @@ def render_stock_ui(res):
             if alerts:
                 for a in alerts: st.warning(a)
             else:
-                st.success("✅ لا توجد إشارات خطر فنية حالياً")
+                st.success("✅ لا توجد إشارات خطر حالياً")
 
 # ================== 🔥 NAVIGATION ==================
 if st.session_state.page == 'home':
