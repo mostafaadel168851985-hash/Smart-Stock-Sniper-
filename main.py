@@ -1,126 +1,138 @@
 import streamlit as st
 import requests
 
-# ================== CONFIG & STYLE (V16.8 - THE ANALYST) ==================
-st.set_page_config(page_title="EGX Sniper Elite v16.8", layout="wide")
+# ================== CONFIG & STYLE (V17.1 - FULL VISION) ==================
+st.set_page_config(page_title="EGX Sniper v17.1", layout="wide")
 
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 12px; height: 3.5em; font-weight: bold !important; }
-    .score-badge { background-color: #1c2128; border: 1px solid #58a6ff; padding: 2px 8px; border-radius: 8px; color: #58a6ff; font-weight: bold; }
-    .status-buy { color: #3fb950; font-weight: bold; border: 1px solid #3fb950; padding: 2px 5px; border-radius: 4px; }
-    .status-wait { color: #f85149; font-weight: bold; border: 1px solid #f85149; padding: 2px 5px; border-radius: 4px; }
-    .target-box { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-bottom: 10px; }
-    .support-val { color: #f85149; font-weight: bold; }
-    .resistance-val { color: #3fb950; font-weight: bold; }
+    .stButton>button { width: 100%; border-radius: 12px; font-weight: bold; }
+    .trend-tag { padding: 4px 10px; border-radius: 8px; font-size: 13px; font-weight: bold; margin-right: 5px; }
+    .trend-up { background-color: #238636; color: white; }
+    .trend-down { background-color: #da3633; color: white; }
+    .vol-box { background: #161b22; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #30363d; }
+    .support-val { color: #ff7b72; font-weight: bold; }
+    .resistance-val { color: #7ee787; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
 if 'page' not in st.session_state: st.session_state.page = 'home'
-def go_to(page_name):
-    st.session_state.page = page_name
-    st.rerun()
+def go_to(p): st.session_state.page = p; st.rerun()
 
 # ================== DATA ENGINE ==================
 @st.cache_data(ttl=300)
 def fetch_egx_data(query_val=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
     cols = ["name", "close", "RSI", "volume", "average_volume_10d_calc", "high", "low", "change", "description", "SMA50", "SMA200"]
-    # زيادة النطاق لـ 100 سهم لضمان ظهور نتائج في الفلاتر الصعبة
     payload = {"filter": [{"left": "volume", "operation": "greater", "right": 30000}], "columns": cols, "range": [0, 100]}
     if not scan_all and query_val:
         payload["filter"].append({"left": "name", "operation": "match", "right": query_val.upper()})
-    
     try:
         r = requests.post(url, json=payload, timeout=10).json()
         return r.get("data", [])
     except: return []
 
-# ================== ANALYSIS LOGIC (V16.8 REBORN) ==================
+# ================== ANALYSIS LOGIC ==================
 def analyze_stock(d_row):
     try:
         d = d_row['d']
         name, p, rsi, v, avg_v, h, l, chg, desc, sma50, sma200 = d
-        # حساب نقاط الارتكاز والدعوم والمقاومات
         pp = (h + l + p) / 3
-        r1, s1 = (2 * pp) - l, (2 * pp) - h
-        r2, s2 = pp + (h - l), pp - (h - l)
+        r1, s1, r2, s2 = (2*pp)-l, (2*pp)-h, pp+(h-l), pp-(h-l)
         
         ratio = v / (avg_v or 1)
         rsi_val = rsi or 0
         
-        # تحديد التوصية
-        if rsi_val < 40 and p > s1: status, cls = "🔴 شراء تدريجي", "status-buy"
-        elif rsi_val > 70: status, cls = "⚠️ منطقة جني أرباح", "status-wait"
-        elif p >= r1: status, cls = "🚀 اختراق قوي", "status-buy"
-        else: status, cls = "⚪ انتظار المراجعة", "status-wait"
+        # الاتجاهات
+        t_short = "صاعد" if p > pp else "هابط"
+        t_med = "صاعد" if sma50 and p > sma50 else "هابط"
+        t_long = "صاعد" if sma200 and p > sma200 else "هابط"
+        
+        # السيولة
+        if ratio > 1.6: vol_txt, vol_col, emoji = "🔥 زخم انفجاري", "#ffd700", "🔥"
+        elif ratio > 0.8: vol_txt, vol_col, emoji = "⚪ تداول هادئ", "#8b949e", "⚪"
+        else: vol_txt, vol_col, emoji = "🔴 سيولة غائبة", "#ff4b4b", "🔴"
 
-        # حساب السكور
-        t_score = int(90 if rsi_val < 35 else 75 if rsi_val < 55 else 45)
-        if p < pp: t_score -= 10
+        # سكور وتوصية
+        t_score = int(85 if 40 < rsi_val < 60 else 60 if rsi_val < 70 else 35)
+        if t_med == "هابط": t_score -= 15
+        
+        status = "🟢 شراء/تجميع" if rsi_val < 45 else "🚀 اختراق" if p > r1 else "🟡 مراقبة السلوك"
 
         return {
             "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio,
-            "t_score": t_score, "status": status, "cls": cls,
-            "pp": pp, "r1": r1, "r2": r2, "s1": s1, "s2": s2,
-            "vol_txt": "🔥 زخم" if ratio > 1.5 else "⚪ هادئ",
-            "is_gold": (ratio > 1.5 and 45 < rsi_val < 60),
-            "is_break": (p >= h * 0.99 and ratio > 1.2),
-            "is_chase": (p > pp and ratio > 1.3 and chg > 1) # تنبيه المطاردة
+            "t_score": t_score, "status": status, "vol_txt": vol_txt, "vol_col": vol_col, "emoji": emoji,
+            "s1": s1, "s2": s2, "r1": r1, "r2": r2, "pp": pp,
+            "t_short": t_short, "t_med": t_med, "t_long": t_long,
+            "is_gold": (ratio > 1.5 and 45 < rsi_val < 62),
+            "is_break": (p >= h * 0.99 and ratio > 1.2)
         }
     except: return None
 
-# ================== UI RENDERER ==================
-def render_stock_ui(res):
-    st.markdown(f"### {res['name']} <span class='score-badge'>(T-Score: {res['t_score']})</span> <span class='{res['cls']}'>{res['status']}</span>", unsafe_allow_html=True)
-    st.caption(res['desc'])
+# ================== UI COMPONENTS ==================
+def render_analysis_ui(an):
+    # 1. الاتجاهات والسيولة في الرأس
+    st.markdown(f"### {an['name']} | {an['status']} (Score: {an['t_score']})")
     
-    # مستويات الدعم والمقاومة الجديدة
-    cols = st.columns(4)
-    cols[0].markdown(f"📉 دعم 2: <span class='support-val'>{res['s2']:.2f}</span>", unsafe_allow_html=True)
-    cols[1].markdown(f"📉 دعم 1: <span class='support-val'>{res['s1']:.2f}</span>", unsafe_allow_html=True)
-    cols[2].markdown(f"📈 مقاومة 1: <span class='resistance-val'>{res['r1']:.2f}</span>", unsafe_allow_html=True)
-    cols[3].markdown(f"📈 مقاومة 2: <span class='resistance-val'>{res['r2']:.2f}</span>", unsafe_allow_html=True)
+    c_tr = st.columns(4)
+    for col, lab, val in zip(c_tr[:3], ["قصير", "متوسط", "طويل"], [an['t_short'], an['t_med'], an['t_long']]):
+        cls = "trend-up" if val == "صاعد" else "trend-down"
+        col.markdown(f"{lab}: <span class='trend-tag {cls}'>{val}</span>", unsafe_allow_html=True)
     
+    with c_tr[3]:
+        st.markdown(f"<div class='vol-box' style='color:{an['vol_col']}'>{an['emoji']} {an['ratio']:.1f}x السيولة</div>", unsafe_allow_html=True)
+
     st.divider()
-    
-    m1, m2, m3 = st.columns(3)
-    m1.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
-    m2.metric("RSI", f"{res['rsi']:.1f}")
-    m3.metric("الزخم", f"{res['ratio']:.1f}x", res['vol_txt'])
+
+    # 2. الدعوم والمقاومات
+    cols = st.columns(4)
+    cols[0].markdown(f"📉 دعم 2: <span class='support-val'>{an['s2']:.2f}</span>", unsafe_allow_html=True)
+    cols[1].markdown(f"📉 دعم 1: <span class='support-val'>{an['s1']:.2f}</span>", unsafe_allow_html=True)
+    cols[2].markdown(f"📈 مقاومة 1: <span class='resistance-val'>{an['r1']:.2f}</span>", unsafe_allow_html=True)
+    cols[3].markdown(f"📈 مقاومة 2: <span class='resistance-val'>{an['r2']:.2f}</span>", unsafe_allow_html=True)
+
+    # 3. الأهداف وخطة السيولة
+    st.subheader("🎯 خطة الأهداف وإدارة الـ 20 ألف ج")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.info("🎯 مضارب سريع")
+        st.write(f"✅ هدف 1: {an['r1']:.2f} | ✅ هدف 2: {an['r2']:.2f}")
+        st.write(f"🛑 وقف خسارة: {an['s1']:.2f}")
+    with col_b:
+        st.success("💰 توزيع الميزانية")
+        st.write(f"• شراء بـ 7000 ج عند {an['p']:.2f}")
+        st.write(f"• تعزيز بـ 7000 ج عند اختراق {an['r1']:.2f}")
+        st.write(f"• سيولة طوارئ بـ 6000 ج عند {an['s2']:.2f}")
+
+    # 4. حاسبة المتوسط
+    with st.expander("🧮 حاسبة تعديل المتوسط السريع"):
+        c1, c2 = st.columns(2)
+        old_p = c1.number_input("السعر القديم", value=float(an['p']))
+        old_q = c2.number_input("الكمية الحالية", value=1000)
+        new_q = st.number_input("كمية الشراء الجديدة للتعديل", value=old_q)
+        avg = ((old_p * old_q) + (an['p'] * new_q)) / (old_q + new_q)
+        st.warning(f"المتوسط الجديد سيكون: {avg:.3f} ج")
 
 # ================== PAGES ==================
 if st.session_state.page == 'home':
-    st.title("🎯 Sniper Elite v16.8 Pro")
+    st.title("🏹 Sniper Elite v17.1")
     c1, c2 = st.columns(2)
-    with c1:
-        if st.button("📡 تحليل سهم"): go_to('analyze')
-        if st.button("🔭 كشاف السوق"): go_to('scanner')
-    with c2:
-        if st.button("🚀 رادار الاختراقات"): go_to('breakout')
-        if st.button("💎 قنص الذهب"): go_to('gold')
+    if c1.button("📡 تحليل السهم"): go_to('analyze')
+    if c2.button("🔭 كشاف السوق"): go_to('scanner')
+    if c1.button("🚀 الاختراقات"): go_to('breakout')
+    if c2.button("💎 قنص الذهب"): go_to('gold')
+
+elif st.session_state.page == 'analyze':
+    if st.button("⬅️"): go_to('home')
+    q = st.text_input("ادخل الرمز").upper()
+    if q:
+        data = fetch_egx_data(query_val=q)
+        if data: render_analysis_ui(analyze_stock(data[0]))
+        else: st.error("لا توجد بيانات لهذا السهم.")
 
 elif st.session_state.page == 'scanner':
-    if st.button("🏠 Home"): go_to('home')
+    if st.button("⬅️"): go_to('home')
     for r in fetch_egx_data(scan_all=True):
-        if (an := analyze_stock(r)) and an['t_score'] >= 45:
-            with st.expander(f"{an['name']} | {an['status']} | {an['p']} ج"): render_stock_ui(an)
-
-elif st.session_state.page == 'breakout':
-    if st.button("🏠 Home"): go_to('home')
-    found = False
-    for r in fetch_egx_data(scan_all=True):
-        if (an := analyze_stock(r)) and (an['is_break'] or an['is_chase']):
-            found = True
-            pref = "🔥 مطاردة" if an['is_chase'] else "🚀 اختراق"
-            with st.expander(f"{pref}: {an['name']} | السعر: {an['p']}"): render_stock_ui(an)
-    if not found: st.warning("لا توجد اختراقات حالية، تابع الكشاف.")
-
-elif st.session_state.page == 'gold':
-    if st.button("🏠 Home"): go_to('home')
-    found = False
-    for r in fetch_egx_data(scan_all=True):
-        if (an := analyze_stock(r)) and an['is_gold']:
-            found = True
-            with st.expander(f"💎 ذهب: {an['name']} | RSI: {an['rsi']:.1f}"): render_stock_ui(an)
-    if not found: st.info("ابحث في الكشاف عن أسهم بسكور عالي حالياً.")
+        if (an := analyze_stock(r)) and an['t_score'] >= 50:
+            with st.expander(f"{an['name']} | {an['status']} | {an['emoji']} {an['ratio']:.1f}x"):
+                render_analysis_ui(an)
