@@ -68,17 +68,22 @@ def analyze_stock(d_row):
         d = d_row.get('d', [])
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d
         if p is None: return None
+        
         ratio = v / (avg_v or 1)
         t_short = "صاعد" if (sma20 and p > sma20) else "هابط"
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
         t_long = "صاعد" if (sma200 and p > sma200) else "هابط"
 
+        # الحل للمشكلة 2: استخدام السعر الحالي كأساس منطقي
+        entry_price = p
+        entry_min = p * 0.98
+        entry_max = p * 1.01
+        
+        # حساب الدعم والمقاومة من الـ Pivot التقليدي للحفاظ على مستويات SL/Target
         pp = (p + (h or p) + (l or p)) / 3
         s1, r1 = (2 * pp) - (h or p), (2 * pp) - (l or p)
         s2 = pp - ((h or p) - (l or p))
         
-        entry_min, entry_max = (s1, s1 * 1.01) if p <= r1 else (p * 0.99, p)
-        entry_price = (entry_min + entry_max) / 2
         stop_loss = min(s2, entry_price * 0.97)
         target = r1 if p < r1 else r1 + ((r1 - s1) * 0.7)
 
@@ -109,7 +114,6 @@ def render_stock_ui(res):
     tab_analysis, tab_management = st.tabs(["📊 التحليل الفني", "📉 إدارة المخاطر والسيولة"])
 
     with tab_analysis:
-        # حل المشكلة 1: إرجاع الاتجاهات
         t_short_c = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
         t_med_c = "trend-up" if res['t_med'] == "صاعد" else "trend-down"
         t_long_c = "trend-up" if res['t_long'] == "صاعد" else "trend-down"
@@ -139,64 +143,89 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
-        # تحسين إضافي: عرض المسافات
-        st.caption(f"""
-        📏 المسافة لوقف الخسارة: {res['entry_price'] - res['stop_loss']:.2f} ج | 📈 المسافة للهدف: {res['target'] - res['entry_price']:.2f} ج
-        """)
-
     with tab_management:
         col_port, col_risk = st.columns(2)
         portfolio = col_port.number_input("إجمالي حجم المحفظة (ج):", value=100000, step=1000, key=f"port_{res['name']}")
         risk_per_trade = col_risk.slider("نسبة مخاطرة الصفقة (%)", 0.5, 5.0, 2.0, key=f"risk_{res['name']}")
 
+        # الحل للمشكلة 1: حماية السيولة من الأرقام الفلكية
         max_loss_allowed = portfolio * (risk_per_trade / 100)
         risk_per_share = res['entry_price'] - res['stop_loss']
-        shares_to_buy = int(max_loss_allowed / risk_per_share) if risk_per_share > 0 else 0
-        recommended_position_size = shares_to_buy * res['entry_price']
+        
+        # حساب العدد بناءً على المخاطرة أولاً
+        shares_to_buy_initial = int(max_loss_allowed / risk_per_share) if risk_per_share > 0 else 0
+        
+        # وضع سقف (Cap) بنسبة 25% من المحفظة
+        max_position_size = portfolio * 0.25
+        recommended_position_size = min(shares_to_buy_initial * res['entry_price'], max_position_size)
+        
+        # إعادة ضبط عدد الأسهم النهائي بناءً على السقف
+        shares_to_buy = int(recommended_position_size / res['entry_price']) if res['entry_price'] > 0 else 0
         portfolio_usage = (recommended_position_size / portfolio) * 100
 
         st.markdown(f"""
         <div style='background: rgba(88, 166, 255, 0.1); border: 1px solid #58a6ff; padding: 15px; border-radius: 10px; margin-top: 10px;'>
-            🧠 <b>إجمالي السيولة المسموح بها: {recommended_position_size:,.0f} ج</b><br>
-            📊 <b>نسبة استخدام المحفظة: {portfolio_usage:.1f}%</b>
+            🧠 <b>إجمالي السيولة المقترحة: {recommended_position_size:,.0f} ج</b><br>
+            📊 <b>نسبة استخدام المحفظة: {portfolio_usage:.1f}%</b> (الحد الأقصى المسموح: 25%)
         </div>
         """, unsafe_allow_html=True)
 
-        # حل المشكلة 2: الخطة تظهر دائماً بتحذير
-        st.markdown("### 🎯 خطة الدخول الذكية (Pyramiding)")
-        if res['rr'] < 1.5:
-            st.warning("⚠️ الصفقة ضعيفة - الدخول المرحلي بحذر شديد")
-        
-        # حل المشكلة 3: أسعار دخول واقعية (أسلوب الـ Range)
-        range_size = res['entry_price'] - res['stop_loss']
-        
-        entry1_price = res['entry_price']
-        entry2_price = res['entry_price'] - (range_size * 0.5) # تعزيز عند منتصف المسافة للدعم
-        entry3_price = res['entry_price'] + (range_size * 0.5) # تأكيد عند اندفاع السعر صعوداً بنفس المسافة
-        
-        # حماية إضافية
-        entry2_price = max(entry2_price, res['stop_loss'] * 1.01)
-        entry3_price = min(entry3_price, res['target'] * 0.98)
+        # حل المشكلة 3: إرجاع قيم الربح والخسارة بالجنيه
+        profit_val = (res['target'] - res['entry_price']) * shares_to_buy
+        loss_val = (res['entry_price'] - res['stop_loss']) * shares_to_buy
 
-        weights = [0.7, 0.2, 0.1] if res['rr'] >= 2 else [0.5, 0.3, 0.2]
+        st.markdown(f"""
+        <div class='plan-container' style='border-right: 5px solid #58a6ff;'>
+        📊 <b>تقييم الصفقة المالي:</b><br>
+        🟢 الربح المتوقع: {profit_val:,.0f} ج<br>
+        🔴 الخسارة المحتملة: {loss_val:,.0f} ج<br>
+        ⚖️ معامل العائد للمخاطرة: {res['rr']}
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("### 🏹 خطة الدخول التنفيذية")
+        
+        # اختيار الأوزان بناءً على الاتجاه والـ RR
+        if res['t_long'] == "هابط":
+            weights = [0.3, 0.5, 0.2]
+            strategy_note = "🛡️ اتجاه عام هابط: تعزيز أكبر عند الدعم"
+        elif res['rr'] >= 2:
+            weights = [0.7, 0.2, 0.1]
+            strategy_note = "🚀 صفقة قوية: دخول رئيسي من السعر الحالي"
+        else:
+            weights = [0.5, 0.3, 0.2]
+            strategy_note = "⚖️ صفقة متوازنة: دخول مرحلي قياسي"
 
         entry1_money = recommended_position_size * weights[0]
         entry2_money = recommended_position_size * weights[1]
         entry3_money = recommended_position_size * weights[2]
 
+        # حساب أسعار الدخول بدقة
+        entry1_price = res['entry_price']
+        entry2_price = max(res['entry_price'] * 0.97, res['stop_loss'] * 1.01)
+        entry3_price = min(res['entry_price'] * 1.02, res['target'] * 0.98)
+
         entry1_shares = int(entry1_money / entry1_price)
         entry2_shares = int(entry2_money / entry2_price)
         entry3_shares = int(entry3_money / entry3_price)
 
+        st.caption(strategy_note)
+        # الحل للمشكلة الأساسية: عرض الخطة كأوامر تنفيذية
         st.markdown(f"""
         <div class='plan-container'>
-        🎯 <b>توزيع الصفقات المقترح:</b><br><br>
-        🟢 <b>دخول أول (الآن):</b><br>
-        💰 {entry1_money:,.0f} ج ➜ {entry1_shares:,} سهم | 📍 <b>السعر:</b> {entry1_price:.2f}<br><br>
-        🟡 <b>تعزيز (لو نزل للدعم):</b><br>
-        💰 {entry2_money:,.0f} ج ➜ {entry2_shares:,} سهم | 📍 <b>السعر:</b> {entry2_price:.2f}<br><br>
-        🔵 <b>تأكيد (لو اخترق صعوداً):</b><br>
-        💰 {entry3_money:,.0f} ج ➜ {entry3_shares:,} سهم | 📍 <b>السعر:</b> {entry3_price:.2f}
+
+        🟢 <b>لو السعر وصل {entry1_price:.2f} ➜ اشتري الآن:</b><br>
+        📦 {entry1_shares:,} سهم<br>
+        💰 بقيمة: {entry1_money:,.0f} ج<br><br>
+
+        🟡 <b>لو السعر نزل لـ {entry2_price:.2f} ➜ عزز (دعم):</b><br>
+        📦 {entry2_shares:,} سهم<br>
+        💰 بقيمة: {entry2_money:,.0f} ج<br><br>
+
+        🔵 <b>لو السعر اخترق {entry3_price:.2f} ➜ زود (تأكيد صعود):</b><br>
+        📦 {entry3_shares:,} سهم<br>
+        💰 بقيمة: {entry3_money:,.0f} ج
+
         </div>
         """, unsafe_allow_html=True)
 
