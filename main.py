@@ -229,7 +229,7 @@ def render_stock_ui(res):
         with c4: st.caption(f"📈 حالة الزخم: {rsi_label}")
         # تحذير عند المقاومة
     if res['p'] >= res['r1'] * 0.98:
-    st.warning("⚠️ السعر قريب من مقاومة قوية")
+        st.warning("⚠️ السعر قريب من مقاومة قوية")
         # 🏛️ [بلوك المستثمر الجديد]
         st.markdown(f"""
         <div class='investor-card'>
