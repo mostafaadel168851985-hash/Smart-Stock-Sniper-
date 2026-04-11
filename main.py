@@ -212,6 +212,67 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
+        # ✳️ إضافة بلوك ميزانية الصفقة الجديد
+        st.markdown("---")
+        st.markdown("## 💰 إدارة الصفقة المباشرة (Deal Budget Mode)")
+
+        deal_size = st.number_input("💰 حدد ميزانية الصفقة (ج)", value=10000, step=1000, key=f"deal_budget_{res['name']}")
+
+        if deal_size > 0:
+            # التحذير الاحترافي المقترح
+            if deal_size > portfolio * 0.3:
+                st.warning("⚠️ الصفقة كبيرة مقارنة بالمحفظة")
+
+            shares_deal = int(deal_size / res['entry_price']) if res['entry_price'] > 0 else 0
+            actual_value = shares_deal * res['entry_price']
+
+            profit_val_d = (res['target'] - res['entry_price']) * shares_deal
+            loss_val_d = (res['entry_price'] - res['stop_loss']) * shares_deal
+
+            st.markdown(f"""
+            <div style='background: rgba(63, 185, 80, 0.1); border: 1px solid #3fb950; padding: 15px; border-radius: 10px; margin-top: 10px;'>
+                💰 <b>قيمة الصفقة الفعلية: {actual_value:,.0f} ج</b><br>
+                📦 <b>عدد الأسهم: {shares_deal:,}</b>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown(f"""
+            <div class='plan-container'>
+            🟢 الربح المتوقع: {profit_val_d:,.0f} ج<br>
+            🔴 الخسارة المحتملة: {loss_val_d:,.0f} ج<br>
+            ⚖️ RR: {res['rr']}
+            </div>
+            """, unsafe_allow_html=True)
+
+            range_size_d = res['entry_price'] - res['stop_loss']
+            e1_p_d = res['entry_price']
+            e2_p_d = max(res['entry_price'] - (range_size_d * 0.5), res['stop_loss'] * 1.02)
+            e3_p_d = res['entry_price'] + (res['target'] - res['entry_price']) * 0.3
+
+            if res['rr'] >= 2: weights_d = [0.7, 0.2, 0.1]
+            elif res['rr'] >= 1.5: weights_d = [0.5, 0.3, 0.2]
+            else: weights_d = [0.3, 0.4, 0.3]
+
+            e1_m_d = deal_size * weights_d[0]
+            e2_m_d = deal_size * weights_d[1]
+            e3_m_d = deal_size * weights_d[2]
+
+            e1_s_d = int(e1_m_d / e1_p_d)
+            e2_s_d = int(e2_m_d / e2_p_d)
+            e3_s_d = int(e3_m_d / e3_p_d)
+
+            st.markdown("### 🏹 خطة التنفيذ حسب ميزانية الصفقة")
+            st.markdown(f"""
+            <div class='plan-container' style='border-right: 5px solid #3fb950;'>
+            🟢 <b>دخول أول عند {e1_p_d:.2f}</b><br>
+            📦 {e1_s_d:,} سهم | 💰 {e1_m_d:,.0f} ج<br><br>
+            🟡 <b>تعزيز عند {e2_p_d:.2f}</b><br>
+            📦 {e2_s_d:,} سهم | 💰 {e2_m_d:,.0f} ج<br><br>
+            🔵 <b>اختراق عند {e3_p_d:.2f}</b><br>
+            📦 {e3_s_d:,} سهم | 💰 {e3_m_d:,.0f} ج
+            </div>
+            """, unsafe_allow_html=True)
+
         st.markdown("---")
         st.markdown("### 🧮 تعديل متوسط السعر")
         c_avg1, c_avg2 = st.columns(2)
@@ -236,7 +297,7 @@ def render_stock_ui(res):
         e1_m, e2_m, e3_m = current_total_val * weights[0], current_total_val * weights[1], current_total_val * weights[2]
         e1_s, e2_s, e3_s = int(e1_m / e1_p), int(e2_m / e2_p), int(e3_m / e3_p)
 
-        st.markdown("### 🏹 خطة التنفيذ المباشرة")
+        st.markdown("### 🏹 خطة التنفيذ المباشرة (حسب إدارة المخاطر)")
         st.markdown(f"""
         <div class='plan-container'>
         🟢 <b>لو السعر ≈ {e1_p:.2f} ج ➜ اشتري (دخول أساسي)</b><br>
@@ -250,10 +311,8 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
-    # ✳️ تاب الوضع الحالي مع التحسينات المطلوبة
     with tab_scenario:
         st.markdown("### 🧠 تحليل وضعك الحالي")
-
         col1, col2 = st.columns(2)
         buy_price = col1.number_input("سعر الشراء", value=res['p'], key=f"buy_{res['name']}")
         qty = col2.number_input("عدد الأسهم", value=100, step=1, key=f"qty_{res['name']}")
@@ -263,10 +322,8 @@ def render_stock_ui(res):
             pnl = (current_price - buy_price) * qty
             pnl_pct = ((current_price - buy_price) / buy_price) * 100
 
-            # ================= 📊 PnL =================
             if pnl > 0:
                 st.success(f"🟢 انت كسبان: {pnl:,.0f} ج (+{pnl_pct:.2f}%)")
-                # 🔥 3. Break-even Logic
                 if pnl_pct >= 3:
                     be_price = buy_price
                     st.info(f"💡 حرك وقف الخسارة لنقطة الدخول: {be_price:.2f}")
@@ -276,79 +333,51 @@ def render_stock_ui(res):
                 st.info("⚖️ انت على التعادل")
 
             st.markdown("---")
-
-            # ================= 🧠 Trend Score =================
             trend_score = 0
             if res['t_short'] == "صاعد": trend_score += 1
             if res['t_med'] == "صاعد": trend_score += 1
             if res['ratio'] > 1.5: trend_score += 1
 
-            # ================= 🟢 HOLD =================
             st.markdown("### 🟢 الاستمرار (Hold)")
             if trend_score >= 2:
-                st.success(f"""
-                الاتجاه كويس ✅  
-                خليك مستمر طالما السعر فوق {res['stop_loss']:.2f}  
-                الهدف: {res['target']:.2f}
-                """)
+                st.success(f"الاتجاه كويس ✅ خليك مستمر طالما السعر فوق {res['stop_loss']:.2f} | الهدف: {res['target']:.2f}")
             else:
                 st.warning("الاتجاه ضعيف ⚠️ الأفضل تأمين جزء من الربح")
 
-            # ================= 🟡 AVERAGING =================
             st.markdown("### 🟡 التبريد (Averaging)")
             avg_zone = res['entry_price'] * 0.97
-
-            # 🔥 4. حماية زيادة للتبريد (منع التبريد تحت الدعم)
             if res['t_short'] == "صاعد" and res['ratio'] > 1.2 and current_price > res['stop_loss']:
                 st.success(f"✅ تبريد آمن نسبيًا عند {avg_zone:.2f}")
             else:
                 st.warning(f"⚠️ تبريد خطر عند {avg_zone:.2f} (الاتجاه ضعيف أو السعر قرب الوقف)")
 
-            # 🔥 متوسط مباشر (UX: كمية التبريد المقترحة)
             st.markdown("#### 🧮 احسب متوسطك بعد التبريد")
             add_qty_scenario = st.number_input("كمية التبريد المقترحة", value=0, key=f"add_qty_scen_{res['name']}")
-
             if add_qty_scenario > 0:
                 new_avg = ((buy_price * qty) + (avg_zone * add_qty_scenario)) / (qty + add_qty_scenario)
                 st.info(f"📊 متوسطك الجديد: {new_avg:.2f}")
 
-            # ================= 🔴 EXIT =================
             st.markdown("### 🔴 الخروج (Exit)")
-            st.error(f"""
-            وقف الخسارة: {res['stop_loss']:.2f}  
-            لو كسرها ➜ خروج فوري ❌
-            """)
+            st.error(f"وقف الخسارة: {res['stop_loss']:.2f} | لو كسرها ➜ خروج فوري ❌")
 
-            # ================= 🤖 SMART DECISION =================
             st.markdown("---")
             st.markdown("### 🤖 القرار الذكي")
+            if pnl_pct >= 7: st.success("🔒 تأمين قوي → بيع 50%")
+            elif pnl_pct >= 3: st.info("⚖️ تأمين جزئي → بيع 25%")
+            elif pnl_pct <= -3:
+                if trend_score >= 2: st.warning("🟡 تبريد بحذر")
+                else: st.error("🔴 تقليل مركز / خروج")
+            else: st.info("⚖️ استنى إشارة أوضح")
 
-            if pnl_pct >= 7:
-                st.success("🔒 تأمين قوي → بيع 50%")
-            elif pnl_pct >= 3:
-                st.info("⚖️ تأمين جزئي → بيع 25%")
-            elif pnl_pct <= -3: # 🔥 2. Tweak: الحساسية للخسارة (-3% بدل -5%)
-                if trend_score >= 2:
-                    st.warning("🟡 تبريد بحذر")
-                else:
-                    st.error("🔴 تقليل مركز / خروج")
-            else:
-                st.info("⚖️ استنى إشارة أوضح")
-
-            # ================= 🚨 ALERTS =================
             st.markdown("### 🚨 تنبيهات")
-
             alerts = []
             if res['ratio'] > 2: alerts.append("🚀 سيولة قوية")
             if res['rr'] < 1: alerts.append("❌ RR ضعيف")
             if res['t_short'] == "هابط": alerts.append("🔻 اتجاه هابط")
             if current_price <= res['stop_loss']: alerts.append("⛔ كسر وقف الخسارة")
-
             if alerts:
-                for a in alerts:
-                    st.warning(a)
-            else:
-                st.success("✅ لا يوجد خطر حالي")
+                for a in alerts: st.warning(a)
+            else: st.success("✅ لا يوجد خطر حالي")
 
 # ================== 🔥 NAVIGATION ==================
 if st.session_state.page == 'home':
