@@ -134,6 +134,7 @@ def analyze_stock(d_row):
 def render_stock_ui(res):
     st.markdown(f"<div class='stock-header'>{res['name']} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
     
+    # ✅ تحديث الـ Tabs لإضافة "الوضع الحالي"
     tab_analysis, tab_management, tab_scenario = st.tabs([
         "📊 التحليل الفني",
         "📉 إدارة المخاطر والسيولة",
@@ -202,6 +203,16 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
+        st.markdown(f"""
+        <div class='plan-container' style='border-right: 5px solid #58a6ff;'>
+        📊 <b>تقييم مالي للصفقة ({shares_to_buy:,} سهم):</b><br>
+        🟢 الربح المتوقع: {profit_val:,.0f} ج<br>
+        🔴 الخسارة المحتملة: {loss_val:,.0f} ج<br>
+        ⚖️ معدل RR المحقق: {res['rr']}
+        </div>
+        """, unsafe_allow_html=True)
+
+    # 🔥 الكود الجديد للـ Tab الثالث (الوضع الحالي)
     with tab_scenario:
         st.markdown("### 🧠 تحليل وضعك الحالي")
         col1, col2 = st.columns(2)
@@ -213,6 +224,7 @@ def render_stock_ui(res):
             pnl = (current_price - buy_price) * qty
             pnl_pct = ((current_price - buy_price) / buy_price) * 100
 
+            # 🟢 تحديد الحالة
             if pnl > 0:
                 st.success(f"🟢 انت كسبان: {pnl:,.0f} ج (+{pnl_pct:.2f}%)")
             elif pnl < 0:
@@ -222,6 +234,7 @@ def render_stock_ui(res):
 
             st.markdown("---")
 
+            # 🧠 تقييم الاتجاه
             trend_score = 0
             if res['t_short'] == "صاعد": trend_score += 1
             if res['t_med'] == "صاعد": trend_score += 1
@@ -230,70 +243,43 @@ def render_stock_ui(res):
             # 🟢 Hold
             st.markdown("### 🟢 سيناريو الاستمرار (Hold)")
             if trend_score >= 2:
-                st.success(f"- الاتجاه كويس ✅ | السعر فوق {res['stop_loss']:.2f} | الهدف: {res['target']:.2f}")
+                st.success(f"""
+                - الاتجاه كويس ✅
+                - خليك مستمر طالما السعر فوق {res['stop_loss']:.2f}
+                - الهدف: {res['target']:.2f}
+                """)
             else:
-                st.warning("الاتجاه مش قوي ⚠️ | ممكن تقلل جزء من المركز لتأمين نفسك")
+                st.warning("""
+                الاتجاه مش قوي ⚠️
+                ممكن تقلل جزء من المركز لتأمين نفسك
+                """)
 
             # 🟡 Averaging
             st.markdown("### 🟡 سيناريو التبريد (Averaging)")
             avg_zone = res['entry_price'] * 0.97
             if res['t_short'] == "صاعد" and res['ratio'] > 1.2:
-                st.success(f"✅ تبريد آمن نسبياً عند {avg_zone:.2f}")
+                st.success(f"""
+                ✅ تبريد آمن نسبياً
+                - منطقة التبريد: {avg_zone:.2f}
+                - الاتجاه بدأ يدعم الدخول
+                - ممكن تحسن متوسط السعر
+                """)
             else:
-                st.warning(f"⚠️ تبريد عالي المخاطرة عند {avg_zone:.2f}")
+                st.warning(f"""
+                ⚠️ تبريد عالي المخاطرة
+                - منطقة التبريد: {avg_zone:.2f}
+                - الاتجاه مش واضح أو هابط
+                - ممكن تزود الخسارة
+                🎯 الأفضل: استنى إشارة صعود أو سيولة أعلى
+                """)
 
             # 🔴 Exit
             st.markdown("### 🔴 سيناريو الخروج (Exit)")
-            st.error(f"- وقف الخسارة: {res['stop_loss']:.2f} | لو كسرها ➜ خروج فوري ❌")
-
-            # ================= 🔔 SMART ACTION ENGINE =================
-            st.markdown("---")
-            st.markdown("### 🤖 توصيات تنفيذ ذكية")
-
-            # حسابات المخاطرة بناءً على مدخلات المستخدم في tab_management أو قيم افتراضية
-            max_risk_value = 100000 * 0.02 # محفظة افتراضية 100k ومخاطرة 2%
-            risk_per_share_calc = buy_price - res['stop_loss']
-            safe_qty = int(max_risk_value / risk_per_share_calc) if risk_per_share_calc > 0 else 0
-
-            if pnl > 0:
-                sell_25 = int(qty * 0.25)
-                sell_50 = int(qty * 0.5)
-                st.success(f"""
-                🟢 إدارة الربح:
-                🔹 بيع جزئي آمن: {sell_25} سهم  
-                🔹 تأمين قوي: {sell_50} سهم  
-                💡 لو السهم قوي → بيع 25% | لو ضعيف → بيع 50%
-                """)
-            elif pnl < 0:
-                if trend_score >= 2: # استخدام trend_score كبديل للـ score في منطق التبريد
-                    add_qty_suggested = max(0, safe_qty - qty)
-                    st.info(f"""
-                    🟡 فرصة تبريد محسوبة:
-                    🔹 الكمية المقترحة: {add_qty_suggested} سهم  
-                    🔹 لتحسين متوسط السعر | ⚠️ بشرط ثبات السعر فوق الدعم
-                    """)
-                else:
-                    cut_qty = int(qty * 0.5)
-                    st.error(f"""
-                    🔴 تقليل المخاطرة:
-                    🔹 بيع فوري: {cut_qty} سهم أو خروج كامل لو كسر الدعم  
-                    ❌ التبريد غير آمن هنا
-                    """)
-            else:
-                st.info("⚖️ الوضع محايد: استنى اختراق أو كسر | مفيش قرار واضح حالياً")
-
-            # ================= 🔔 ALERTS =================
-            st.markdown("### 🚨 تنبيهات مهمة")
-            alerts = []
-            if res['ratio'] > 2: alerts.append("🚀 سيولة قوية → ممكن اختراق")
-            if res['rr'] < 1: alerts.append("❌ RR ضعيف → الصفقة غير مريحة")
-            if res['t_short'] == "هابط": alerts.append("🔻 اتجاه قصير هابط")
-            if current_price <= res['stop_loss']: alerts.append("⛔ كسر وقف الخسارة")
-
-            if alerts:
-                for a in alerts: st.warning(a)
-            else:
-                st.success("✅ لا توجد إشارات خطر حالياً")
+            st.error(f"""
+            - وقف الخسارة: {res['stop_loss']:.2f}
+            - لو كسرها ➜ خروج فوري ❌
+            💡 الهدف: حماية رأس المال
+            """)
 
 # ================== 🔥 NAVIGATION ==================
 if st.session_state.page == 'home':
