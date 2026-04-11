@@ -20,6 +20,13 @@ st.markdown("""
     .entry-card-new { background-color: #0d1117; border: 1px solid #3fb950; border-radius: 12px; padding: 15px; text-align: center; margin-bottom: 15px; border-top: 4px solid #3fb950; }
     .target-box { border: 2px solid #58a6ff; border-radius: 12px; padding: 15px; text-align: center; background: #0d1117; margin-top: 10px; font-size: 18px; }
     .plan-container { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin-top: 15px; border-right: 5px solid #238636; }
+    
+    /* 🏛️ ستايل بلوك المستثمر الجديد */
+    .investor-card { background-color: #161b22; border: 1px solid #d29922; border-radius: 12px; padding: 15px; margin-bottom: 15px; border-top: 4px solid #d29922; }
+    .investor-title { color: #d29922; font-weight: bold; font-size: 18px; margin-bottom: 10px; display: block; border-bottom: 1px solid #30363d; padding-bottom: 5px; }
+    .level-box { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #21262d; }
+    .sup-text { color: #3fb950; font-weight: bold; }
+    .res-text { color: #f85149; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -148,7 +155,7 @@ def analyze_stock(d_row):
         
         pp = (p + (h or p) + (l or p)) / 3
         s1, r1 = (2 * pp) - (h or p), (2 * pp) - (l or p)
-        s2 = pp - ((h or p) - (l or p))
+        s2, r2 = pp - ((h or p) - (l or p)), pp + ((h or p) - (l or p))
         
         stop_loss = min(s2, entry_price * 0.97)
         target = max(r1, entry_price * 1.05)
@@ -171,6 +178,7 @@ def analyze_stock(d_row):
         return {
             "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio,
             "signal": signal, "sig_cls": sig_cls, "t_short": t_short, "t_med": t_med, "t_long": t_long,
+            "s1": s1, "s2": s2, "r1": r1, "r2": r2, "pp": pp,
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}", "entry_price": entry_price,
             "stop_loss": stop_loss, "target": target, "rr": rr, "risk_pct": (loss_ps/entry_price)*100, 
             "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) * 20) + (rsi_val / 2 if rsi_val else 25))
@@ -181,7 +189,6 @@ def analyze_stock(d_row):
 
 # ================== UI RENDERER ==================
 def render_stock_ui(res):
-    # تم هنا دمج اسم الشركة مع الرمز بناءً على طلبك
     st.markdown(f"<div class='stock-header'>{res['name']} - {res['desc']} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
     
     tab_analysis, tab_management, tab_scenario = st.tabs([
@@ -221,9 +228,21 @@ def render_stock_ui(res):
         with c3: st.caption(f"🧠 {rr_desc}")
         with c4: st.caption(f"📈 حالة الزخم: {rsi_label}")
 
+        # 🏛️ [بلوك المستثمر الجديد]
+        st.markdown(f"""
+        <div class='investor-card'>
+            <span class='investor-title'>🏛️ بيانات استرشادية (للمستثمر طويل الأجل)</span>
+            <div class='level-box'><span>المقاومة التاريخية الثانية (R2):</span><span class='res-text'>{res['r2']:.2f}</span></div>
+            <div class='level-box'><span>المقاومة التاريخية الأولى (R1):</span><span class='res-text'>{res['r1']:.2f}</span></div>
+            <div style='text-align:center; color:#8b949e; font-size:11px; margin:5px 0;'>--- نقطة الارتكاز: {res['pp']:.2f} ---</div>
+            <div class='level-box'><span>الدعم التاريخي القوي الأول (S1):</span><span class='sup-text'>{res['s1']:.2f}</span></div>
+            <div class='level-box'><span>الدعم التاريخي القوي الثاني (S2):</span><span class='sup-text'>{res['s2']:.2f}</span></div>
+        </div>
+        """, unsafe_allow_html=True)
+
         st.markdown(f"""
         <div class='entry-card-new'>
-            🎯 <b>نطاق الدخول المقترح:</b> {res['entry_range']}<br>
+            🎯 <b>نطاق الدخول المقترح (مضاربة وسوينج فقط):</b> {res['entry_range']}<br>
             🛑 <b>وقف الخسارة:</b> {res['stop_loss']:.2f} <span style='color:#f85149'>(⚠️ -{res['risk_pct']:.1f}%)</span>
         </div>
         <div class='target-box'>
