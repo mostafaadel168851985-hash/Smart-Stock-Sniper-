@@ -250,7 +250,7 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
-    # ✳️ إضافة كود tab_scenario بالكامل
+    # ✳️ تاب الوضع الحالي مع التحسينات المطلوبة
     with tab_scenario:
         st.markdown("### 🧠 تحليل وضعك الحالي")
 
@@ -266,6 +266,10 @@ def render_stock_ui(res):
             # ================= 📊 PnL =================
             if pnl > 0:
                 st.success(f"🟢 انت كسبان: {pnl:,.0f} ج (+{pnl_pct:.2f}%)")
+                # 🔥 3. Break-even Logic
+                if pnl_pct >= 3:
+                    be_price = buy_price
+                    st.info(f"💡 حرك وقف الخسارة لنقطة الدخول: {be_price:.2f}")
             elif pnl < 0:
                 st.error(f"🔴 انت خسران: {pnl:,.0f} ج ({pnl_pct:.2f}%)")
             else:
@@ -294,14 +298,15 @@ def render_stock_ui(res):
             st.markdown("### 🟡 التبريد (Averaging)")
             avg_zone = res['entry_price'] * 0.97
 
-            if res['t_short'] == "صاعد" and res['ratio'] > 1.2:
+            # 🔥 4. حماية زيادة للتبريد (منع التبريد تحت الدعم)
+            if res['t_short'] == "صاعد" and res['ratio'] > 1.2 and current_price > res['stop_loss']:
                 st.success(f"✅ تبريد آمن نسبيًا عند {avg_zone:.2f}")
             else:
-                st.warning(f"⚠️ تبريد خطر عند {avg_zone:.2f}")
+                st.warning(f"⚠️ تبريد خطر عند {avg_zone:.2f} (الاتجاه ضعيف أو السعر قرب الوقف)")
 
-            # 🔥 متوسط مباشر
+            # 🔥 متوسط مباشر (UX: كمية التبريد المقترحة)
             st.markdown("#### 🧮 احسب متوسطك بعد التبريد")
-            add_qty_scenario = st.number_input("كمية التبريد", value=0, key=f"add_qty_scen_{res['name']}")
+            add_qty_scenario = st.number_input("كمية التبريد المقترحة", value=0, key=f"add_qty_scen_{res['name']}")
 
             if add_qty_scenario > 0:
                 new_avg = ((buy_price * qty) + (avg_zone * add_qty_scenario)) / (qty + add_qty_scenario)
@@ -322,7 +327,7 @@ def render_stock_ui(res):
                 st.success("🔒 تأمين قوي → بيع 50%")
             elif pnl_pct >= 3:
                 st.info("⚖️ تأمين جزئي → بيع 25%")
-            elif pnl_pct <= -5:
+            elif pnl_pct <= -3: # 🔥 2. Tweak: الحساسية للخسارة (-3% بدل -5%)
                 if trend_score >= 2:
                     st.warning("🟡 تبريد بحذر")
                 else:
