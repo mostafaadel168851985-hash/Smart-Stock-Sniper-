@@ -44,12 +44,26 @@ def get_volume_rating(ratio):
     else:
         return "🚀 قوية", "سيولة عالية واختراق محتمل"
 
-# 🔥 [إضافة 1] Function التصنيف الجديدة
+# ✳️ [إضافة جديدة] "مخ" الـ RSI لتقييم الزخم
+def get_rsi_signal(rsi):
+    if rsi < 30:
+        return "🟢 تشبع بيع (فرصة انعكاس)", "oversold"
+    elif rsi < 50:
+        return "🟡 ضعيف", "weak"
+    elif rsi < 65:
+        return "🟢 زخم صحي", "good"
+    elif rsi < 75:
+        return "⚠️ قرب تشبع شراء", "caution"
+    else:
+        return "🔴 تشبع شراء خطر", "overbought"
+
+# 🔥 [تعديل ذكي] Function التصنيف باستخدام RSI
 def classify_stock(res):
     rr = res['rr']
     ratio = res['ratio']
     t_short = res['t_short']
     t_med = res['t_med']
+    rsi = res['rsi'] # إضافة الـ RSI للمدخلات
 
     mode = st.session_state.mode
 
@@ -61,16 +75,16 @@ def classify_stock(res):
     else:
         rr_min = 1.3
 
-    # 🥇 ذهب (موسع عشان يظهر)
-    if rr >= 1.5 and t_short == "صاعد":
+    # 🥇 ذهب (نسخة احترافية مفلترة بـ RSI)
+    if rr >= 1.5 and t_short == "صاعد" and 50 < rsi < 70:
         return "gold"
 
-    # 🚀 اختراق
-    elif ratio > 2 and t_short == "صاعد":
+    # 🚀 اختراق (فلترة ذكية تمنع القمم)
+    elif ratio > 2 and t_short == "صاعد" and rsi < 75:
         return "breakout"
 
-    # ⚡ مضاربة
-    elif ratio > 1.5 and rr >= 1.2:
+    # ⚡ مضاربة (توسيع النطاق مع حماية RSI)
+    elif ratio > 1.5 and rr >= 1.2 and rsi < 80:
         return "scalp"
 
     # 👀 تحت المراقبة
@@ -112,7 +126,6 @@ def fetch_egx_data(symbol=None, scan_all=False):
     url = "https://scanner.tradingview.com/egypt/scan"
     cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA20","SMA50","SMA200"]
     
-    # تحسين Bug 1: استخدام scan_all لتحديد مدى البحث
     current_range = [0, 300] if scan_all else [0, 150]
     
     payload = {"filter": [{"left": "volume", "operation": "greater", "right": 5000}], "columns": cols, "sort": {"sortBy": "change", "sortOrder": "desc"}, "range": current_range}
@@ -132,6 +145,7 @@ def analyze_stock(d_row):
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d
         if p is None: return None
         
+        rsi_val = rsi or 0
         ratio = v / (avg_v or 1)
         t_short = "صاعد" if (sma20 and p > sma20) else "هابط"
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
@@ -152,23 +166,24 @@ def analyze_stock(d_row):
         if loss_ps <= 0: return None
         rr = round(profit_ps / loss_ps, 2)
 
-        if rr >= 2 and t_short == "صاعد" and t_med == "صاعد":
+        # 🧠 [تحسين الإشارة] دمج منطق RSI في تحليل الإشارة
+        if rr >= 2 and t_short == "صاعد" and t_med == "صاعد" and rsi_val < 70:
             signal, sig_cls = "شراء قوي 🔥", "buy-strong"
-        elif ratio > 2 and t_short == "صاعد":
+        elif ratio > 2 and t_short == "صاعد" and rsi_val < 75:
             signal, sig_cls = "اختراق قوي 🚀", "buy-strong"
-        elif ratio > 1.5 and rr >= 1.2:
+        elif ratio > 1.5 and rr >= 1.2 and rsi_val < 75:
             signal, sig_cls = "فرصة مضاربية ⚡", "buy-caution"
-        elif rr >= 1.2:
+        elif rr >= 1.2 and rsi_val < 70:
             signal, sig_cls = "شراء حذر ⚠️", "buy-caution"
         else:
             signal, sig_cls = "انتظار ⏳", "wait"
 
         return {
-            "name": name, "desc": desc, "p": p, "rsi": rsi or 0, "chg": chg, "ratio": ratio,
+            "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio,
             "signal": signal, "sig_cls": sig_cls, "t_short": t_short, "t_med": t_med, "t_long": t_long,
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}", "entry_price": entry_price,
             "stop_loss": stop_loss, "target": target, "rr": rr, "risk_pct": (loss_ps/entry_price)*100, 
-            "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) * 20) + (rsi / 2 if rsi else 25))
+            "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) * 20) + (rsi_val / 2 if rsi_val else 25))
         }
     except Exception as e:
         print(f"Analysis Error for {d_row.get('s', 'Unknown')}: {e}")
@@ -178,7 +193,6 @@ def analyze_stock(d_row):
 def render_stock_ui(res):
     st.markdown(f"<div class='stock-header'>{res['name']} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
     
-    # ✳️ تحديث الـ Tabs
     tab_analysis, tab_management, tab_scenario = st.tabs([
         "📊 التحليل الفني",
         "📉 إدارة المخاطر والسيولة",
@@ -200,16 +214,22 @@ def render_stock_ui(res):
 
         st.markdown(f"<span class='signal-pill {res['sig_cls']}'>{res['signal']}</span>", unsafe_allow_html=True)
         
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4) # إضافة عمود رابع للـ RSI
         c1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
         
         vol_label, vol_desc = get_volume_rating(res['ratio'])
         c2.metric("نشاط السيولة", f"{res['ratio']:.1f}x {vol_label}")
-        with c2: st.caption(f"📊 {vol_desc}")
         
         rr_label, rr_desc = get_rr_rating(res['rr'])
         c3.metric("R/R Ratio", f"{res['rr']} {rr_label}")
+
+        # 📊 [تحديث UI] إظهار RSI في النتائج مباشرة
+        rsi_label, rsi_type = get_rsi_signal(res['rsi'])
+        c4.metric("RSI", f"{res['rsi']:.1f}", rsi_label)
+        
+        with c2: st.caption(f"📊 {vol_desc}")
         with c3: st.caption(f"🧠 {rr_desc}")
+        with c4: st.caption(f"📈 حالة الزخم: {rsi_label}")
 
         st.markdown(f"""
         <div class='entry-card-new'>
@@ -256,14 +276,12 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
-        # ✳️ إضافة بلوك ميزانية الصفقة الجديد
         st.markdown("---")
         st.markdown("## 💰 إدارة الصفقة المباشرة (Deal Budget Mode)")
 
         deal_size = st.number_input("💰 حدد ميزانية الصفقة (ج)", value=10000, step=1000, key=f"deal_budget_{res['name']}")
 
         if deal_size > 0:
-            # التحذير الاحترافي المقترح
             if deal_size > portfolio * 0.3:
                 st.warning("⚠️ الصفقة كبيرة مقارنة بالمحفظة")
 
@@ -305,7 +323,6 @@ def render_stock_ui(res):
             e2_s_d = int(e2_m_d / e2_p_d)
             e3_s_d = int(e3_m_d / e3_p_d)
 
-            # ✳️ التعديل الجديد في الـ UI Wording والـ Format هنا:
             st.markdown("### 🏹 خطة التنفيذ المباشرة (حسب ميزانية الصفقة)")
             st.markdown(f"""
             <div class='plan-container'>
@@ -421,6 +438,7 @@ def render_stock_ui(res):
             if res['ratio'] > 2: alerts.append("🚀 سيولة قوية")
             if res['rr'] < 1: alerts.append("❌ RR ضعيف")
             if res['t_short'] == "هابط": alerts.append("🔻 اتجاه هابط")
+            if res['rsi'] > 75: alerts.append("🔴 تشبع شراء خطر") # تنبيه RSI
             if current_price <= res['stop_loss']: alerts.append("⛔ كسر وقف الخسارة")
             if alerts:
                 for a in alerts: st.warning(a)
@@ -438,7 +456,6 @@ if st.session_state.page == 'home':
     with col2:
         if st.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
         if st.button("💎 قنص الذهب"): st.session_state.page = 'gold'; st.rerun()
-        # 🔥 [إضافة 5.1] زرار المضاربات في الرئيسية
         if st.button("⚡ مضاربات سريعة"): st.session_state.page = 'scalp'; st.rerun()
 
 elif st.session_state.page == 'avg':
@@ -459,10 +476,9 @@ elif st.session_state.page == 'gold':
     raw_data = fetch_egx_data(scan_all=True)
     found = False
     for r in raw_data:
-        an = analyze_stock(r) # تحسين Bug 2: تحليل مرة واحدة فقط
-        # 🔥 [إضافة 3] تعديل صفحة الذهب
+        an = analyze_stock(r)
         if an and classify_stock(an) == "gold":
-            with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']})"): 
+            with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']} | RSI: {an['rsi']:.1f})"): 
                 render_stock_ui(an)
                 found = True
     if not found: st.info("لا توجد فرص ذهبية حالياً.")
@@ -471,10 +487,9 @@ elif st.session_state.page == 'scanner':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     raw_data = fetch_egx_data(scan_all=True)
-    # 🔥 [إضافة 2] تعديل زرار الكشاف بالفلترة الذكية
     results = []
     for r in raw_data:
-        an = analyze_stock(r) # تحسين Bug 2: تحليل مرة واحدة فقط
+        an = analyze_stock(r)
         if an and classify_stock(an) == "watchlist":
             results.append(an)
     results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
@@ -486,25 +501,21 @@ elif st.session_state.page == 'breakout':
     render_mode_selector()
     raw_data = fetch_egx_data(scan_all=True)
     for r in raw_data:
-        an = analyze_stock(r) # تحسين Bug 2: تحليل مرة واحدة فقط
-        # 🔥 [إضافة 4] تعديل الاختراق
+        an = analyze_stock(r)
         if an and classify_stock(an) == "breakout":
-            with st.expander(f"🚀 اختراق: {an['name']}"): render_stock_ui(an)
+            with st.expander(f"🚀 اختراق: {an['name']} (RSI: {an['rsi']:.1f})"): render_stock_ui(an)
 
-# 🔥 [إضافة 5.2] صفحة المضاربات الجديدة
 elif st.session_state.page == 'scalp':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     raw_data = fetch_egx_data(scan_all=True)
     found = False
-
     for r in raw_data:
-        an = analyze_stock(r) # تحسين Bug 2: تحليل مرة واحدة فقط
+        an = analyze_stock(r)
         if an and classify_stock(an) == "scalp":
-            with st.expander(f"⚡ مضاربة: {an['name']}"):
+            with st.expander(f"⚡ مضاربة: {an['name']} (RSI: {an['rsi']:.1f})"):
                 render_stock_ui(an)
                 found = True
-
     if not found:
         st.info("لا توجد مضاربات سريعة حالياً.")
 
