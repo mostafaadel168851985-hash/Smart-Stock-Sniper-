@@ -44,37 +44,29 @@ def get_volume_rating(ratio):
     else:
         return "🚀 قوية", "سيولة عالية واختراق محتمل"
 
-# 🧩 وظيفة تصنيف نوع السهم المحدثة (تتأثر بالمود وبالفلاتر الجديدة)
+# 🧩 وظيفة تصنيف نوع السهم (محدثة بالحلول المقترحة)
 def get_stock_type(rr, ratio, t_short, t_med):
-    mode = st.session_state.get('mode', '⚖️ متوازن')
+    # ثالثاً: جلب الـ mode وتحديد الفلاتر بناءً عليه
+    mode = st.session_state.get("mode", "⚖️ متوازن")
     
-    # تحديد الحد الأدنى للـ RR بناءً على النمط المختارات
     if "محافظ" in mode:
         rr_min = 1.7
-        ratio_min = 1.3
     elif "هجومي" in mode:
         rr_min = 1.0
-        ratio_min = 1.0
     else: # متوازن
         rr_min = 1.3
-        ratio_min = 1.2
 
-    # 1. الاختراقات
+    # أولاً: تعديلات الذهب (إضافة شرط الـ Near Gold)
     if ratio > 2 and t_short == "صاعد":
         return "breakout"
-    
-    # 2. قنص الذهب (توسيع الفلتر ليشمل الـ Near Gold)
     elif (rr >= 2 and t_short == "صاعد" and t_med == "صاعد") or (rr >= 1.7 and ratio > 1.5 and t_short == "صاعد"):
         return "gold"
-    
-    # 3. مضاربات سريعة (أي فرصة مضاربية بناءً على السيولة والـ RR)
+    # ثانياً: تعديل منطق المضاربة (scalp) ليتوافق مع الـ signal
     elif ratio > 1.5 and rr >= 1.2:
         return "scalp"
-    
-    # 4. كشاف السوق (Watchlist) بناءً على المود
-    elif rr >= rr_min and ratio > ratio_min:
+    # تطبيق تأثير الـ mode على الكشاف (watchlist)
+    elif rr >= rr_min and ratio > 1.2:
         return "watchlist"
-    
     else:
         return "weak"
 
@@ -88,11 +80,17 @@ def render_mode_selector():
     with st.expander("🧠 اختر نوع التداول", expanded=False):
         col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("🛡️ محافظ"): st.session_state.mode = "🛡️ محافظ (محترف)"; st.rerun()
+            if st.button("🛡️ محافظ"): 
+                st.session_state.mode = "🛡️ محافظ (محترف)"
+                st.rerun()
         with col2:
-            if st.button("⚖️ متوازن"): st.session_state.mode = "⚖️ متوازن"; st.rerun()
+            if st.button("⚖️ متوازن"): 
+                st.session_state.mode = "⚖️ متوازن"
+                st.rerun()
         with col3:
-            if st.button("🚀 هجومي"): st.session_state.mode = "🚀 هجومي"; st.rerun()
+            if st.button("🚀 هجومي"): 
+                st.session_state.mode = "🚀 هجومي"
+                st.rerun()
 
     mode = st.session_state.mode
     color = "#238636" if "محافظ" in mode else "#f85149" if "هجومي" in mode else "#d29922"
@@ -161,7 +159,7 @@ def analyze_stock(d_row):
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}", "entry_price": entry_price,
             "stop_loss": stop_loss, "target": target, "rr": rr, "risk_pct": (loss_ps/entry_price)*100, 
             "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) * 20) + (rsi / 2 if rsi else 25)),
-            "type": get_stock_type(rr, ratio, t_short, t_med)
+            "type": get_stock_type(rr, ratio, t_short, t_med) 
         }
     except: return None
 
@@ -246,36 +244,6 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
-        st.markdown("---")
-        st.markdown("## 💰 إدارة الصفقة المباشرة (Deal Budget Mode)")
-
-        deal_size = st.number_input("💰 حدد ميزانية الصفقة (ج)", value=10000, step=1000, key=f"deal_budget_{res['name']}")
-
-        if deal_size > 0:
-            if deal_size > portfolio * 0.3:
-                st.warning("⚠️ الصفقة كبيرة مقارنة بالمحفظة")
-
-            shares_deal = int(deal_size / res['entry_price']) if res['entry_price'] > 0 else 0
-            actual_value = shares_deal * res['entry_price']
-
-            profit_val_d = (res['target'] - res['entry_price']) * shares_deal
-            loss_val_d = (res['entry_price'] - res['stop_loss']) * shares_deal
-
-            st.markdown(f"""
-            <div style='background: rgba(63, 185, 80, 0.1); border: 1px solid #3fb950; padding: 15px; border-radius: 10px; margin-top: 10px;'>
-                💰 <b>قيمة الصفقة الفعلية: {actual_value:,.0f} ج</b><br>
-                📦 <b>عدد الأسهم: {shares_deal:,}</b>
-            </div>
-            """, unsafe_allow_html=True)
-
-            st.markdown(f"""
-            <div class='plan-container'>
-            🟢 الربح المتوقع: {profit_val_d:,.0f} ج<br>
-            🔴 الخسارة المحتملة: {loss_val_d:,.0f} ج<br>
-            ⚖️ RR: {res['rr']}
-            </div>
-            """, unsafe_allow_html=True)
-
     with tab_scenario:
         st.markdown("### 🧠 تحليل وضعك الحالي")
         col1, col2 = st.columns(2)
@@ -291,12 +259,10 @@ def render_stock_ui(res):
                 st.success(f"🟢 انت كسبان: {pnl:,.0f} ج (+{pnl_pct:.2f}%)")
             elif pnl < 0:
                 st.error(f"🔴 انت خسران: {pnl:,.0f} ج ({pnl_pct:.2f}%)")
+            else:
+                st.info("⚖️ انت على التعادل")
 
-            st.markdown("### 🤖 القرار الذكي")
-            if pnl_pct >= 7: st.success("🔒 تأمين قوي → بيع 50%")
-            elif pnl_pct >= 3: st.info("⚖️ تأمين جزئي → بيع 25%")
-            elif pnl_pct <= -3: st.error("🔴 تقليل مركز / خروج")
-            else: st.info("⚖️ استنى إشارة أوضح")
+            st.error(f"وقف الخسارة: {res['stop_loss']:.2f} | لو كسرها ➜ خروج فوري ❌")
 
 # ================== 🔥 NAVIGATION ==================
 if st.session_state.page == 'home':
@@ -335,7 +301,7 @@ elif st.session_state.page == 'gold':
             with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']})"): 
                 render_stock_ui(an)
                 found = True
-    if not found: st.info("لا توجد فرص ذهبية حالياً بناءً على النمط الحالي.")
+    if not found: st.info("لا توجد فرص ذهبية حالياً.")
 
 elif st.session_state.page == 'scanner':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -346,20 +312,16 @@ elif st.session_state.page == 'scanner':
     if results:
         for an in results[:15]:
             with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
-    else: st.info("الكشاف خالي حالياً، جرب تغيير نمط التداول لـ 'هجومي'.")
+    else: st.info("الكشاف خالي حالياً بناءً على النمط الحالي.")
 
 elif st.session_state.page == 'breakout':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     raw_data = fetch_egx_data(scan_all=True)
-    found = False
     for r in raw_data:
         an = analyze_stock(r)
         if an and an['type'] == "breakout":
-            with st.expander(f"🚀 اختراق: {an['name']}"): 
-                render_stock_ui(an)
-                found = True
-    if not found: st.info("لا توجد اختراقات سيولة حالياً.")
+            with st.expander(f"🚀 اختراق: {an['name']}"): render_stock_ui(an)
 
 elif st.session_state.page == 'scalp':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
