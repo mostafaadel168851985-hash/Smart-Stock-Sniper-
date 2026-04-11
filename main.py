@@ -144,7 +144,7 @@ def analyze_stock(d_row):
         if p is None: return None
         
         rsi_val = rsi or 0
-        ratio = v / (avg_v or 1)
+        ratio = v / avg_v if avg_v and avg_v > 0 else 1
         t_short = "صاعد" if (sma20 and p > sma20) else "هابط"
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
         t_long = "صاعد" if (sma200 and p > sma200) else "هابط"
