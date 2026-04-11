@@ -134,7 +134,12 @@ def analyze_stock(d_row):
 def render_stock_ui(res):
     st.markdown(f"<div class='stock-header'>{res['name']} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
     
-    tab_analysis, tab_management = st.tabs(["📊 التحليل الفني", "📉 إدارة المخاطر والسيولة"])
+    # ✳️ تحديث الـ Tabs
+    tab_analysis, tab_management, tab_scenario = st.tabs([
+        "📊 التحليل الفني",
+        "📉 إدارة المخاطر والسيولة",
+        "🧠 الوضع الحالي"
+    ])
 
     with tab_analysis:
         t_short_c = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
@@ -154,12 +159,10 @@ def render_stock_ui(res):
         c1, c2, c3 = st.columns(3)
         c1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
         
-        # ✅ تقييم السيولة المحدث
         vol_label, vol_desc = get_volume_rating(res['ratio'])
         c2.metric("نشاط السيولة", f"{res['ratio']:.1f}x {vol_label}")
         with c2: st.caption(f"📊 {vol_desc}")
         
-        # ✅ تقييم RR المحدث
         rr_label, rr_desc = get_rr_rating(res['rr'])
         c3.metric("R/R Ratio", f"{res['rr']} {rr_label}")
         with c3: st.caption(f"🧠 {rr_desc}")
@@ -213,11 +216,11 @@ def render_stock_ui(res):
         st.markdown("### 🧮 تعديل متوسط السعر")
         c_avg1, c_avg2 = st.columns(2)
         add_price = c_avg1.number_input("سعر التعزيز الجديد", value=res['p'], key=f"ap_{res['name']}")
-        add_qty = c_avg2.number_input("عدد الأسهم الجديدة", value=0, key=f"aq_{res['name']}")
+        add_qty_input = c_avg2.number_input("عدد الأسهم الجديدة", value=0, key=f"aq_{res['name']}")
 
-        if add_qty > 0:
-            new_total_qty = shares_to_buy + add_qty
-            new_total_cost = (shares_to_buy * res['entry_price']) + (add_qty * add_price)
+        if add_qty_input > 0:
+            new_total_qty = shares_to_buy + add_qty_input
+            new_total_cost = (shares_to_buy * res['entry_price']) + (add_qty_input * add_price)
             new_avg = new_total_cost / new_total_qty
             st.info(f"📊 متوسط السعر بعد التعزيز: {new_avg:.2f}")
 
@@ -246,6 +249,101 @@ def render_stock_ui(res):
         📦 الكمية: {e3_s:,} سهم | 💰 القيمة: {e3_m:,.0f} ج
         </div>
         """, unsafe_allow_html=True)
+
+    # ✳️ إضافة كود tab_scenario بالكامل
+    with tab_scenario:
+        st.markdown("### 🧠 تحليل وضعك الحالي")
+
+        col1, col2 = st.columns(2)
+        buy_price = col1.number_input("سعر الشراء", value=res['p'], key=f"buy_{res['name']}")
+        qty = col2.number_input("عدد الأسهم", value=100, step=1, key=f"qty_{res['name']}")
+
+        if qty > 0 and buy_price > 0:
+            current_price = res['p']
+            pnl = (current_price - buy_price) * qty
+            pnl_pct = ((current_price - buy_price) / buy_price) * 100
+
+            # ================= 📊 PnL =================
+            if pnl > 0:
+                st.success(f"🟢 انت كسبان: {pnl:,.0f} ج (+{pnl_pct:.2f}%)")
+            elif pnl < 0:
+                st.error(f"🔴 انت خسران: {pnl:,.0f} ج ({pnl_pct:.2f}%)")
+            else:
+                st.info("⚖️ انت على التعادل")
+
+            st.markdown("---")
+
+            # ================= 🧠 Trend Score =================
+            trend_score = 0
+            if res['t_short'] == "صاعد": trend_score += 1
+            if res['t_med'] == "صاعد": trend_score += 1
+            if res['ratio'] > 1.5: trend_score += 1
+
+            # ================= 🟢 HOLD =================
+            st.markdown("### 🟢 الاستمرار (Hold)")
+            if trend_score >= 2:
+                st.success(f"""
+                الاتجاه كويس ✅  
+                خليك مستمر طالما السعر فوق {res['stop_loss']:.2f}  
+                الهدف: {res['target']:.2f}
+                """)
+            else:
+                st.warning("الاتجاه ضعيف ⚠️ الأفضل تأمين جزء من الربح")
+
+            # ================= 🟡 AVERAGING =================
+            st.markdown("### 🟡 التبريد (Averaging)")
+            avg_zone = res['entry_price'] * 0.97
+
+            if res['t_short'] == "صاعد" and res['ratio'] > 1.2:
+                st.success(f"✅ تبريد آمن نسبيًا عند {avg_zone:.2f}")
+            else:
+                st.warning(f"⚠️ تبريد خطر عند {avg_zone:.2f}")
+
+            # 🔥 متوسط مباشر
+            st.markdown("#### 🧮 احسب متوسطك بعد التبريد")
+            add_qty_scenario = st.number_input("كمية التبريد", value=0, key=f"add_qty_scen_{res['name']}")
+
+            if add_qty_scenario > 0:
+                new_avg = ((buy_price * qty) + (avg_zone * add_qty_scenario)) / (qty + add_qty_scenario)
+                st.info(f"📊 متوسطك الجديد: {new_avg:.2f}")
+
+            # ================= 🔴 EXIT =================
+            st.markdown("### 🔴 الخروج (Exit)")
+            st.error(f"""
+            وقف الخسارة: {res['stop_loss']:.2f}  
+            لو كسرها ➜ خروج فوري ❌
+            """)
+
+            # ================= 🤖 SMART DECISION =================
+            st.markdown("---")
+            st.markdown("### 🤖 القرار الذكي")
+
+            if pnl_pct >= 7:
+                st.success("🔒 تأمين قوي → بيع 50%")
+            elif pnl_pct >= 3:
+                st.info("⚖️ تأمين جزئي → بيع 25%")
+            elif pnl_pct <= -5:
+                if trend_score >= 2:
+                    st.warning("🟡 تبريد بحذر")
+                else:
+                    st.error("🔴 تقليل مركز / خروج")
+            else:
+                st.info("⚖️ استنى إشارة أوضح")
+
+            # ================= 🚨 ALERTS =================
+            st.markdown("### 🚨 تنبيهات")
+
+            alerts = []
+            if res['ratio'] > 2: alerts.append("🚀 سيولة قوية")
+            if res['rr'] < 1: alerts.append("❌ RR ضعيف")
+            if res['t_short'] == "هابط": alerts.append("🔻 اتجاه هابط")
+            if current_price <= res['stop_loss']: alerts.append("⛔ كسر وقف الخسارة")
+
+            if alerts:
+                for a in alerts:
+                    st.warning(a)
+            else:
+                st.success("✅ لا يوجد خطر حالي")
 
 # ================== 🔥 NAVIGATION ==================
 if st.session_state.page == 'home':
