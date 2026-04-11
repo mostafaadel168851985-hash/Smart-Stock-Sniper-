@@ -63,11 +63,10 @@ def classify_stock(res):
     ratio = res['ratio']
     t_short = res['t_short']
     t_med = res['t_med']
-    rsi = res['rsi'] # إضافة الـ RSI للمدخلات
+    rsi = res['rsi'] 
 
     mode = st.session_state.mode
 
-    # 🎯 فلترة حسب نوع المتداول
     if "محافظ" in mode:
         rr_min = 1.7
     elif "هجومي" in mode:
@@ -75,22 +74,14 @@ def classify_stock(res):
     else:
         rr_min = 1.3
 
-    # 🥇 ذهب (نسخة احترافية مفلترة بـ RSI)
     if rr >= 1.5 and t_short == "صاعد" and 50 < rsi < 70:
         return "gold"
-
-    # 🚀 اختراق (فلترة ذكية تمنع القمم)
     elif ratio > 2 and t_short == "صاعد" and rsi < 75:
         return "breakout"
-
-    # ⚡ مضاربة (توسيع النطاق مع حماية RSI)
     elif ratio > 1.5 and rr >= 1.2 and rsi < 80:
         return "scalp"
-
-    # 👀 تحت المراقبة
     elif rr >= rr_min and ratio > 1.2:
         return "watchlist"
-
     else:
         return "weak"
 
@@ -166,7 +157,6 @@ def analyze_stock(d_row):
         if loss_ps <= 0: return None
         rr = round(profit_ps / loss_ps, 2)
 
-        # 🧠 [تحسين الإشارة] دمج منطق RSI في تحليل الإشارة
         if rr >= 2 and t_short == "صاعد" and t_med == "صاعد" and rsi_val < 70:
             signal, sig_cls = "شراء قوي 🔥", "buy-strong"
         elif ratio > 2 and t_short == "صاعد" and rsi_val < 75:
@@ -191,7 +181,8 @@ def analyze_stock(d_row):
 
 # ================== UI RENDERER ==================
 def render_stock_ui(res):
-    st.markdown(f"<div class='stock-header'>{res['name']} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
+    # تم هنا دمج اسم الشركة مع الرمز بناءً على طلبك
+    st.markdown(f"<div class='stock-header'>{res['name']} - {res['desc']} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
     
     tab_analysis, tab_management, tab_scenario = st.tabs([
         "📊 التحليل الفني",
@@ -214,7 +205,7 @@ def render_stock_ui(res):
 
         st.markdown(f"<span class='signal-pill {res['sig_cls']}'>{res['signal']}</span>", unsafe_allow_html=True)
         
-        c1, c2, c3, c4 = st.columns(4) # إضافة عمود رابع للـ RSI
+        c1, c2, c3, c4 = st.columns(4) 
         c1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
         
         vol_label, vol_desc = get_volume_rating(res['ratio'])
@@ -223,7 +214,6 @@ def render_stock_ui(res):
         rr_label, rr_desc = get_rr_rating(res['rr'])
         c3.metric("R/R Ratio", f"{res['rr']} {rr_label}")
 
-        # 📊 [تحديث UI] إظهار RSI في النتائج مباشرة
         rsi_label, rsi_type = get_rsi_signal(res['rsi'])
         c4.metric("RSI", f"{res['rsi']:.1f}", rsi_label)
         
@@ -268,7 +258,7 @@ def render_stock_ui(res):
         """, unsafe_allow_html=True)
 
         st.markdown(f"""
-        <div class='plan-container' style='border-right: 5px solid #58a6ff;'>
+        <div class='plan-container' style='border-right: 5px solid #238636;'>
         📊 <b>تقييم مالي للصفقة ({shares_to_buy:,} سهم):</b><br>
         🟢 الربح المتوقع: {profit_val:,.0f} ج<br>
         🔴 الخسارة المحتملة: {loss_val:,.0f} ج<br>
@@ -438,7 +428,7 @@ def render_stock_ui(res):
             if res['ratio'] > 2: alerts.append("🚀 سيولة قوية")
             if res['rr'] < 1: alerts.append("❌ RR ضعيف")
             if res['t_short'] == "هابط": alerts.append("🔻 اتجاه هابط")
-            if res['rsi'] > 75: alerts.append("🔴 تشبع شراء خطر") # تنبيه RSI
+            if res['rsi'] > 75: alerts.append("🔴 تشبع شراء خطر")
             if current_price <= res['stop_loss']: alerts.append("⛔ كسر وقف الخسارة")
             if alerts:
                 for a in alerts: st.warning(a)
