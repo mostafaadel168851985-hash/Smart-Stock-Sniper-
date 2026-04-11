@@ -261,15 +261,18 @@ def render_stock_ui(res):
             e2_s_d = int(e2_m_d / e2_p_d)
             e3_s_d = int(e3_m_d / e3_p_d)
 
-            st.markdown("### 🏹 خطة التنفيذ حسب ميزانية الصفقة")
+            # ✳️ التعديل الجديد في الـ UI Wording والـ Format هنا:
+            st.markdown("### 🏹 خطة التنفيذ المباشرة (حسب ميزانية الصفقة)")
             st.markdown(f"""
-            <div class='plan-container' style='border-right: 5px solid #3fb950;'>
-            🟢 <b>دخول أول عند {e1_p_d:.2f}</b><br>
-            📦 {e1_s_d:,} سهم | 💰 {e1_m_d:,.0f} ج<br><br>
-            🟡 <b>تعزيز عند {e2_p_d:.2f}</b><br>
-            📦 {e2_s_d:,} سهم | 💰 {e2_m_d:,.0f} ج<br><br>
-            🔵 <b>اختراق عند {e3_p_d:.2f}</b><br>
-            📦 {e3_s_d:,} سهم | 💰 {e3_m_d:,.0f} ج
+            <div class='plan-container'>
+            🟢 <b>لو السعر ≈ {e1_p_d:.2f} ج ➜ اشتري (دخول أساسي)</b><br>
+            📦 الكمية: {e1_s_d:,} سهم | 💰 القيمة: {e1_m_d:,.0f} ج<br><br>
+
+            🟡 <b>لو السعر نزل لـ {e2_p_d:.2f} ج ➜ اشتري (تعزيز دعم)</b><br>
+            📦 الكمية: {e2_s_d:,} سهم | 💰 القيمة: {e2_m_d:,.0f} ج<br><br>
+
+            🔵 <b>لو السعر اخترق {e3_p_d:.2f} ج ➜ اشتري (تأكيد اختراق)</b><br>
+            📦 الكمية: {e3_s_d:,} سهم | 💰 القيمة: {e3_m_d:,.0f} ج
             </div>
             """, unsafe_allow_html=True)
 
