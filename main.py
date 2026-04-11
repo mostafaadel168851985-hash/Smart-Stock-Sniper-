@@ -44,6 +44,19 @@ def get_volume_rating(ratio):
     else:
         return "🚀 قوية", "سيولة عالية واختراق محتمل"
 
+# 🧩 وظيفة تصنيف نوع السهم الجديدة
+def get_stock_type(rr, ratio, t_short, t_med):
+    if ratio > 2 and t_short == "صاعد":
+        return "breakout"
+    elif rr >= 2 and t_short == "صاعد" and t_med == "صاعد":
+        return "gold"
+    elif rr < 1.5 and ratio > 1.5:
+        return "scalp"
+    elif rr >= 1.2 and ratio > 1.2:
+        return "watchlist"
+    else:
+        return "weak"
+
 # ================== 🔥 SESSION STATE & MODES ==================
 if "mode" not in st.session_state:
     st.session_state.mode = "⚖️ متوازن"
@@ -126,7 +139,8 @@ def analyze_stock(d_row):
             "signal": signal, "sig_cls": sig_cls, "t_short": t_short, "t_med": t_med, "t_long": t_long,
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}", "entry_price": entry_price,
             "stop_loss": stop_loss, "target": target, "rr": rr, "risk_pct": (loss_ps/entry_price)*100, 
-            "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) * 20) + (rsi / 2 if rsi else 25))
+            "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) * 20) + (rsi / 2 if rsi else 25)),
+            "type": get_stock_type(rr, ratio, t_short, t_med) # 🧩 إضافة النوع هنا
         }
     except: return None
 
@@ -212,14 +226,12 @@ def render_stock_ui(res):
         </div>
         """, unsafe_allow_html=True)
 
-        # ✳️ إضافة بلوك ميزانية الصفقة الجديد
         st.markdown("---")
         st.markdown("## 💰 إدارة الصفقة المباشرة (Deal Budget Mode)")
 
         deal_size = st.number_input("💰 حدد ميزانية الصفقة (ج)", value=10000, step=1000, key=f"deal_budget_{res['name']}")
 
         if deal_size > 0:
-            # التحذير الاحترافي المقترح
             if deal_size > portfolio * 0.3:
                 st.warning("⚠️ الصفقة كبيرة مقارنة بالمحفظة")
 
@@ -261,7 +273,6 @@ def render_stock_ui(res):
             e2_s_d = int(e2_m_d / e2_p_d)
             e3_s_d = int(e3_m_d / e3_p_d)
 
-            # ✳️ التعديل الجديد في الـ UI Wording والـ Format هنا:
             st.markdown("### 🏹 خطة التنفيذ المباشرة (حسب ميزانية الصفقة)")
             st.markdown(f"""
             <div class='plan-container'>
@@ -394,6 +405,7 @@ if st.session_state.page == 'home':
     with col2:
         if st.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
         if st.button("💎 قنص الذهب"): st.session_state.page = 'gold'; st.rerun()
+        if st.button("⚡ مضاربات سريعة"): st.session_state.page = 'scalp'; st.rerun() # ⚡ الزر الجديد
 
 elif st.session_state.page == 'avg':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -414,7 +426,7 @@ elif st.session_state.page == 'gold':
     found = False
     for r in raw_data:
         an = analyze_stock(r)
-        if an and ((an['rr'] >= 2 and an['ratio'] > 1.2) or an['score'] > 65):
+        if an and an['type'] == "gold": # 🎯 فلتر الذهب الجديد
             with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']})"): 
                 render_stock_ui(an)
                 found = True
@@ -424,7 +436,8 @@ elif st.session_state.page == 'scanner':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     raw_data = fetch_egx_data(scan_all=True)
-    results = [analyze_stock(r) for r in raw_data if analyze_stock(r)]
+    # 🎯 فلتر الكشاف (Watchlist)
+    results = [analyze_stock(r) for r in raw_data if analyze_stock(r) and analyze_stock(r)['type'] == "watchlist"]
     results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
     for an in results[:15]:
         with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
@@ -435,8 +448,22 @@ elif st.session_state.page == 'breakout':
     raw_data = fetch_egx_data(scan_all=True)
     for r in raw_data:
         an = analyze_stock(r)
-        if an and an['ratio'] > 2:
+        if an and an['type'] == "breakout": # 🎯 فلتر الاختراق الجديد
             with st.expander(f"🚀 اختراق: {an['name']}"): render_stock_ui(an)
+
+# ⚡ صفحة المضاربات السريعة الجديدة
+elif st.session_state.page == 'scalp':
+    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
+    render_mode_selector()
+    raw_data = fetch_egx_data(scan_all=True)
+    found = False
+    for r in raw_data:
+        an = analyze_stock(r)
+        if an and an['type'] == "scalp":
+            with st.expander(f"⚡ مضاربة: {an['name']}"):
+                render_stock_ui(an)
+                found = True
+    if not found: st.info("لا توجد مضاربات سريعة حالياً.")
 
 elif st.session_state.page == 'analyze':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
