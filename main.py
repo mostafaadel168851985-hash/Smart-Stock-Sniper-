@@ -62,7 +62,7 @@ def classify_stock(res):
         rr_min = 1.3
 
     # 🥇 ذهب (موسع عشان يظهر)
-    if rr >= 1.8 and t_short == "صاعد" and t_med == "صاعد":
+    if     if rr >= 1.5 and t_short == "صاعد":
         return "gold"
 
     # 🚀 اختراق
