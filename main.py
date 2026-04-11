@@ -44,27 +44,30 @@ def get_volume_rating(ratio):
     else:
         return "🚀 قوية", "سيولة عالية واختراق محتمل"
 
-# 🧩 وظيفة تصنيف نوع السهم (محدثة بالحلول المقترحة)
+# 🧩 وظيفة تصنيف نوع السهم المحدثة
 def get_stock_type(rr, ratio, t_short, t_med):
-    # ثالثاً: جلب الـ mode وتحديد الفلاتر بناءً عليه
-    mode = st.session_state.get("mode", "⚖️ متوازن")
+    # استدعاء المود الحالي من الحالة
+    mode = st.session_state.mode
     
+    # تحديد فلتر الحد الأدنى لـ RR بناءً على نمط التداول (التعديل الثالث)
     if "محافظ" in mode:
         rr_min = 1.7
     elif "هجومي" in mode:
         rr_min = 1.0
-    else: # متوازن
+    else:
         rr_min = 1.3
 
-    # أولاً: تعديلات الذهب (إضافة شرط الـ Near Gold)
     if ratio > 2 and t_short == "صاعد":
         return "breakout"
-    elif (rr >= 2 and t_short == "صاعد" and t_med == "صاعد") or (rr >= 1.7 and ratio > 1.5 and t_short == "صاعد"):
+    # التعديل الأول: توسيع فلاتر الذهب (Near Gold)
+    elif rr >= 2 and t_short == "صاعد" and t_med == "صاعد":
         return "gold"
-    # ثانياً: تعديل منطق المضاربة (scalp) ليتوافق مع الـ signal
+    elif rr >= 1.7 and ratio > 1.5 and t_short == "صاعد":
+        return "gold"
+    # التعديل الثاني: توحيد المضاربة السريعة مع الإشارة الفنية
     elif ratio > 1.5 and rr >= 1.2:
         return "scalp"
-    # تطبيق تأثير الـ mode على الكشاف (watchlist)
+    # تطبيق فلتر المود على الكشاف
     elif rr >= rr_min and ratio > 1.2:
         return "watchlist"
     else:
@@ -80,17 +83,11 @@ def render_mode_selector():
     with st.expander("🧠 اختر نوع التداول", expanded=False):
         col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("🛡️ محافظ"): 
-                st.session_state.mode = "🛡️ محافظ (محترف)"
-                st.rerun()
+            if st.button("🛡️ محافظ"): st.session_state.mode = "🛡️ محافظ (محترف)"
         with col2:
-            if st.button("⚖️ متوازن"): 
-                st.session_state.mode = "⚖️ متوازن"
-                st.rerun()
+            if st.button("⚖️ متوازن"): st.session_state.mode = "⚖️ متوازن"
         with col3:
-            if st.button("🚀 هجومي"): 
-                st.session_state.mode = "🚀 هجومي"
-                st.rerun()
+            if st.button("🚀 هجومي"): st.session_state.mode = "🚀 هجومي"
 
     mode = st.session_state.mode
     color = "#238636" if "محافظ" in mode else "#f85149" if "هجومي" in mode else "#d29922"
@@ -159,7 +156,7 @@ def analyze_stock(d_row):
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}", "entry_price": entry_price,
             "stop_loss": stop_loss, "target": target, "rr": rr, "risk_pct": (loss_ps/entry_price)*100, 
             "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) * 20) + (rsi / 2 if rsi else 25)),
-            "type": get_stock_type(rr, ratio, t_short, t_med) 
+            "type": get_stock_type(rr, ratio, t_short, t_med)
         }
     except: return None
 
@@ -236,7 +233,7 @@ def render_stock_ui(res):
         """, unsafe_allow_html=True)
 
         st.markdown(f"""
-        <div class='plan-container' style='border-right: 5px solid #58a6ff;'>
+        <div class='plan-container' style='border-right: 5px solid #238636;'>
         📊 <b>تقييم مالي للصفقة ({shares_to_buy:,} سهم):</b><br>
         🟢 الربح المتوقع: {profit_val:,.0f} ج<br>
         🔴 الخسارة المحتملة: {loss_val:,.0f} ج<br>
@@ -309,10 +306,8 @@ elif st.session_state.page == 'scanner':
     raw_data = fetch_egx_data(scan_all=True)
     results = [analyze_stock(r) for r in raw_data if analyze_stock(r) and analyze_stock(r)['type'] == "watchlist"]
     results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
-    if results:
-        for an in results[:15]:
-            with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
-    else: st.info("الكشاف خالي حالياً بناءً على النمط الحالي.")
+    for an in results[:15]:
+        with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
 
 elif st.session_state.page == 'breakout':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
