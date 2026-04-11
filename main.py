@@ -143,8 +143,8 @@ def analyze_stock(d_row):
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d
         if p is None: return None
         
-        rsi_val = rsi or 0
-        ratio = v / (avg_v or 1)
+        rsi_val = rsi if rsi is not None else 50
+        ratio = v / avg_v if avg_v and avg_v > 0 else 1
         t_short = "صاعد" if (sma20 and p > sma20) else "هابط"
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
         t_long = "صاعد" if (sma200 and p > sma200) else "هابط"
@@ -227,7 +227,9 @@ def render_stock_ui(res):
         with c2: st.caption(f"📊 {vol_desc}")
         with c3: st.caption(f"🧠 {rr_desc}")
         with c4: st.caption(f"📈 حالة الزخم: {rsi_label}")
-
+# تحذير عند المقاومة
+if res['p'] >= res['r1'] * 0.98:
+    st.warning("⚠️ السعر قريب من مقاومة قوية")
         # 🏛️ [بلوك المستثمر الجديد]
         st.markdown(f"""
         <div class='investor-card'>
