@@ -237,7 +237,7 @@ def render_stock_ui(res):
     🎯 <b>التقييم الذكي:</b> {smart_text}
     </div>
     """, unsafe_allow_html=True)
-", unsafe_allow_html=True)
+""", unsafe_allow_html=True)
     
     tab_analysis, tab_management, tab_scenario = st.tabs([
         "📊 التحليل الفني",
