@@ -244,7 +244,19 @@ def render_stock_ui(res):
     </div>
     """, unsafe_allow_html=True)
 
+    # 📊 Live Chart
+    st.components.v1.html(f"""
+    <iframe src="https://s.tradingview.com/widgetembed/?symbol=EGX:{res['name']}&interval=60"
+    width="100%" height="400"></iframe>
+    """, height=400)
+
     
+    # 🔔 Smart Alerts
+    if res['ratio'] > 2 and res['rsi'] < 70:
+        st.success("🚨 سيولة قوية + زخم صحي")
+    if res['rsi'] > 75:
+        st.warning("⚠️ تشبع شراء")
+
     tab_analysis, tab_management, tab_scenario = st.tabs([
         "📊 التحليل الفني",
         "📉 إدارة المخاطر والسيولة",
@@ -555,7 +567,7 @@ elif st.session_state.page == 'scanner':
         an = analyze_stock(r)
         if an and classify_stock(an) == "watchlist":
             results.append(an)
-    results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
+    results.sort(key=lambda x: ((x['score']*0.5)+(x['rr']*20)+(x['ratio']*10)), reverse=True)
     for an in results[:15]:
         with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
 
