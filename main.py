@@ -331,6 +331,12 @@ if "mode" not in st.session_state:
 if 'page' not in st.session_state: 
     st.session_state.page = 'home'
 
+# ✅ تحسين: تخزين البيانات في session_state لتجنب API calls متكررة
+if "market_data" not in st.session_state:
+    st.session_state.market_data = None
+if "all_results" not in st.session_state:
+    st.session_state.all_results = None
+
 def render_mode_selector():
     with st.expander("🧠 اختر نوع التداول", expanded=False):
         col1, col2, col3 = st.columns(3)
@@ -367,37 +373,28 @@ def get_all_data():
         "Referer": "https://www.tradingview.com/"
     }
     try:
-        r = requests.post(url, json=payload, headers=headers, timeout=30).json()
-        return r.get("data", [])
+        r = requests.post(url, json=payload, headers=headers, timeout=30)
+        
+        if r.status_code != 200:
+            st.error(f"⚠️ خطأ في API: Status {r.status_code}")
+            return []
+        
+        data = r.json()
+        return data.get("data", [])
     except Exception as e:
-        print(f"API Error: {e}")
-        return []
-
-def fetch_single_stock(symbol):
-    """جلب بيانات سهم واحد"""
-    url = "https://scanner.tradingview.com/egypt/scan"
-    cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA20","SMA50","SMA200"]
-    payload = {
-        "filter": [{"left": "name", "operation": "equal", "right": symbol.upper()}],
-        "columns": cols,
-        "range": [0, 1]
-    }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    try:
-        r = requests.post(url, json=payload, headers=headers, timeout=20).json()
-        return r.get("data", [])
-    except Exception as e:
-        print(f"API Error: {e}")
+        st.error(f"⚠️ فشل الاتصال بـ TradingView: {e}")
         return []
 
 def analyze_stock(d_row):
-    """تحليل بيانات السهم - مع حل مشكلة description الفاضي"""
+    """تحليل بيانات السهم مع التحقق الكامل"""
     try:
         d = d_row.get('d', [])
-        if len(d) < 12:
+        
+        # ✅ التحقق من طول البيانات
+        if len(d) != 12:
+            st.warning(f"⚠️ بيانات ناقصة للسهم: {d[:3] if len(d) > 0 else 'empty'}")
             return None
+        
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d
         if p is None: return None
         
@@ -469,6 +466,16 @@ def preprocess_all_data(raw_data):
 def get_top_ranked(results, limit=10):
     sorted_results = sorted(results, key=lambda x: (x.get('smart_score', 0), x.get('rr', 0)), reverse=True)
     return sorted_results[:limit]
+
+def get_fresh_data():
+    """جلب بيانات جديدة وتخزينها في session_state"""
+    with st.spinner("🔄 جاري تحميل بيانات السوق..."):
+        raw_data = get_all_data()
+        if raw_data:
+            st.session_state.market_data = raw_data
+            st.session_state.all_results = preprocess_all_data(raw_data)
+            return True
+        return False
 
 # ================== UI RENDERER ==================
 def render_stock_ui(res, is_top10=False, is_gold=False):
@@ -750,6 +757,10 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
 
 
 # ================== NAVIGATION ==================
+# ✅ تحميل البيانات مرة واحدة فقط عند بدء التطبيق
+if st.session_state.market_data is None:
+    get_fresh_data()
+
 if st.session_state.page == 'home':
     st.title("🏹 Sniper Elite v15.8 Pro")
     render_mode_selector()
@@ -764,6 +775,10 @@ if st.session_state.page == 'home':
         if st.button("⚡ مضاربات سريعة"): st.session_state.page = 'scalp'; st.rerun()
         if st.button("🏆 أفضل 10 فرص"): st.session_state.page = 'top10'; st.rerun()
         if st.button("📊 تقييم الأداء"): st.session_state.page = 'performance'; st.rerun()
+        if st.button("🔄 تحديث البيانات"): 
+            get_fresh_data()
+            st.success("✅ تم تحديث البيانات!")
+            st.rerun()
 
 elif st.session_state.page == 'avg':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -785,15 +800,13 @@ elif st.session_state.page == 'performance':
     
     if st.button("🔄 تحديث البيانات"):
         with st.spinner("جاري تحديث البيانات..."):
-            raw_data = get_all_data()
-            if raw_data:
-                all_results = preprocess_all_data(raw_data)
-                current_prices = {res['name']: res['p'] for res in all_results if res}
+            if st.session_state.all_results:
+                current_prices = {res['name']: res['p'] for res in st.session_state.all_results if res}
                 trades = update_all_trades(current_prices)
                 st.success("تم تحديث البيانات بنجاح!")
                 st.rerun()
             else:
-                st.error("فشل تحميل البيانات من TradingView")
+                st.error("لا توجد بيانات محدثة")
     
     stats = get_performance_stats(trades)
     
@@ -875,13 +888,11 @@ elif st.session_state.page == 'top10':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     
-    raw_data = get_all_data()
-    if not raw_data:
-        st.error("⚠️ فشل تحميل البيانات من TradingView.")
+    if not st.session_state.all_results:
+        st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
         st.stop()
     
-    all_results = preprocess_all_data(raw_data)
-    top_results = get_top_ranked(all_results, limit=10)
+    top_results = get_top_ranked(st.session_state.all_results, limit=10)
     
     for an in top_results:
         if an:
@@ -897,16 +908,13 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     
-    raw_data = get_all_data()
-    if not raw_data:
-        st.error("⚠️ فشل تحميل البيانات من TradingView.")
+    if not st.session_state.all_results:
+        st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
         st.stop()
-    
-    all_results = preprocess_all_data(raw_data)
     
     if st.session_state.page == 'gold':
         found = False
-        for an in all_results:
+        for an in st.session_state.all_results:
             if an and classify_stock(an) == "gold":
                 record_trade(an, "gold")
                 with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']} | RSI: {an['rsi']:.1f})"): 
@@ -915,19 +923,19 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         if not found: st.info("لا توجد فرص ذهبية حالياً.")
     
     elif st.session_state.page == 'scanner':
-        results = [an for an in all_results if an and classify_stock(an) == "watchlist"]
+        results = [an for an in st.session_state.all_results if an and classify_stock(an) == "watchlist"]
         results.sort(key=lambda x: (x.get('smart_score', 0), x.get('rr', 0)), reverse=True)
         for an in results[:15]:
             with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
     
     elif st.session_state.page == 'breakout':
-        for an in all_results:
+        for an in st.session_state.all_results:
             if an and classify_stock(an) == "breakout":
                 with st.expander(f"🚀 اختراق: {an['name']} (RSI: {an['rsi']:.1f})"): render_stock_ui(an)
     
     elif st.session_state.page == 'scalp':
         found = False
-        for an in all_results:
+        for an in st.session_state.all_results:
             if an and classify_stock(an) == "scalp":
                 with st.expander(f"⚡ مضاربة: {an['name']} (RSI: {an['rsi']:.1f})"):
                     render_stock_ui(an)
@@ -937,20 +945,23 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
 elif st.session_state.page == 'analyze':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
+    
+    if not st.session_state.all_results:
+        st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
+        st.stop()
+    
     sym = st.text_input("رمز السهم").upper().strip()
     if sym:
-        with st.spinner("🔍 جاري تحليل السهم..."):
-            data = fetch_single_stock(sym)
+        with st.spinner("🔍 جاري البحث عن السهم..."):
+            # ✅ استخدام البيانات المخزنة بدل API call جديد
+            res = next((x for x in st.session_state.all_results if x['name'] == sym), None)
             
-            if not data:
-                st.error("❌ لم يتم العثور على السهم أو API لم يرجع بيانات")
-                st.info("💡 تأكد من كتابة الرمز بشكل صحيح (مثل: COMI, EFIH, TMGH)")
+            if not res:
+                st.error("❌ السهم غير موجود في البيانات الحالية")
+                # ✅ اقتراح أسهم مشابهة
+                symbols = [x['name'] for x in st.session_state.all_results]
+                similar = [s for s in symbols if sym[:2] in s or s[:2] in sym][:5]
+                if similar:
+                    st.info(f"💡 هل تقصد: {', '.join(similar)}")
             else:
-                res = analyze_stock(data[0])
-                
-                if not res:
-                    st.warning("⚠️ تم جلب البيانات لكن التحليل فشل")
-                    with st.expander("🔧 بيانات debug"):
-                        st.json(data[0])
-                else:
-                    render_stock_ui(res)
+                render_stock_ui(res)
