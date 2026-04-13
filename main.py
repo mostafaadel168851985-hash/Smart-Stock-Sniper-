@@ -374,11 +374,11 @@ def get_all_data():
         return []
 
 def fetch_single_stock(symbol):
-    """جلب بيانات سهم واحد - مع تصحيح match → equal"""
+    """جلب بيانات سهم واحد"""
     url = "https://scanner.tradingview.com/egypt/scan"
     cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA20","SMA50","SMA200"]
     payload = {
-        "filter": [{"left": "name", "operation": "equal", "right": symbol.upper()}],  # ✅ match → equal
+        "filter": [{"left": "name", "operation": "equal", "right": symbol.upper()}],
         "columns": cols,
         "range": [0, 1]
     }
@@ -393,12 +393,18 @@ def fetch_single_stock(symbol):
         return []
 
 def analyze_stock(d_row):
+    """تحليل بيانات السهم - مع حل مشكلة description الفاضي"""
     try:
         d = d_row.get('d', [])
-        if len(d) < 13:
+        if len(d) < 12:
             return None
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d
         if p is None: return None
+        
+        # ✅ حل مشكلة description الفاضي
+        if not desc or desc == "":
+            desc = name
+        
         rsi_val = rsi or 0
         
         if avg_v and avg_v > 0:
