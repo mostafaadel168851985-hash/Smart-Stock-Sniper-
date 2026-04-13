@@ -66,7 +66,7 @@ st.markdown("""
     .sup-text { color: #3fb950; font-weight: bold; }
     .res-text { color: #f85149; font-weight: bold; }
     </style>
-    """, unsafe_allow_html=True)
+    """", unsafe_allow_html=True)
 
 # ================== 🧠 HELPERS FOR RATINGS ==================
 def get_rr_rating(rr):
@@ -154,7 +154,7 @@ def render_mode_selector():
     <div style="background:{color}; padding:10px; border-radius:10px; text-align:center; font-weight:bold; margin-top:10px; color:white; margin-bottom: 20px;">
         🎯 النمط الحالي: {icon} {mode}
     </div>
-    """, unsafe_allow_html=True)
+    """", unsafe_allow_html=True)
 
 # ================== 🔥 DATA & ANALYSIS ENGINE ==================
 @st.cache_data(ttl=300)
@@ -234,7 +234,7 @@ def render_stock_ui(res):
         {res['name']} - {res['desc']}
         <span class='score-tag'>Score: {res['score']}</span>
     </div>
-    """, unsafe_allow_html=True)
+    """", unsafe_allow_html=True)
 
     # ================== 🔥 SMART UI ==================
     smart_text, smart_type = smart_decision(res)
@@ -245,7 +245,7 @@ def render_stock_ui(res):
         🤖 <b>Smart Score:</b> {smart_score}/100 <br>
         🎯 <b>التقييم الذكي:</b> {smart_text}
     </div>
-    "", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
     # 📊 Chart Toggle (Fast Mode)
     show_chart = st.checkbox(f"📊 عرض الشارت - {res['name']}", value=False)
@@ -273,7 +273,7 @@ def render_stock_ui(res):
             <span class='trend-pill {t_med_c}'>متوسط: {res['t_med']}</span>
             <span class='trend-pill {t_long_c}'>طويل: {res['t_long']}</span>
         </div>
-        """, unsafe_allow_html=True)
+        """", unsafe_allow_html=True)
 
         st.markdown(f"<span class='signal-pill {res['sig_cls']}'>{res['signal']}</span>", unsafe_allow_html=True)
         
@@ -303,7 +303,7 @@ def render_stock_ui(res):
             <div class='level-box'><span>الدعم التاريخي القوي الأول (S1):</span><span class='sup-text'>{res['s1']:.2f}</span></div>
             <div class='level-box'><span>الدعم التاريخي القوي الثاني (S2):</span><span class='sup-text'>{res['s2']:.2f}</span></div>
         </div>
-        """, unsafe_allow_html=True)
+        """", unsafe_allow_html=True)
 
         st.markdown(f"""
         <div class='entry-card-new'>
@@ -313,7 +313,7 @@ def render_stock_ui(res):
         <div class='target-box'>
             🏁 <b>المستهدف:</b> {res['target']:.2f} <span style='color:#58a6ff'>(🎯 +{res['target_pct']:.1f}%)</span>
         </div>
-        """, unsafe_allow_html=True)
+        """", unsafe_allow_html=True)
 
     with tab_management:
         col_port, col_risk = st.columns(2)
@@ -345,7 +345,7 @@ def render_stock_ui(res):
             🧠 <b>إجمالي السيولة المقررة: { (shares_to_buy * res['entry_price']):,.0f} ج</b><br>
             ⚠️ <b>المخاطرة الفعلية: {actual_risk_pct:.2f}%</b>
         </div>
-        """, unsafe_allow_html=True)
+        """", unsafe_allow_html=True)
 
         st.markdown(f"""
         <div class='plan-container' style='border-right: 5px solid #238636;'>
@@ -354,7 +354,7 @@ def render_stock_ui(res):
         🔴 الخسارة المحتملة: {loss_val:,.0f} ج<br>
         ⚖️ معدل RR المحقق: {res['rr']}
         </div>
-        """, unsafe_allow_html=True)
+        """", unsafe_allow_html=True)
 
         st.markdown("---")
         st.markdown("## 💰 إدارة الصفقة المباشرة (Deal Budget Mode)")
@@ -376,7 +376,7 @@ def render_stock_ui(res):
                 💰 <b>قيمة الصفقة الفعلية: {actual_value:,.0f} ج</b><br>
                 📦 <b>عدد الأسهم: {shares_deal:,}</b>
             </div>
-            """, unsafe_allow_html=True)
+            """", unsafe_allow_html=True)
 
             st.markdown(f"""
             <div class='plan-container'>
@@ -384,7 +384,7 @@ def render_stock_ui(res):
             🔴 الخسارة المحتملة: {loss_val_d:,.0f} ج<br>
             ⚖️ RR: {res['rr']}
             </div>
-            """, unsafe_allow_html=True)
+            """", unsafe_allow_html=True)
 
             range_size_d = res['entry_price'] - res['stop_loss']
             e1_p_d = res['entry_price']
@@ -415,7 +415,7 @@ def render_stock_ui(res):
             🔵 <b>لو السعر اخترق {e3_p_d:.2f} ج ➜ اشتري (تأكيد اختراق)</b><br>
             📦 الكمية: {e3_s_d:,} سهم | 💰 القيمة: {e3_m_d:,.0f} ج
             </div>
-            """, unsafe_allow_html=True)
+            """", unsafe_allow_html=True)
 
         st.markdown("---")
         st.markdown("### 🧮 تعديل متوسط السعر")
@@ -453,7 +453,7 @@ def render_stock_ui(res):
         🔵 <b>لو السعر اخترق {e3_p:.2f} ج ➜ اشتري (تأكيد اختراق)</b><br>
         📦 الكمية: {e3_s:,} سهم | 💰 القيمة: {e3_m:,.0f} ج
         </div>
-        """, unsafe_allow_html=True)
+        """", unsafe_allow_html=True)
 
     with tab_scenario:
         st.markdown("### 🧠 تحليل وضعك الحالي")
