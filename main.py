@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import streamlit as st
 import requests
 
@@ -20,7 +19,7 @@ def smart_score_pro(res):
 def is_fake_breakout(res):
     if res['rsi'] > 75 and res['rr'] < 1.3:
         return True
-    if res['ratio'] < 1.1 and res['rsi'] > 70:
+    if res['ratio'] < 1.2:
         return True
     return False
 
@@ -59,14 +58,14 @@ st.markdown("""
     .target-box { border: 2px solid #58a6ff; border-radius: 12px; padding: 15px; text-align: center; background: #0d1117; margin-top: 10px; font-size: 18px; }
     .plan-container { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin-top: 15px; border-right: 5px solid #238636; }
     
-    /*  ستايل بلوك المستثمر الجديد */
+    /* 🏛️ ستايل بلوك المستثمر الجديد */
     .investor-card { background-color: #161b22; border: 1px solid #d29922; border-radius: 12px; padding: 15px; margin-bottom: 15px; border-top: 4px solid #d29922; }
     .investor-title { color: #d29922; font-weight: bold; font-size: 18px; margin-bottom: 10px; display: block; border-bottom: 1px solid #30363d; padding-bottom: 5px; }
     .level-box { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #21262d; }
     .sup-text { color: #3fb950; font-weight: bold; }
     .res-text { color: #f85149; font-weight: bold; }
     </style>
-    """", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 # ================== 🧠 HELPERS FOR RATINGS ==================
 def get_rr_rating(rr):
@@ -110,7 +109,7 @@ def classify_stock(res):
     t_med = res['t_med']
     rsi = res['rsi'] 
 
-    mode = st.session_state.get('mode', '⚖️ متوازن')
+    mode = st.session_state.mode
 
     if "محافظ" in mode:
         rr_min = 1.7
@@ -146,7 +145,7 @@ def render_mode_selector():
         with col3:
             if st.button("🚀 هجومي"): st.session_state.mode = "🚀 هجومي"
 
-    mode = st.session_state.get('mode', '⚖️ متوازن')
+    mode = st.session_state.mode
     color = "#238636" if "محافظ" in mode else "#f85149" if "هجومي" in mode else "#d29922"
     icon = "🛡️" if "محافظ" in mode else "🚀" if "هجومي" in mode else "⚖️"
 
@@ -154,7 +153,7 @@ def render_mode_selector():
     <div style="background:{color}; padding:10px; border-radius:10px; text-align:center; font-weight:bold; margin-top:10px; color:white; margin-bottom: 20px;">
         🎯 النمط الحالي: {icon} {mode}
     </div>
-    """", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 # ================== 🔥 DATA & ANALYSIS ENGINE ==================
 @st.cache_data(ttl=300)
@@ -169,10 +168,8 @@ def fetch_egx_data(symbol=None, scan_all=False):
         payload["filter"] = [{"left": "name", "operation": "match", "right": symbol.upper()}]
         payload["range"] = [0, 1]
     try:
-        resp = requests.post(url, json=payload, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("data", [])
+        r = requests.post(url, json=payload, timeout=10).json()
+        return r.get("data", [])
     except Exception as e:
         print(f"API Error: {e}")
         return []
@@ -234,7 +231,7 @@ def render_stock_ui(res):
         {res['name']} - {res['desc']}
         <span class='score-tag'>Score: {res['score']}</span>
     </div>
-    """", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
     # ================== 🔥 SMART UI ==================
     smart_text, smart_type = smart_decision(res)
@@ -247,14 +244,18 @@ def render_stock_ui(res):
     </div>
     """, unsafe_allow_html=True)
 
-    # 📊 Chart Toggle (Fast Mode)
-    show_chart = st.checkbox(f"📊 عرض الشارت - {res['name']}", value=False)
+    # 📊 Live Chart
+    st.components.v1.html(f"""
+    <iframe src="https://s.tradingview.com/widgetembed/?symbol=EGX:{res['name']}&interval=60"
+    width="100%" height="400"></iframe>
+    """, height=400)
 
-    if show_chart:
-        st.components.v1.html(f"""
-        <iframe src="https://s.tradingview.com/widgetembed/?symbol=EGX:{res['name']}&interval=60"
-        width="100%" height="400"></iframe>
-        """, height=400)
+    
+    # 🔔 Smart Alerts
+    if res['ratio'] > 2 and res['rsi'] < 70:
+        st.success("🚨 سيولة قوية + زخم صحي")
+    if res['rsi'] > 75:
+        st.warning("⚠️ تشبع شراء")
 
     tab_analysis, tab_management, tab_scenario = st.tabs([
         "📊 التحليل الفني",
@@ -273,7 +274,7 @@ def render_stock_ui(res):
             <span class='trend-pill {t_med_c}'>متوسط: {res['t_med']}</span>
             <span class='trend-pill {t_long_c}'>طويل: {res['t_long']}</span>
         </div>
-        """", unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
         st.markdown(f"<span class='signal-pill {res['sig_cls']}'>{res['signal']}</span>", unsafe_allow_html=True)
         
@@ -293,17 +294,17 @@ def render_stock_ui(res):
         with c3: st.caption(f"🧠 {rr_desc}")
         with c4: st.caption(f"📈 حالة الزخم: {rsi_label}")
 
-        #  [بلوك المستثمر الجديد]
+        # 🏛️ [بلوك المستثمر الجديد]
         st.markdown(f"""
         <div class='investor-card'>
-            <span class='investor-title'> بيانات استرشادية (للمستثمر طويل الأجل)</span>
+            <span class='investor-title'>🏛️ بيانات استرشادية (للمستثمر طويل الأجل)</span>
             <div class='level-box'><span>المقاومة التاريخية الثانية (R2):</span><span class='res-text'>{res['r2']:.2f}</span></div>
             <div class='level-box'><span>المقاومة التاريخية الأولى (R1):</span><span class='res-text'>{res['r1']:.2f}</span></div>
             <div style='text-align:center; color:#8b949e; font-size:11px; margin:5px 0;'>--- نقطة الارتكاز: {res['pp']:.2f} ---</div>
             <div class='level-box'><span>الدعم التاريخي القوي الأول (S1):</span><span class='sup-text'>{res['s1']:.2f}</span></div>
             <div class='level-box'><span>الدعم التاريخي القوي الثاني (S2):</span><span class='sup-text'>{res['s2']:.2f}</span></div>
         </div>
-        """", unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
         st.markdown(f"""
         <div class='entry-card-new'>
@@ -313,7 +314,7 @@ def render_stock_ui(res):
         <div class='target-box'>
             🏁 <b>المستهدف:</b> {res['target']:.2f} <span style='color:#58a6ff'>(🎯 +{res['target_pct']:.1f}%)</span>
         </div>
-        """", unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
     with tab_management:
         col_port, col_risk = st.columns(2)
@@ -324,13 +325,7 @@ def render_stock_ui(res):
         risk_per_share = res['entry_price'] - res['stop_loss']
         shares_to_buy_initial = int(max_loss_allowed / risk_per_share) if risk_per_share > 0 else 0
         
-        mode = st.session_state.get('mode', '')
-        if "محافظ" in mode:
-            max_position_size = portfolio * 0.15
-        elif "هجومي" in mode:
-            max_position_size = portfolio * 0.35
-        else:
-            max_position_size = portfolio * 0.25
+        max_position_size = portfolio * 0.25
         recommended_position_size = min(shares_to_buy_initial * res['entry_price'], max_position_size)
         
         shares_to_buy = max(1, int(recommended_position_size / res['entry_price'])) if res['entry_price'] > 0 else 0
@@ -345,7 +340,7 @@ def render_stock_ui(res):
             🧠 <b>إجمالي السيولة المقررة: { (shares_to_buy * res['entry_price']):,.0f} ج</b><br>
             ⚠️ <b>المخاطرة الفعلية: {actual_risk_pct:.2f}%</b>
         </div>
-        """", unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
         st.markdown(f"""
         <div class='plan-container' style='border-right: 5px solid #238636;'>
@@ -354,7 +349,7 @@ def render_stock_ui(res):
         🔴 الخسارة المحتملة: {loss_val:,.0f} ج<br>
         ⚖️ معدل RR المحقق: {res['rr']}
         </div>
-        """", unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
         st.markdown("---")
         st.markdown("## 💰 إدارة الصفقة المباشرة (Deal Budget Mode)")
@@ -376,7 +371,7 @@ def render_stock_ui(res):
                 💰 <b>قيمة الصفقة الفعلية: {actual_value:,.0f} ج</b><br>
                 📦 <b>عدد الأسهم: {shares_deal:,}</b>
             </div>
-            """", unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
             st.markdown(f"""
             <div class='plan-container'>
@@ -384,7 +379,7 @@ def render_stock_ui(res):
             🔴 الخسارة المحتملة: {loss_val_d:,.0f} ج<br>
             ⚖️ RR: {res['rr']}
             </div>
-            """", unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
             range_size_d = res['entry_price'] - res['stop_loss']
             e1_p_d = res['entry_price']
@@ -415,7 +410,7 @@ def render_stock_ui(res):
             🔵 <b>لو السعر اخترق {e3_p_d:.2f} ج ➜ اشتري (تأكيد اختراق)</b><br>
             📦 الكمية: {e3_s_d:,} سهم | 💰 القيمة: {e3_m_d:,.0f} ج
             </div>
-            """", unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
         st.markdown("---")
         st.markdown("### 🧮 تعديل متوسط السعر")
@@ -453,7 +448,7 @@ def render_stock_ui(res):
         🔵 <b>لو السعر اخترق {e3_p:.2f} ج ➜ اشتري (تأكيد اختراق)</b><br>
         📦 الكمية: {e3_s:,} سهم | 💰 القيمة: {e3_m:,.0f} ج
         </div>
-        """", unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
     with tab_scenario:
         st.markdown("### 🧠 تحليل وضعك الحالي")
@@ -572,7 +567,7 @@ elif st.session_state.page == 'scanner':
         an = analyze_stock(r)
         if an and classify_stock(an) == "watchlist":
             results.append(an)
-    results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
+    results.sort(key=lambda x: ((x['score']*0.5)+(x['rr']*20)+(x['ratio']*10)), reverse=True)
     for an in results[:15]:
         with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
 
