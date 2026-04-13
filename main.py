@@ -20,7 +20,7 @@ def smart_score_pro(res):
 def is_fake_breakout(res):
     if res['rsi'] > 75 and res['rr'] < 1.3:
         return True
-    if res['ratio'] < 1.2:
+    if res['ratio'] < 1.1 and res['rsi'] > 70:
         return True
     return False
 
@@ -110,7 +110,7 @@ def classify_stock(res):
     t_med = res['t_med']
     rsi = res['rsi'] 
 
-    mode = st.session_state.mode
+    mode = st.session_state.get('mode', '⚖️ متوازن')
 
     if "محافظ" in mode:
         rr_min = 1.7
@@ -146,7 +146,7 @@ def render_mode_selector():
         with col3:
             if st.button("🚀 هجومي"): st.session_state.mode = "🚀 هجومي"
 
-    mode = st.session_state.mode
+    mode = st.session_state.get('mode', '⚖️ متوازن')
     color = "#238636" if "محافظ" in mode else "#f85149" if "هجومي" in mode else "#d29922"
     icon = "🛡️" if "محافظ" in mode else "🚀" if "هجومي" in mode else "⚖️"
 
@@ -169,8 +169,10 @@ def fetch_egx_data(symbol=None, scan_all=False):
         payload["filter"] = [{"left": "name", "operation": "match", "right": symbol.upper()}]
         payload["range"] = [0, 1]
     try:
-        r = requests.post(url, json=payload, timeout=10).json()
-        return r.get("data", [])
+        resp = requests.post(url, json=payload, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("data", [])
     except Exception as e:
         print(f"API Error: {e}")
         return []
@@ -243,9 +245,17 @@ def render_stock_ui(res):
         🤖 <b>Smart Score:</b> {smart_score}/100 <br>
         🎯 <b>التقييم الذكي:</b> {smart_text}
     </div>
-    """, unsafe_allow_html=True)
+    "", unsafe_allow_html=True)
 
-    
+    # 📊 Chart Toggle (Fast Mode)
+    show_chart = st.checkbox(f"📊 عرض الشارت - {res['name']}", value=False)
+
+    if show_chart:
+        st.components.v1.html(f"""
+        <iframe src="https://s.tradingview.com/widgetembed/?symbol=EGX:{res['name']}&interval=60"
+        width="100%" height="400"></iframe>
+        """, height=400)
+
     tab_analysis, tab_management, tab_scenario = st.tabs([
         "📊 التحليل الفني",
         "📉 إدارة المخاطر والسيولة",
@@ -314,7 +324,13 @@ def render_stock_ui(res):
         risk_per_share = res['entry_price'] - res['stop_loss']
         shares_to_buy_initial = int(max_loss_allowed / risk_per_share) if risk_per_share > 0 else 0
         
-        max_position_size = portfolio * 0.25
+        mode = st.session_state.get('mode', '')
+        if "محافظ" in mode:
+            max_position_size = portfolio * 0.15
+        elif "هجومي" in mode:
+            max_position_size = portfolio * 0.35
+        else:
+            max_position_size = portfolio * 0.25
         recommended_position_size = min(shares_to_buy_initial * res['entry_price'], max_position_size)
         
         shares_to_buy = max(1, int(recommended_position_size / res['entry_price'])) if res['entry_price'] > 0 else 0
