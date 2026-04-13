@@ -25,7 +25,6 @@ def is_fake_breakout(res):
     return False
 
 def smart_decision(res):
-    # استخدام smart_score الموجود في res بدل حسابه مرة تانية
     score = res.get('smart_score', smart_score_pro(res))
     fake = is_fake_breakout(res)
     if fake:
@@ -39,7 +38,7 @@ def smart_decision(res):
     else:
         return "❄️ ضعيف", "weak"
 
-# ================== 🆕 حاسبة نسبة النجاح المتوقعة ==================
+# ================== حاسبة نسبة النجاح المتوقعة ==================
 def expected_success_rate(res):
     score = 0
     if res['t_short'] == "صاعد": score += 15
@@ -59,7 +58,7 @@ def expected_success_rate(res):
     else: level = "❌ ضعيفة"
     return success_rate, level
 
-# 🆕 Trailing Stop ذكي
+# Trailing Stop ذكي
 def calculate_trailing_stop(entry_price, current_price, highest_price, rr):
     if current_price <= entry_price:
         return entry_price * 0.97
@@ -72,7 +71,7 @@ def calculate_trailing_stop(entry_price, current_price, highest_price, rr):
     else:
         return round(entry_price * 0.97, 2)
 
-# 🆕 Stochastic RSI محاكاة
+# Stochastic RSI محاكاة
 def calculate_stochastic_rsi(rsi):
     if rsi <= 20: return {"k": 90, "d": 85, "signal": "🟢 تشبع بيع - فرصة انعكاس"}
     elif rsi <= 35: return {"k": 70, "d": 65, "signal": "🟡 منطقة شراء محتملة"}
@@ -110,7 +109,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# ================== 🧠 HELPERS ==================
+# ================== HELPERS ==================
 def get_rr_rating(rr):
     if rr < 1: return "❌ ضعيف", "RR سيء - مخاطرة أعلى من العائد"
     elif rr < 1.5: return "⚠️ متوسط", "مضاربة سريعة فقط"
@@ -166,10 +165,9 @@ def render_mode_selector():
     </div>
     """, unsafe_allow_html=True)
 
-# ================== 🔥 DATA & ANALYSIS ENGINE (محسّن) ==================
+# ================== DATA & ANALYSIS ENGINE ==================
 @st.cache_data(ttl=300)
 def get_all_data():
-    """جلب كل البيانات مرة واحدة فقط وتخزينها في cache"""
     url = "https://scanner.tradingview.com/egypt/scan"
     cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA20","SMA50","SMA200"]
     payload = {
@@ -186,7 +184,6 @@ def get_all_data():
         return []
 
 def fetch_single_stock(symbol):
-    """جلب بيانات سهم واحد فقط"""
     url = "https://scanner.tradingview.com/egypt/scan"
     cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA20","SMA50","SMA200"]
     payload = {
@@ -234,7 +231,6 @@ def analyze_stock(d_row):
         else:
             signal, sig_cls = "انتظار ⏳", "wait"
         
-        # حساب الـ smart score مرة واحدة وتخزينه
         temp_res = {
             't_short': t_short, 't_med': t_med, 't_long': t_long,
             'ratio': ratio, 'rsi': rsi_val, 'rr': rr
@@ -248,7 +244,7 @@ def analyze_stock(d_row):
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}", "entry_price": entry_price,
             "stop_loss": stop_loss, "target": target, "rr": rr, "risk_pct": (loss_ps/entry_price)*100, 
             "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) * 20) + (rsi_val / 2 if rsi_val else 25)),
-            "smart_score": smart_score  # ✅ تخزين الـ smart score هنا مرة واحدة
+            "smart_score": smart_score
         }
     except Exception as e:
         print(f"Analysis Error: {e}")
@@ -262,7 +258,6 @@ def render_stock_ui(res):
         <span class='score-tag'>Score: {res['score']}</span>
     </div>
     """, unsafe_allow_html=True)
-    # استخدام smart_score المخزن بدل حسابه تاني
     smart_text, smart_type = smart_decision(res)
     smart_score = res['smart_score']
     st.markdown(f"""
@@ -299,7 +294,7 @@ def render_stock_ui(res):
         with c2: st.caption(f"📊 {vol_desc}")
         with c3: st.caption(f"🧠 {rr_desc}")
         with c4: st.caption(f"📈 حالة الزخم: {rsi_label}")
-        # مخطط دعم/مقاومة نصي
+        
         st.markdown("### 📊 مستويات الدعم والمقاومة")
         max_price = max(res['r2'], res['p']) * 1.02
         min_price = min(res['s2'], res['p']) * 0.98
@@ -441,7 +436,7 @@ def render_stock_ui(res):
         📦 الكمية: {e3_s:,} سهم | 💰 القيمة: {e3_m:,.0f} ج
         </div>
         """, unsafe_allow_html=True)
-        # Trailing Stop
+        
         st.markdown("---")
         st.markdown("### 🎯 وقف الخسارة المتحرك (Trailing Stop)")
         current_price_trail = st.number_input("السعر الحالي", value=res['p'], key=f"trail_price_{res['name']}")
@@ -529,7 +524,7 @@ def render_stock_ui(res):
         for rec in recs: st.info(rec)
         if not recs: st.success("✅ لا توجد توصيات إضافية")
 
-# ================== NAVIGATION (محسّن) ==================
+# ================== NAVIGATION ==================
 if st.session_state.page == 'home':
     st.title("🏹 Sniper Elite v15.8 Pro")
     render_mode_selector()
@@ -542,7 +537,6 @@ if st.session_state.page == 'home':
         if st.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
         if st.button("💎 قنص الذهب"): st.session_state.page = 'gold'; st.rerun()
         if st.button("⚡ مضاربات سريعة"): st.session_state.page = 'scalp'; st.rerun()
-        if st.button("📈 توقع النجاح"): st.session_state.page = 'success_calc'; st.rerun()
 
 elif st.session_state.page == 'avg':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -560,7 +554,6 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     
-    # ✅ تحسين كبير: جلب البيانات مرة واحدة فقط لجميع الصفحات
     raw_data = get_all_data()
     
     if st.session_state.page == 'gold':
@@ -609,27 +602,3 @@ elif st.session_state.page == 'analyze':
             res = analyze_stock(data[0])
             if res: render_stock_ui(res)
         else: st.error("الرمز غير متوفر.")
-
-elif st.session_state.page == 'success_calc':
-    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    st.title("📈 حاسبة توقع نجاح الصفقة")
-    st.markdown("أدخل بيانات أي سهم لتحصل على نسبة نجاح متوقعة")
-    c1, c2 = st.columns(2)
-    with c1:
-        test_rsi = st.slider("RSI", 0, 100, 55)
-        test_ratio = st.number_input("نشاط السيولة", min_value=0.1, max_value=5.0, value=1.5, step=0.1)
-        test_rr = st.number_input("نسبة المخاطرة/العائد (RR)", min_value=0.5, max_value=5.0, value=1.8, step=0.1)
-    with c2:
-        test_t_short = st.selectbox("الاتجاه قصير", ["صاعد", "هابط"])
-        test_t_med = st.selectbox("الاتجاه متوسط", ["صاعد", "هابط"])
-        test_t_long = st.selectbox("الاتجاه طويل", ["صاعد", "هابط"])
-    test_res = {'rsi': test_rsi, 'ratio': test_ratio, 'rr': test_rr, 't_short': test_t_short, 't_med': test_t_med, 't_long': test_t_long}
-    success_rate, success_level = expected_success_rate(test_res)
-    st.markdown(f"""
-    <div style='background:#0d1117;border:2px solid #58a6ff;border-radius:15px;padding:25px;text-align:center;margin-top:20px;'>
-        <h2>📊 نسبة النجاح المتوقعة</h2>
-        <h1 style='font-size:48px;color:#58a6ff;'>{success_rate}%</h1>
-        <h3>{success_level}</h3>
-    </div>
-    """, unsafe_allow_html=True)
-    st.info("💡 هذه النسبة تقديرية بناءً على المعطيات المدخلة")
