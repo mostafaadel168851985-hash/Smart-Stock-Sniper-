@@ -1,6 +1,126 @@
 import streamlit as st
 import requests
 from datetime import datetime
+import json
+import os
+
+# ================== 📁 PERFORMANCE TRACKING ==================
+TRADES_FILE = "trades_data.json"
+
+def load_trades():
+    """تحميل الصفقات المسجلة من الملف"""
+    if os.path.exists(TRADES_FILE):
+        try:
+            with open(TRADES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+
+def save_trades(trades):
+    """حفظ الصفقات في الملف"""
+    with open(TRADES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(trades, f, ensure_ascii=False, indent=2)
+
+def record_trade(res, trade_type):
+    """تسجيل صفقة جديدة (تلقائيًا)"""
+    trades = load_trades()
+    
+    # التحقق من عدم وجود نفس الصفقة مكررة (بنفس الاسم والتاريخ)
+    today = datetime.now().strftime("%Y-%m-%d")
+    for t in trades:
+        if t['name'] == res['name'] and t['date_recorded'] == today:
+            return  # موجودة بالفعل
+    
+    trades.append({
+        "name": res['name'],
+        "desc": res['desc'],
+        "entry_price": res['entry_price'],
+        "target": res['target'],
+        "stop_loss": res['stop_loss'],
+        "rr": res['rr'],
+        "rsi_at_entry": res['rsi'],
+        "trade_type": trade_type,  # "top10" أو "gold"
+        "date_recorded": today,
+        "last_price": None,
+        "last_update": None,
+        "status": "pending"  # pending, hit_target, stopped_out, still_open
+    })
+    save_trades(trades)
+
+def update_all_trades(current_prices):
+    """تحديث حالة كل الصفقات بناءً على الأسعار الحالية"""
+    trades = load_trades()
+    updated = False
+    
+    for trade in trades:
+        if trade['status'] == 'pending' or trade['status'] == 'still_open':
+            symbol = trade['name']
+            if symbol in current_prices:
+                current_price = current_prices[symbol]
+                trade['last_price'] = current_price
+                trade['last_update'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                
+                if current_price >= trade['target']:
+                    trade['status'] = 'hit_target'
+                    updated = True
+                elif current_price <= trade['stop_loss']:
+                    trade['status'] = 'stopped_out'
+                    updated = True
+                else:
+                    trade['status'] = 'still_open'
+    
+    if updated:
+        save_trades(trades)
+    return trades
+
+def get_performance_stats(trades):
+    """حساب إحصائيات الأداء"""
+    total = len(trades)
+    if total == 0:
+        return {
+            'total': 0,
+            'hit_target': 0,
+            'stopped_out': 0,
+            'still_open': 0,
+            'success_rate': 0,
+            'avg_rr': 0,
+            'top10_count': 0,
+            'gold_count': 0,
+            'top10_success': 0,
+            'gold_success': 0
+        }
+    
+    hit_target = len([t for t in trades if t['status'] == 'hit_target'])
+    stopped_out = len([t for t in trades if t['status'] == 'stopped_out'])
+    still_open = len([t for t in trades if t['status'] == 'still_open'])
+    closed = hit_target + stopped_out
+    success_rate = (hit_target / closed * 100) if closed > 0 else 0
+    
+    avg_rr = sum(t['rr'] for t in trades) / total if total > 0 else 0
+    
+    top10_trades = [t for t in trades if t['trade_type'] == 'top10']
+    gold_trades = [t for t in trades if t['trade_type'] == 'gold']
+    
+    top10_closed = [t for t in top10_trades if t['status'] in ['hit_target', 'stopped_out']]
+    top10_success = len([t for t in top10_closed if t['status'] == 'hit_target'])
+    
+    gold_closed = [t for t in gold_trades if t['status'] in ['hit_target', 'stopped_out']]
+    gold_success = len([t for t in gold_closed if t['status'] == 'hit_target'])
+    
+    return {
+        'total': total,
+        'hit_target': hit_target,
+        'stopped_out': stopped_out,
+        'still_open': still_open,
+        'success_rate': round(success_rate, 1),
+        'avg_rr': round(avg_rr, 2),
+        'top10_count': len(top10_trades),
+        'gold_count': len(gold_trades),
+        'top10_success': round((top10_success / len(top10_closed) * 100) if top10_closed else 0, 1),
+        'gold_success': round((gold_success / len(gold_closed) * 100) if gold_closed else 0, 1)
+    }
+
 
 # ================== 🔥 SMART ADDITIONS ==================
 def smart_score_pro(res):
@@ -39,26 +159,17 @@ def smart_decision(res):
     else:
         return "❄️ ضعيف", "weak"
 
-# ================== نسبة النجاح المتوقعة (مختلفة عن smart_score) ==================
+# ================== نسبة النجاح المتوقعة ==================
 def expected_success_rate(res):
-    """
-    نسبة النجاح المتوقعة تعتمد على:
-    - تناسق الاتجاهات (consistency)
-    - السيولة (liquidity)
-    - التقلب النسبي (volatility proxy)
-    """
     score = 0
-    
-    # تناسق الاتجاهات (consistency) - وزن أكبر
     trends = [res['t_short'], res['t_med'], res['t_long']]
     if all(t == "صاعد" for t in trends):
-        score += 30  # تناسق كامل
+        score += 30
     elif trends.count("صاعد") >= 2:
-        score += 20  # تناسق جزئي
+        score += 20
     elif trends.count("صاعد") == 1:
         score += 10
     
-    # السيولة (liquidity)
     if res['ratio'] > 2:
         score += 25
     elif res['ratio'] > 1.5:
@@ -66,9 +177,8 @@ def expected_success_rate(res):
     elif res['ratio'] > 1:
         score += 8
     elif res['ratio'] == 0:
-        score -= 10  # سيولة غير معروفة = خطر
+        score -= 10
     
-    # التقلب النسبي (volatility proxy) - الفرق بين الهدف والوقف
     risk_range = res['target_pct'] - abs(res['risk_pct'])
     if risk_range > 5:
         score += 15
@@ -77,7 +187,6 @@ def expected_success_rate(res):
     elif risk_range > 1:
         score += 5
     
-    # RR عامل مساعد مش أساسي
     if res['rr'] >= 2:
         score += 10
     elif res['rr'] >= 1.5:
@@ -90,7 +199,6 @@ def expected_success_rate(res):
     else: level = "❌ ضعيفة"
     return success_rate, level
 
-# Trailing Stop ذكي
 def calculate_trailing_stop(entry_price, current_price, highest_price, rr):
     if current_price <= entry_price:
         return entry_price * 0.97
@@ -103,12 +211,7 @@ def calculate_trailing_stop(entry_price, current_price, highest_price, rr):
     else:
         return round(entry_price * 0.97, 2)
 
-# Stochastic RSI (تنبيه: تقريبي)
 def calculate_stochastic_rsi(rsi):
-    """
-    ⚠️ تنبيه: هذه محاكاة تقريبية لـ Stochastic RSI
-    للدقة الكاملة نحتاج بيانات شموع تفصيلية
-    """
     if rsi <= 20: return {"k": 90, "d": 85, "signal": "🟢 تشبع بيع - فرصة انعكاس (تقديري)"}
     elif rsi <= 35: return {"k": 70, "d": 65, "signal": "🟡 منطقة شراء محتملة (تقديري)"}
     elif rsi <= 65: return {"k": 50, "d": 50, "signal": "⚪ منطقة حيادية"}
@@ -172,7 +275,7 @@ def classify_stock(res):
     if "محافظ" in mode: rr_min = 1.7
     elif "هجومي" in mode: rr_min = 1.0
     else: rr_min = 1.3
-    if ratio == 0: return "weak"  # لا توجد بيانات سيولة
+    if ratio == 0: return "weak"
     if rr >= 1.5 and t_short == "صاعد" and 50 < rsi < 70: return "gold"
     elif ratio > 2 and t_short == "صاعد" and rsi < 75: return "breakout"
     elif ratio > 1.5 and rr >= 1.2 and rsi < 80: return "scalp"
@@ -184,8 +287,6 @@ if "mode" not in st.session_state:
     st.session_state.mode = "⚖️ متوازن"
 if 'page' not in st.session_state: 
     st.session_state.page = 'home'
-if 'all_results' not in st.session_state:
-    st.session_state.all_results = []
 
 def render_mode_selector():
     with st.expander("🧠 اختر نوع التداول", expanded=False):
@@ -245,11 +346,10 @@ def analyze_stock(d_row):
         if p is None: return None
         rsi_val = rsi or 0
         
-        # 🔥 تحسين مهم: ratio = 0 لو مفيش بيانات، مش 1
         if avg_v and avg_v > 0:
             ratio = v / avg_v
         else:
-            ratio = 0  # بدل 1 - عشان منديش signals غلط
+            ratio = 0
         
         t_short = "صاعد" if (sma20 and p > sma20) else "هابط"
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
@@ -297,7 +397,6 @@ def analyze_stock(d_row):
         return None
 
 def preprocess_all_data(raw_data):
-    """معالجة كل البيانات مرة واحدة وتخزينها"""
     results = []
     for r in raw_data:
         an = analyze_stock(r)
@@ -306,12 +405,11 @@ def preprocess_all_data(raw_data):
     return results
 
 def get_top_ranked(results, limit=10):
-    """Ranking Engine: ترتيب الأسهم حسب smart_score"""
     sorted_results = sorted(results, key=lambda x: (x['smart_score'], x['rr']), reverse=True)
     return sorted_results[:limit]
 
 # ================== UI RENDERER ==================
-def render_stock_ui(res):
+def render_stock_ui(res, is_top10=False, is_gold=False):
     st.markdown(f"""
     <div class='stock-header'>
         {res['name']} - {res['desc']}
@@ -588,6 +686,7 @@ def render_stock_ui(res):
         for rec in recs: st.info(rec)
         if not recs: st.success("✅ لا توجد توصيات إضافية")
 
+
 # ================== NAVIGATION ==================
 if st.session_state.page == 'home':
     st.title("🏹 Sniper Elite v15.8 Pro")
@@ -602,6 +701,7 @@ if st.session_state.page == 'home':
         if st.button("💎 قنص الذهب"): st.session_state.page = 'gold'; st.rerun()
         if st.button("⚡ مضاربات سريعة"): st.session_state.page = 'scalp'; st.rerun()
         if st.button("🏆 أفضل 10 فرص"): st.session_state.page = 'top10'; st.rerun()
+        if st.button("📊 تقييم الأداء"): st.session_state.page = 'performance'; st.rerun()
 
 elif st.session_state.page == 'avg':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -615,6 +715,57 @@ elif st.session_state.page == 'avg':
         avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
         st.success(f"📊 متوسط السعر الجديد: {avg:.2f}")
 
+elif st.session_state.page == 'performance':
+    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
+    st.title("📊 تقييم أداء التطبيق")
+    
+    trades = load_trades()
+    
+    # تحديث البيانات بناءً على الأسعار الحالية
+    if st.button("🔄 تحديث البيانات"):
+        raw_data = get_all_data()
+        if raw_data:
+            all_results = preprocess_all_data(raw_data)
+            current_prices = {res['name']: res['p'] for res in all_results}
+            trades = update_all_trades(current_prices)
+            st.success("تم تحديث البيانات بنجاح!")
+            st.rerun()
+    
+    stats = get_performance_stats(trades)
+    
+    # عرض الإحصائيات
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📊 إجمالي الصفقات", stats['total'])
+    col2.metric("✅ حققت الهدف", stats['hit_target'])
+    col3.metric("❌ كسرت الوقف", stats['stopped_out'])
+    col4.metric("⏳ لا تزال مفتوحة", stats['still_open'])
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("📈 نسبة النجاح", f"{stats['success_rate']}%")
+    col2.metric("⚖️ متوسط RR", stats['avg_rr'])
+    col3.metric("🏆 أفضل 10 فرص (نسبة نجاح)", f"{stats['top10_success']}%")
+    
+    st.markdown(f"""
+    <div style='background:#161b22;border:1px solid #30363d;border-radius:10px;padding:15px;margin:15px 0;'>
+        <b>💎 الفرص الذهبية:</b> {stats['gold_count']} صفقة | نسبة نجاح: {stats['gold_success']}%
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # عرض الصفقات المسجلة
+    if trades:
+        st.markdown("### 📋 تفاصيل الصفقات المسجلة")
+        for trade in reversed(trades[-20:]):  # آخر 20 صفقة
+            status_color = "🟢" if trade['status'] == 'hit_target' else "🔴" if trade['status'] == 'stopped_out' else "🟡"
+            st.markdown(f"""
+            <div style='background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;margin:5px 0;'>
+                <b>{trade['name']}</b> ({trade['trade_type']}) - {status_color} {trade['status']}<br>
+                📅 التسجيل: {trade['date_recorded']} | 🎯 الهدف: {trade['target']:.2f} | 🛑 الوقف: {trade['stop_loss']:.2f}<br>
+                📊 RR: {trade['rr']} | RSI وقت الدخول: {trade['rsi_at_entry']:.1f}
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("لا توجد صفقات مسجلة حتى الآن. سيتم تسجيل أفضل 10 فرص والفرص الذهبية تلقائيًا.")
+
 elif st.session_state.page == 'top10':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
@@ -624,14 +775,17 @@ elif st.session_state.page == 'top10':
         st.error("⚠️ فشل تحميل البيانات من TradingView. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.")
         st.stop()
     
-    # preprocessing مرة واحدة
     all_results = preprocess_all_data(raw_data)
     top_results = get_top_ranked(all_results, limit=10)
     
+    # تسجيل أفضل 10 فرص تلقائيًا
+    for an in top_results:
+        record_trade(an, "top10")
+    
     st.markdown("## 🏆 أقوى 10 فرص حسب Smart Score")
     for i, an in enumerate(top_results, 1):
-        with st.expander(f"#{i} - {an['name']} | Score: {an['smart_score']} | RR: {an['rr']}"):
-            render_stock_ui(an)
+        with st.expander(f"#{i} - {an['name']} | Smart Score: {an['smart_score']} | RR: {an['rr']}"):
+            render_stock_ui(an, is_top10=True)
 
 elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -642,15 +796,16 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         st.error("⚠️ فشل تحميل البيانات من TradingView. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.")
         st.stop()
     
-    # preprocessing مرة واحدة لكل الصفحات
     all_results = preprocess_all_data(raw_data)
     
     if st.session_state.page == 'gold':
         found = False
         for an in all_results:
             if classify_stock(an) == "gold":
+                # تسجيل الفرص الذهبية تلقائيًا
+                record_trade(an, "gold")
                 with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']} | RSI: {an['rsi']:.1f})"): 
-                    render_stock_ui(an)
+                    render_stock_ui(an, is_gold=True)
                     found = True
         if not found: st.info("لا توجد فرص ذهبية حالياً.")
     
