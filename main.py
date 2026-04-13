@@ -25,7 +25,8 @@ def is_fake_breakout(res):
     return False
 
 def smart_decision(res):
-    score = res.get('smart_score', smart_score_pro(res))
+    assert 'smart_score' in res, "smart_score missing from stock data"
+    score = res['smart_score']
     fake = is_fake_breakout(res)
     if fake:
         return "❌ فخ سيولة", "danger"
@@ -38,20 +39,51 @@ def smart_decision(res):
     else:
         return "❄️ ضعيف", "weak"
 
-# ================== حاسبة نسبة النجاح المتوقعة ==================
+# ================== نسبة النجاح المتوقعة (مختلفة عن smart_score) ==================
 def expected_success_rate(res):
+    """
+    نسبة النجاح المتوقعة تعتمد على:
+    - تناسق الاتجاهات (consistency)
+    - السيولة (liquidity)
+    - التقلب النسبي (volatility proxy)
+    """
     score = 0
-    if res['t_short'] == "صاعد": score += 15
-    if res['t_med'] == "صاعد": score += 15
-    if res['t_long'] == "صاعد": score += 10
-    if res['ratio'] > 2: score += 20
-    elif res['ratio'] > 1.5: score += 10
-    elif res['ratio'] > 1: score += 5
-    if 40 < res['rsi'] < 60: score += 20
-    elif 30 < res['rsi'] < 70: score += 10
-    if res['rr'] >= 2: score += 20
-    elif res['rr'] >= 1.5: score += 10
-    success_rate = min(85, score)
+    
+    # تناسق الاتجاهات (consistency) - وزن أكبر
+    trends = [res['t_short'], res['t_med'], res['t_long']]
+    if all(t == "صاعد" for t in trends):
+        score += 30  # تناسق كامل
+    elif trends.count("صاعد") >= 2:
+        score += 20  # تناسق جزئي
+    elif trends.count("صاعد") == 1:
+        score += 10
+    
+    # السيولة (liquidity)
+    if res['ratio'] > 2:
+        score += 25
+    elif res['ratio'] > 1.5:
+        score += 15
+    elif res['ratio'] > 1:
+        score += 8
+    elif res['ratio'] == 0:
+        score -= 10  # سيولة غير معروفة = خطر
+    
+    # التقلب النسبي (volatility proxy) - الفرق بين الهدف والوقف
+    risk_range = res['target_pct'] - abs(res['risk_pct'])
+    if risk_range > 5:
+        score += 15
+    elif risk_range > 3:
+        score += 10
+    elif risk_range > 1:
+        score += 5
+    
+    # RR عامل مساعد مش أساسي
+    if res['rr'] >= 2:
+        score += 10
+    elif res['rr'] >= 1.5:
+        score += 5
+    
+    success_rate = min(85, max(0, score))
     if success_rate >= 70: level = "🔥 ممتازة"
     elif success_rate >= 55: level = "✅ جيدة"
     elif success_rate >= 40: level = "⚠️ متوسطة"
@@ -71,13 +103,17 @@ def calculate_trailing_stop(entry_price, current_price, highest_price, rr):
     else:
         return round(entry_price * 0.97, 2)
 
-# Stochastic RSI محاكاة
+# Stochastic RSI (تنبيه: تقريبي)
 def calculate_stochastic_rsi(rsi):
-    if rsi <= 20: return {"k": 90, "d": 85, "signal": "🟢 تشبع بيع - فرصة انعكاس"}
-    elif rsi <= 35: return {"k": 70, "d": 65, "signal": "🟡 منطقة شراء محتملة"}
+    """
+    ⚠️ تنبيه: هذه محاكاة تقريبية لـ Stochastic RSI
+    للدقة الكاملة نحتاج بيانات شموع تفصيلية
+    """
+    if rsi <= 20: return {"k": 90, "d": 85, "signal": "🟢 تشبع بيع - فرصة انعكاس (تقديري)"}
+    elif rsi <= 35: return {"k": 70, "d": 65, "signal": "🟡 منطقة شراء محتملة (تقديري)"}
     elif rsi <= 65: return {"k": 50, "d": 50, "signal": "⚪ منطقة حيادية"}
-    elif rsi <= 80: return {"k": 30, "d": 35, "signal": "🟠 منطقة بيع محتملة"}
-    else: return {"k": 10, "d": 15, "signal": "🔴 تشبع شراء - خطر"}
+    elif rsi <= 80: return {"k": 30, "d": 35, "signal": "🟠 منطقة بيع محتملة (تقديري)"}
+    else: return {"k": 10, "d": 15, "signal": "🔴 تشبع شراء - خطر (تقديري)"}
 
 
 # ================== CONFIG & STYLE ==================
@@ -117,7 +153,8 @@ def get_rr_rating(rr):
     else: return "🔥 ممتاز", "فرصة قوية جداً"
 
 def get_volume_rating(ratio):
-    if ratio < 1: return "❄️ ضعيفة", "مفيش سيولة كفاية"
+    if ratio == 0: return "❓ غير معروف", "لا توجد بيانات سيولة كافية"
+    elif ratio < 1: return "❄️ ضعيفة", "مفيش سيولة كفاية"
     elif ratio < 1.5: return "🙂 عادية", "سيولة طبيعية"
     elif ratio < 2: return "⚡ نشطة", "في اهتمام بالسهم"
     else: return "🚀 قوية", "سيولة عالية واختراق محتمل"
@@ -135,6 +172,7 @@ def classify_stock(res):
     if "محافظ" in mode: rr_min = 1.7
     elif "هجومي" in mode: rr_min = 1.0
     else: rr_min = 1.3
+    if ratio == 0: return "weak"  # لا توجد بيانات سيولة
     if rr >= 1.5 and t_short == "صاعد" and 50 < rsi < 70: return "gold"
     elif ratio > 2 and t_short == "صاعد" and rsi < 75: return "breakout"
     elif ratio > 1.5 and rr >= 1.2 and rsi < 80: return "scalp"
@@ -146,6 +184,8 @@ if "mode" not in st.session_state:
     st.session_state.mode = "⚖️ متوازن"
 if 'page' not in st.session_state: 
     st.session_state.page = 'home'
+if 'all_results' not in st.session_state:
+    st.session_state.all_results = []
 
 def render_mode_selector():
     with st.expander("🧠 اختر نوع التداول", expanded=False):
@@ -204,7 +244,13 @@ def analyze_stock(d_row):
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d
         if p is None: return None
         rsi_val = rsi or 0
-        ratio = v / avg_v if avg_v and avg_v > 0 else 1
+        
+        # 🔥 تحسين مهم: ratio = 0 لو مفيش بيانات، مش 1
+        if avg_v and avg_v > 0:
+            ratio = v / avg_v
+        else:
+            ratio = 0  # بدل 1 - عشان منديش signals غلط
+        
         t_short = "صاعد" if (sma20 and p > sma20) else "هابط"
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
         t_long = "صاعد" if (sma200 and p > sma200) else "هابط"
@@ -243,12 +289,26 @@ def analyze_stock(d_row):
             "s1": s1, "s2": s2, "r1": r1, "r2": r2, "pp": pp,
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}", "entry_price": entry_price,
             "stop_loss": stop_loss, "target": target, "rr": rr, "risk_pct": (loss_ps/entry_price)*100, 
-            "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) * 20) + (rsi_val / 2 if rsi_val else 25)),
+            "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) if ratio > 0 else 0) * 20 + (rsi_val / 2 if rsi_val else 25)),
             "smart_score": smart_score
         }
     except Exception as e:
         print(f"Analysis Error: {e}")
         return None
+
+def preprocess_all_data(raw_data):
+    """معالجة كل البيانات مرة واحدة وتخزينها"""
+    results = []
+    for r in raw_data:
+        an = analyze_stock(r)
+        if an:
+            results.append(an)
+    return results
+
+def get_top_ranked(results, limit=10):
+    """Ranking Engine: ترتيب الأسهم حسب smart_score"""
+    sorted_results = sorted(results, key=lambda x: (x['smart_score'], x['rr']), reverse=True)
+    return sorted_results[:limit]
 
 # ================== UI RENDERER ==================
 def render_stock_ui(res):
@@ -286,7 +346,7 @@ def render_stock_ui(res):
         c1, c2, c3, c4 = st.columns(4) 
         c1.metric("السعر الحالي", f"{res['p']:.2f}", f"{res['chg']:.1f}%")
         vol_label, vol_desc = get_volume_rating(res['ratio'])
-        c2.metric("نشاط السيولة", f"{res['ratio']:.1f}x {vol_label}")
+        c2.metric("نشاط السيولة", f"{res['ratio']:.1f}x {vol_label}" if res['ratio'] > 0 else "❓ غير معروف", vol_label)
         rr_label, rr_desc = get_rr_rating(res['rr'])
         c3.metric("R/R Ratio", f"{res['rr']} {rr_label}")
         rsi_label, rsi_type = get_rsi_signal(res['rsi'])
@@ -489,6 +549,7 @@ def render_stock_ui(res):
             st.markdown("### 🚨 تنبيهات")
             alerts = []
             if res['ratio'] > 2: alerts.append("🚀 سيولة قوية")
+            elif res['ratio'] == 0: alerts.append("❓ سيولة غير معروفة")
             if res['rr'] < 1: alerts.append("❌ RR ضعيف")
             if res['t_short'] == "هابط": alerts.append("🔻 اتجاه هابط")
             if res['rsi'] > 75: alerts.append("🔴 تشبع شراء خطر")
@@ -504,13 +565,15 @@ def render_stock_ui(res):
             <b>🔄 Stochastic RSI</b><br>
             📈 K={stoch['k']:.1f} | D={stoch['d']:.1f}<br>
             🧠 {stoch['signal']}
+            <div style='font-size:11px;color:#8b949e;margin-top:5px;'>⚠️ تقدير تقريبي بناءً على RSI فقط</div>
         </div>
         """, unsafe_allow_html=True)
         success_rate, success_level = expected_success_rate(res)
         st.markdown(f"""
         <div style='background:#161b22;border:1px solid #d29922;border-radius:10px;padding:15px;margin-bottom:15px;'>
             <b>📈 نسبة النجاح المتوقعة</b><br>
-            🎯 <b>{success_rate}%</b> - {success_level}
+            🎯 <b>{success_rate}%</b> - {success_level}<br>
+            <div style='font-size:11px;color:#8b949e;margin-top:5px;'>📌 تعتمد على: تناسق الاتجاهات، السيولة، نطاق التحرك المتوقع</div>
         </div>
         """, unsafe_allow_html=True)
         st.markdown("### 💡 توصيات إضافية")
@@ -518,6 +581,7 @@ def render_stock_ui(res):
         if res['rsi'] < 30: recs.append("🔴 RSI في تشبع بيع → احتمالية ارتداد")
         elif res['rsi'] > 70: recs.append("🟡 RSI في تشبع شراء → احتمالية تصحيح")
         if res['ratio'] > 2: recs.append("🚀 سيولة عالية جدًا → اختراق قوي محتمل")
+        elif res['ratio'] == 0: recs.append("❓ سيولة غير معروفة → تحقق يدويًا")
         elif res['ratio'] < 0.8: recs.append("❄️ سيولة ضعيفة → تجنب الدخول")
         if res['rr'] >= 2: recs.append("💰 RR ممتاز → مناسب للمحافظ المحافظة")
         elif res['rr'] < 1: recs.append("⚠️ RR سيء → غير مناسب")
@@ -537,6 +601,7 @@ if st.session_state.page == 'home':
         if st.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
         if st.button("💎 قنص الذهب"): st.session_state.page = 'gold'; st.rerun()
         if st.button("⚡ مضاربات سريعة"): st.session_state.page = 'scalp'; st.rerun()
+        if st.button("🏆 أفضل 10 فرص"): st.session_state.page = 'top10'; st.rerun()
 
 elif st.session_state.page == 'avg':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -550,43 +615,60 @@ elif st.session_state.page == 'avg':
         avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
         st.success(f"📊 متوسط السعر الجديد: {avg:.2f}")
 
+elif st.session_state.page == 'top10':
+    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
+    render_mode_selector()
+    
+    raw_data = get_all_data()
+    if not raw_data:
+        st.error("⚠️ فشل تحميل البيانات من TradingView. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.")
+        st.stop()
+    
+    # preprocessing مرة واحدة
+    all_results = preprocess_all_data(raw_data)
+    top_results = get_top_ranked(all_results, limit=10)
+    
+    st.markdown("## 🏆 أقوى 10 فرص حسب Smart Score")
+    for i, an in enumerate(top_results, 1):
+        with st.expander(f"#{i} - {an['name']} | Score: {an['smart_score']} | RR: {an['rr']}"):
+            render_stock_ui(an)
+
 elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     
     raw_data = get_all_data()
+    if not raw_data:
+        st.error("⚠️ فشل تحميل البيانات من TradingView. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.")
+        st.stop()
+    
+    # preprocessing مرة واحدة لكل الصفحات
+    all_results = preprocess_all_data(raw_data)
     
     if st.session_state.page == 'gold':
         found = False
-        for r in raw_data:
-            an = analyze_stock(r)
-            if an and classify_stock(an) == "gold":
+        for an in all_results:
+            if classify_stock(an) == "gold":
                 with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']} | RSI: {an['rsi']:.1f})"): 
                     render_stock_ui(an)
                     found = True
         if not found: st.info("لا توجد فرص ذهبية حالياً.")
     
     elif st.session_state.page == 'scanner':
-        results = []
-        for r in raw_data:
-            an = analyze_stock(r)
-            if an and classify_stock(an) == "watchlist":
-                results.append(an)
-        results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
+        results = [an for an in all_results if classify_stock(an) == "watchlist"]
+        results.sort(key=lambda x: (x['smart_score'], x['rr']), reverse=True)
         for an in results[:15]:
             with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
     
     elif st.session_state.page == 'breakout':
-        for r in raw_data:
-            an = analyze_stock(r)
-            if an and classify_stock(an) == "breakout":
+        for an in all_results:
+            if classify_stock(an) == "breakout":
                 with st.expander(f"🚀 اختراق: {an['name']} (RSI: {an['rsi']:.1f})"): render_stock_ui(an)
     
     elif st.session_state.page == 'scalp':
         found = False
-        for r in raw_data:
-            an = analyze_stock(r)
-            if an and classify_stock(an) == "scalp":
+        for an in all_results:
+            if classify_stock(an) == "scalp":
                 with st.expander(f"⚡ مضاربة: {an['name']} (RSI: {an['rsi']:.1f})"):
                     render_stock_ui(an)
                     found = True
