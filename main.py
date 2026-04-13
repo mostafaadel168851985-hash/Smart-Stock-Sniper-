@@ -1,43 +1,6 @@
 import streamlit as st
 import requests
 
-# ================== 🔥 SMART ADDITIONS ==================
-def smart_score_pro(res):
-    score = 0
-    if res['t_short'] == "صاعد": score += 15
-    if res['t_med'] == "صاعد": score += 15
-    if res['t_long'] == "صاعد": score += 10
-    if res['ratio'] > 2: score += 20
-    elif res['ratio'] > 1.5: score += 10
-    if 50 < res['rsi'] < 65: score += 20
-    elif 65 <= res['rsi'] < 75: score += 10
-    elif res['rsi'] < 40: score += 5
-    if res['rr'] >= 2: score += 20
-    elif res['rr'] >= 1.5: score += 10
-    return int(score)
-
-def is_fake_breakout(res):
-    if res['rsi'] > 75 and res['rr'] < 1.3:
-        return True
-    if res['ratio'] < 1.2:
-        return True
-    return False
-
-def smart_decision(res):
-    score = smart_score_pro(res)
-    fake = is_fake_breakout(res)
-    if fake:
-        return "❌ فخ سيولة", "danger"
-    elif score >= 70:
-        return "🔥 فرصة قوية جداً", "strong"
-    elif score >= 50:
-        return "✅ فرصة جيدة", "good"
-    elif score >= 30:
-        return "⚠️ تحت المراقبة", "watch"
-    else:
-        return "❄️ ضعيف", "weak"
-
-
 # ================== CONFIG & STYLE ==================
 st.set_page_config(page_title="EGX Sniper Pro v15.8", layout="wide")
 
@@ -226,37 +189,8 @@ def analyze_stock(d_row):
 
 # ================== UI RENDERER ==================
 def render_stock_ui(res):
-    st.markdown(f"""
-    <div class='stock-header'>
-        {res['name']} - {res['desc']}
-        <span class='score-tag'>Score: {res['score']}</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ================== 🔥 SMART UI ==================
-    smart_text, smart_type = smart_decision(res)
-    smart_score = smart_score_pro(res)
-
-    st.markdown(f"""
-    <div style="background:#161b22;border:1px solid #30363d;padding:12px;border-radius:10px;margin:10px 0;">
-        🤖 <b>Smart Score:</b> {smart_score}/100 <br>
-        🎯 <b>التقييم الذكي:</b> {smart_text}
-    </div>
-    """, unsafe_allow_html=True)
-
-    # 📊 Live Chart
-    st.components.v1.html(f"""
-    <iframe src="https://s.tradingview.com/widgetembed/?symbol=EGX:{res['name']}&interval=60"
-    width="100%" height="400"></iframe>
-    """, height=400)
-
+    st.markdown(f"<div class='stock-header'>{res['name']} - {res['desc']} <span class='score-tag'>Score: {res['score']}</span></div>", unsafe_allow_html=True)
     
-    # 🔔 Smart Alerts
-    if res['ratio'] > 2 and res['rsi'] < 70:
-        st.success("🚨 سيولة قوية + زخم صحي")
-    if res['rsi'] > 75:
-        st.warning("⚠️ تشبع شراء")
-
     tab_analysis, tab_management, tab_scenario = st.tabs([
         "📊 التحليل الفني",
         "📉 إدارة المخاطر والسيولة",
@@ -567,7 +501,7 @@ elif st.session_state.page == 'scanner':
         an = analyze_stock(r)
         if an and classify_stock(an) == "watchlist":
             results.append(an)
-    results.sort(key=lambda x: ((x['score']*0.5)+(x['rr']*20)+(x['ratio']*10)), reverse=True)
+    results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
     for an in results[:15]:
         with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
 
