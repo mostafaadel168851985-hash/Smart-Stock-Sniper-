@@ -225,7 +225,7 @@ def analyze_stock(d_row):
         return None
 
 # ================== UI RENDERER ==================
-def render_stock_ui(res):
+def render_stock_ui(res, show_chart=False):
     st.markdown(f"""
     <div class='stock-header'>
         {res['name']} - {res['desc']}
@@ -242,20 +242,14 @@ def render_stock_ui(res):
         🤖 <b>Smart Score:</b> {smart_score}/100 <br>
         🎯 <b>التقييم الذكي:</b> {smart_text}
     </div>
-    """, unsafe_allow_html=True)
+    "", unsafe_allow_html=True)
 
-    # 📊 Live Chart
-    st.components.v1.html(f"""
-    <iframe src="https://s.tradingview.com/widgetembed/?symbol=EGX:{res['name']}&interval=60"
-    width="100%" height="400"></iframe>
-    """, height=400)
-
-    
-    # 🔔 Smart Alerts
-    if res['ratio'] > 2 and res['rsi'] < 70:
-        st.success("🚨 سيولة قوية + زخم صحي")
-    if res['rsi'] > 75:
-        st.warning("⚠️ تشبع شراء")
+    # 📊 Chart Toggle (Fast Mode)
+    if show_chart:
+        st.components.v1.html(f"""
+        <iframe src="https://s.tradingview.com/widgetembed/?symbol=EGX:{res['name']}&interval=60"
+        width="100%" height="400"></iframe>
+        """, height=400)
 
     tab_analysis, tab_management, tab_scenario = st.tabs([
         "📊 التحليل الفني",
@@ -554,7 +548,7 @@ elif st.session_state.page == 'gold':
         an = analyze_stock(r)
         if an and classify_stock(an) == "gold":
             with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']} | RSI: {an['rsi']:.1f})"): 
-                render_stock_ui(an)
+                render_stock_ui(an, show_chart=True)
                 found = True
     if not found: st.info("لا توجد فرص ذهبية حالياً.")
 
@@ -567,9 +561,10 @@ elif st.session_state.page == 'scanner':
         an = analyze_stock(r)
         if an and classify_stock(an) == "watchlist":
             results.append(an)
-    results.sort(key=lambda x: ((x['score']*0.5)+(x['rr']*20)+(x['ratio']*10)), reverse=True)
-    for an in results[:15]:
-        with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
+    results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
+    for i, an in enumerate(results[:15]):
+        with st.expander(f"{an['name']} | {an['signal']}"):
+            render_stock_ui(an, show_chart=(i < 2))
 
 elif st.session_state.page == 'breakout':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -589,7 +584,7 @@ elif st.session_state.page == 'scalp':
         an = analyze_stock(r)
         if an and classify_stock(an) == "scalp":
             with st.expander(f"⚡ مضاربة: {an['name']} (RSI: {an['rsi']:.1f})"):
-                render_stock_ui(an)
+                render_stock_ui(an, show_chart=True)
                 found = True
     if not found:
         st.info("لا توجد مضاربات سريعة حالياً.")
