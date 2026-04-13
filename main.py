@@ -8,24 +8,36 @@ import os
 TRADES_FILE = "trades_data.json"
 
 def load_trades():
-    if os.path.exists(TRADES_FILE):
-        try:
+    """تحميل الصفقات المسجلة من الملف مع حماية كاملة"""
+    try:
+        if os.path.exists(TRADES_FILE):
             with open(TRADES_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return data
+                else:
+                    return []
+        else:
             return []
-    return []
+    except Exception as e:
+        print(f"Error loading trades: {e}")
+        return []
 
 def save_trades(trades):
-    with open(TRADES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(trades, f, ensure_ascii=False, indent=2)
+    """حفظ الصفقات في الملف"""
+    try:
+        with open(TRADES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(trades, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error saving trades: {e}")
 
 def record_trade(res, trade_type):
+    """تسجيل صفقة جديدة"""
     trades = load_trades()
     today = datetime.now().strftime("%Y-%m-%d")
     
     for t in trades:
-        if t['name'] == res['name'] and t['date_recorded'] == today:
+        if t.get('name') == res['name'] and t.get('date_recorded') == today:
             return
     
     trades.append({
@@ -53,37 +65,53 @@ def record_trade(res, trade_type):
     save_trades(trades)
 
 def update_all_trades(current_prices):
+    """تحديث حالة كل الصفقات"""
     trades = load_trades()
     today = date.today()
+    updated = False
     
     for trade in trades:
-        if trade['status'] in ['pending', 'still_open']:
-            symbol = trade['name']
+        if trade.get('status') in ['pending', 'still_open']:
+            symbol = trade.get('name')
             if symbol in current_prices:
                 current_price = current_prices[symbol]
                 trade['last_price'] = current_price
                 trade['last_update'] = datetime.now().strftime("%Y-%m-%d %H:%M")
                 
-                if not trade['entry_hit']:
-                    if trade['entry_min'] <= current_price <= trade['entry_max']:
+                if not trade.get('entry_hit', False):
+                    entry_min = trade.get('entry_min', 0)
+                    entry_max = trade.get('entry_max', 0)
+                    if entry_min <= current_price <= entry_max:
                         trade['entry_hit'] = True
                 
                 recorded_date = datetime.strptime(trade['date_recorded'], "%Y-%m-%d").date()
                 trade['days_open'] = (today - recorded_date).days
                 
-                if current_price >= trade['target']:
+                target = trade.get('target', 0)
+                stop_loss = trade.get('stop_loss', 0)
+                target_pct = trade.get('target_pct', 0)
+                risk_pct = trade.get('risk_pct', 0)
+                
+                if current_price >= target:
                     trade['status'] = 'hit_target'
-                    trade['profit_pct'] = trade['target_pct']
-                elif current_price <= trade['stop_loss']:
+                    trade['profit_pct'] = target_pct
+                    updated = True
+                elif current_price <= stop_loss:
                     trade['status'] = 'stopped_out'
-                    trade['profit_pct'] = -trade['risk_pct']
+                    trade['profit_pct'] = -risk_pct
+                    updated = True
                 else:
                     trade['status'] = 'still_open'
     
-    save_trades(trades)
+    if updated:
+        save_trades(trades)
     return trades
 
 def get_performance_stats(trades):
+    """حساب إحصائيات الأداء المتقدمة مع حماية كاملة"""
+    if not trades or not isinstance(trades, list):
+        trades = []
+    
     total = len(trades)
     if total == 0:
         return {
@@ -95,39 +123,39 @@ def get_performance_stats(trades):
             'avg_holding_days': 0, 'entry_accuracy': 0
         }
     
-    hit_target = len([t for t in trades if t['status'] == 'hit_target'])
-    stopped_out = len([t for t in trades if t['status'] == 'stopped_out'])
-    still_open = len([t for t in trades if t['status'] == 'still_open'])
+    hit_target = len([t for t in trades if t.get('status') == 'hit_target'])
+    stopped_out = len([t for t in trades if t.get('status') == 'stopped_out'])
+    still_open = len([t for t in trades if t.get('status') in ['pending', 'still_open']])
     closed = hit_target + stopped_out
     success_rate = (hit_target / closed * 100) if closed > 0 else 0
     
-    completed_trades = [t for t in trades if t['profit_pct'] is not None]
-    total_return = sum(t['profit_pct'] for t in completed_trades)
+    completed_trades = [t for t in trades if t.get('profit_pct') is not None]
+    total_return = sum(t.get('profit_pct', 0) for t in completed_trades)
     avg_return = total_return / len(completed_trades) if completed_trades else 0
     
-    avg_rr = sum(t['rr'] for t in trades) / total if total > 0 else 0
+    avg_rr = sum(t.get('rr', 0) for t in trades) / total if total > 0 else 0
     
-    closed_trades = [t for t in trades if t['status'] in ['hit_target', 'stopped_out'] and t['days_open'] is not None]
-    avg_holding_days = sum(t['days_open'] for t in closed_trades) / len(closed_trades) if closed_trades else 0
+    closed_trades = [t for t in trades if t.get('status') in ['hit_target', 'stopped_out'] and t.get('days_open') is not None]
+    avg_holding_days = sum(t.get('days_open', 0) for t in closed_trades) / len(closed_trades) if closed_trades else 0
     
-    trades_with_entry = [t for t in trades if t['entry_hit']]
+    trades_with_entry = [t for t in trades if t.get('entry_hit', False)]
     entry_accuracy = (len(trades_with_entry) / total * 100) if total > 0 else 0
     
-    top10_trades = [t for t in trades if t['trade_type'] == 'top10']
-    gold_trades = [t for t in trades if t['trade_type'] == 'gold']
-    all_trades = [t for t in trades if t['trade_type'] == 'all']
+    top10_trades = [t for t in trades if t.get('trade_type') == 'top10']
+    gold_trades = [t for t in trades if t.get('trade_type') == 'gold']
+    all_trades = [t for t in trades if t.get('trade_type') == 'all']
     
-    top10_closed = [t for t in top10_trades if t['status'] in ['hit_target', 'stopped_out']]
-    gold_closed = [t for t in gold_trades if t['status'] in ['hit_target', 'stopped_out']]
-    all_closed = [t for t in all_trades if t['status'] in ['hit_target', 'stopped_out']]
+    top10_closed = [t for t in top10_trades if t.get('status') in ['hit_target', 'stopped_out']]
+    gold_closed = [t for t in gold_trades if t.get('status') in ['hit_target', 'stopped_out']]
+    all_closed = [t for t in all_trades if t.get('status') in ['hit_target', 'stopped_out']]
     
-    top10_success = (len([t for t in top10_closed if t['status'] == 'hit_target']) / len(top10_closed) * 100) if top10_closed else 0
-    gold_success = (len([t for t in gold_closed if t['status'] == 'hit_target']) / len(gold_closed) * 100) if gold_closed else 0
-    all_success = (len([t for t in all_closed if t['status'] == 'hit_target']) / len(all_closed) * 100) if all_closed else 0
+    top10_success = (len([t for t in top10_closed if t.get('status') == 'hit_target']) / len(top10_closed) * 100) if top10_closed else 0
+    gold_success = (len([t for t in gold_closed if t.get('status') == 'hit_target']) / len(gold_closed) * 100) if gold_closed else 0
+    all_success = (len([t for t in all_closed if t.get('status') == 'hit_target']) / len(all_closed) * 100) if all_closed else 0
     
-    top10_return = sum(t['profit_pct'] for t in top10_trades if t['profit_pct'] is not None)
-    gold_return = sum(t['profit_pct'] for t in gold_trades if t['profit_pct'] is not None)
-    all_return = sum(t['profit_pct'] for t in all_trades if t['profit_pct'] is not None)
+    top10_return = sum(t.get('profit_pct', 0) for t in top10_trades if t.get('profit_pct') is not None)
+    gold_return = sum(t.get('profit_pct', 0) for t in gold_trades if t.get('profit_pct') is not None)
+    all_return = sum(t.get('profit_pct', 0) for t in all_trades if t.get('profit_pct') is not None)
     
     return {
         'total': total, 'hit_target': hit_target, 'stopped_out': stopped_out, 'still_open': still_open,
@@ -143,22 +171,22 @@ def get_performance_stats(trades):
 # ================== 🔥 SMART ADDITIONS ==================
 def smart_score_pro(res):
     score = 0
-    if res['t_short'] == "صاعد": score += 15
-    if res['t_med'] == "صاعد": score += 15
-    if res['t_long'] == "صاعد": score += 10
-    if res['ratio'] > 2: score += 20
-    elif res['ratio'] > 1.5: score += 10
-    if 50 < res['rsi'] < 65: score += 20
-    elif 65 <= res['rsi'] < 75: score += 10
-    elif res['rsi'] < 40: score += 5
-    if res['rr'] >= 2: score += 20
-    elif res['rr'] >= 1.5: score += 10
+    if res.get('t_short') == "صاعد": score += 15
+    if res.get('t_med') == "صاعد": score += 15
+    if res.get('t_long') == "صاعد": score += 10
+    if res.get('ratio', 0) > 2: score += 20
+    elif res.get('ratio', 0) > 1.5: score += 10
+    if 50 < res.get('rsi', 50) < 65: score += 20
+    elif 65 <= res.get('rsi', 50) < 75: score += 10
+    elif res.get('rsi', 50) < 40: score += 5
+    if res.get('rr', 0) >= 2: score += 20
+    elif res.get('rr', 0) >= 1.5: score += 10
     return int(score)
 
 def is_fake_breakout(res):
-    if res['rsi'] > 75 and res['rr'] < 1.3:
+    if res.get('rsi', 50) > 75 and res.get('rr', 0) < 1.3:
         return True
-    if res['ratio'] < 1.2:
+    if res.get('ratio', 0) < 1.2:
         return True
     return False
 
@@ -179,7 +207,7 @@ def smart_decision(res):
 
 def expected_success_rate(res):
     score = 0
-    trends = [res['t_short'], res['t_med'], res['t_long']]
+    trends = [res.get('t_short', 'هابط'), res.get('t_med', 'هابط'), res.get('t_long', 'هابط')]
     if all(t == "صاعد" for t in trends):
         score += 30
     elif trends.count("صاعد") >= 2:
@@ -187,16 +215,17 @@ def expected_success_rate(res):
     elif trends.count("صاعد") == 1:
         score += 10
     
-    if res['ratio'] > 2:
+    ratio = res.get('ratio', 0)
+    if ratio > 2:
         score += 25
-    elif res['ratio'] > 1.5:
+    elif ratio > 1.5:
         score += 15
-    elif res['ratio'] > 1:
+    elif ratio > 1:
         score += 8
-    elif res['ratio'] == 0:
+    elif ratio == 0:
         score -= 10
     
-    risk_range = res['target_pct'] - abs(res['risk_pct'])
+    risk_range = res.get('target_pct', 0) - abs(res.get('risk_pct', 0))
     if risk_range > 5:
         score += 15
     elif risk_range > 3:
@@ -204,9 +233,9 @@ def expected_success_rate(res):
     elif risk_range > 1:
         score += 5
     
-    if res['rr'] >= 2:
+    if res.get('rr', 0) >= 2:
         score += 10
-    elif res['rr'] >= 1.5:
+    elif res.get('rr', 0) >= 1.5:
         score += 5
     
     success_rate = min(85, max(0, score))
@@ -287,7 +316,11 @@ def get_rsi_signal(rsi):
     else: return "🔴 تشبع شراء خطر", "overbought"
 
 def classify_stock(res):
-    rr, ratio, t_short, t_med, rsi = res['rr'], res['ratio'], res['t_short'], res['t_med'], res['rsi']
+    rr = res.get('rr', 0)
+    ratio = res.get('ratio', 0)
+    t_short = res.get('t_short', 'هابط')
+    t_med = res.get('t_med', 'هابط')
+    rsi = res.get('rsi', 50)
     mode = st.session_state.mode
     if "محافظ" in mode: rr_min = 1.7
     elif "هجومي" in mode: rr_min = 1.0
@@ -359,6 +392,8 @@ def fetch_single_stock(symbol):
 def analyze_stock(d_row):
     try:
         d = d_row.get('d', [])
+        if len(d) < 13:
+            return None
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d
         if p is None: return None
         rsi_val = rsi or 0
@@ -422,7 +457,7 @@ def preprocess_all_data(raw_data):
     return results
 
 def get_top_ranked(results, limit=10):
-    sorted_results = sorted(results, key=lambda x: (x['smart_score'], x['rr']), reverse=True)
+    sorted_results = sorted(results, key=lambda x: (x.get('smart_score', 0), x.get('rr', 0)), reverse=True)
     return sorted_results[:limit]
 
 
@@ -741,13 +776,16 @@ elif st.session_state.page == 'performance':
     
     # تحديث البيانات
     if st.button("🔄 تحديث البيانات"):
-        raw_data = get_all_data()
-        if raw_data:
-            all_results = preprocess_all_data(raw_data)
-            current_prices = {res['name']: res['p'] for res in all_results}
-            trades = update_all_trades(current_prices)
-            st.success("تم تحديث البيانات بنجاح!")
-            st.rerun()
+        with st.spinner("جاري تحديث البيانات..."):
+            raw_data = get_all_data()
+            if raw_data:
+                all_results = preprocess_all_data(raw_data)
+                current_prices = {res['name']: res['p'] for res in all_results if res}
+                trades = update_all_trades(current_prices)
+                st.success("تم تحديث البيانات بنجاح!")
+                st.rerun()
+            else:
+                st.error("فشل تحميل البيانات من TradingView")
     
     stats = get_performance_stats(trades)
     
@@ -783,17 +821,17 @@ elif st.session_state.page == 'performance':
     """, unsafe_allow_html=True)
     
     # Insights ذكية
-    if stats['gold_count'] >= 10:
+    if stats['gold_count'] >= 5:
         if stats['gold_success'] > stats['top10_success']:
             st.success("💡 Insight: الفرص الذهبية تتفوق على أفضل 10 فرص! يمكنك زيادة وزنها.")
         elif stats['top10_success'] > stats['gold_success']:
             st.info("💡 Insight: أفضل 10 فرص تتفوق على الفرص الذهبية! ركز عليها.")
     
-    if stats['all_count'] >= 20:
+    if stats['all_count'] >= 10:
         if stats['all_success'] < stats['top10_success'] - 10:
             st.success("✅ فلترة Smart Score فعالة جدًا! نسبة نجاح أفضل 10 أعلى من المتوسط بـ 10%+")
     
-    # ================== 🆕 الفلتر ==================
+    # الفلتر
     st.markdown("---")
     st.markdown("### 📋 تفاصيل الصفقات")
     
@@ -805,41 +843,40 @@ elif st.session_state.page == 'performance':
     
     # تطبيق الفلتر
     if filter_option == "✅ الناجحة فقط (حققت الهدف)":
-        filtered_trades = [t for t in trades if t['status'] == 'hit_target']
+        filtered_trades = [t for t in trades if t.get('status') == 'hit_target']
     elif filter_option == "❌ الفاشلة فقط (كسرت الوقف)":
-        filtered_trades = [t for t in trades if t['status'] == 'stopped_out']
+        filtered_trades = [t for t in trades if t.get('status') == 'stopped_out']
     elif filter_option == "⏳ المفتوحة فقط":
-        filtered_trades = [t for t in trades if t['status'] in ['pending', 'still_open']]
+        filtered_trades = [t for t in trades if t.get('status') in ['pending', 'still_open']]
     else:
         filtered_trades = trades
     
     if filtered_trades:
         st.markdown(f"**عدد الصفقات: {len(filtered_trades)}**")
-        for trade in reversed(filtered_trades[-30:]):  # آخر 30 صفقة حسب الفلتر
-            if trade['status'] == 'hit_target':
+        for trade in reversed(filtered_trades[-30:]):
+            if trade.get('status') == 'hit_target':
                 status_color = "🟢"
                 status_text = "حققت الهدف"
-            elif trade['status'] == 'stopped_out':
+            elif trade.get('status') == 'stopped_out':
                 status_color = "🔴"
                 status_text = "كسرت الوقف"
             else:
                 status_color = "🟡"
                 status_text = "لا تزال مفتوحة"
             
-            entry_hit_mark = "✅" if trade['entry_hit'] else "❌"
+            entry_hit_mark = "✅" if trade.get('entry_hit', False) else "❌"
             
-            # إضافة نسبة الربح/الخسارة للصفقات المنتهية
             profit_text = ""
-            if trade['profit_pct'] is not None:
+            if trade.get('profit_pct') is not None:
                 profit_color = "🟢" if trade['profit_pct'] > 0 else "🔴"
                 profit_text = f" | {profit_color} {trade['profit_pct']:+.1f}%"
             
             st.markdown(f"""
             <div style='background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;margin:5px 0;'>
-                <b>{trade['name']}</b> ({trade['trade_type']}) - {status_color} {status_text}{profit_text}<br>
-                📅 التسجيل: {trade['date_recorded']} | {entry_hit_mark} دخول في النطاق<br>
-                🎯 الهدف: {trade['target']:.2f} | 🛑 الوقف: {trade['stop_loss']:.2f}<br>
-                📊 RR: {trade['rr']} | RSI وقت الدخول: {trade['rsi_at_entry']:.1f}
+                <b>{trade.get('name', 'N/A')}</b> ({trade.get('trade_type', 'N/A')}) - {status_color} {status_text}{profit_text}<br>
+                📅 التسجيل: {trade.get('date_recorded', 'N/A')} | {entry_hit_mark} دخول في النطاق<br>
+                🎯 الهدف: {trade.get('target', 0):.2f} | 🛑 الوقف: {trade.get('stop_loss', 0):.2f}<br>
+                📊 RR: {trade.get('rr', 0)} | RSI وقت الدخول: {trade.get('rsi_at_entry', 0):.1f}
             </div>
             """, unsafe_allow_html=True)
     else:
@@ -858,14 +895,17 @@ elif st.session_state.page == 'top10':
     top_results = get_top_ranked(all_results, limit=10)
     
     for an in all_results:
-        record_trade(an, "all")
+        if an:
+            record_trade(an, "all")
     for an in top_results:
-        record_trade(an, "top10")
+        if an:
+            record_trade(an, "top10")
     
     st.markdown("## 🏆 أقوى 10 فرص حسب Smart Score")
     for i, an in enumerate(top_results, 1):
-        with st.expander(f"#{i} - {an['name']} | Smart Score: {an['smart_score']} | RR: {an['rr']}"):
-            render_stock_ui(an, is_top10=True)
+        if an:
+            with st.expander(f"#{i} - {an['name']} | Smart Score: {an['smart_score']} | RR: {an['rr']}"):
+                render_stock_ui(an, is_top10=True)
 
 elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -881,7 +921,7 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
     if st.session_state.page == 'gold':
         found = False
         for an in all_results:
-            if classify_stock(an) == "gold":
+            if an and classify_stock(an) == "gold":
                 record_trade(an, "gold")
                 with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']} | RSI: {an['rsi']:.1f})"): 
                     render_stock_ui(an, is_gold=True)
@@ -889,20 +929,20 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         if not found: st.info("لا توجد فرص ذهبية حالياً.")
     
     elif st.session_state.page == 'scanner':
-        results = [an for an in all_results if classify_stock(an) == "watchlist"]
-        results.sort(key=lambda x: (x['smart_score'], x['rr']), reverse=True)
+        results = [an for an in all_results if an and classify_stock(an) == "watchlist"]
+        results.sort(key=lambda x: (x.get('smart_score', 0), x.get('rr', 0)), reverse=True)
         for an in results[:15]:
             with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
     
     elif st.session_state.page == 'breakout':
         for an in all_results:
-            if classify_stock(an) == "breakout":
+            if an and classify_stock(an) == "breakout":
                 with st.expander(f"🚀 اختراق: {an['name']} (RSI: {an['rsi']:.1f})"): render_stock_ui(an)
     
     elif st.session_state.page == 'scalp':
         found = False
         for an in all_results:
-            if classify_stock(an) == "scalp":
+            if an and classify_stock(an) == "scalp":
                 with st.expander(f"⚡ مضاربة: {an['name']} (RSI: {an['rsi']:.1f})"):
                     render_stock_ui(an)
                     found = True
