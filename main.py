@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import requests
 
@@ -58,7 +59,7 @@ st.markdown("""
     .target-box { border: 2px solid #58a6ff; border-radius: 12px; padding: 15px; text-align: center; background: #0d1117; margin-top: 10px; font-size: 18px; }
     .plan-container { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin-top: 15px; border-right: 5px solid #238636; }
     
-    /* 🏛️ ستايل بلوك المستثمر الجديد */
+    /*  ستايل بلوك المستثمر الجديد */
     .investor-card { background-color: #161b22; border: 1px solid #d29922; border-radius: 12px; padding: 15px; margin-bottom: 15px; border-top: 4px solid #d29922; }
     .investor-title { color: #d29922; font-weight: bold; font-size: 18px; margin-bottom: 10px; display: block; border-bottom: 1px solid #30363d; padding-bottom: 5px; }
     .level-box { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #21262d; }
@@ -225,7 +226,7 @@ def analyze_stock(d_row):
         return None
 
 # ================== UI RENDERER ==================
-def render_stock_ui(res, show_chart=False):
+def render_stock_ui(res):
     st.markdown(f"""
     <div class='stock-header'>
         {res['name']} - {res['desc']}
@@ -242,15 +243,9 @@ def render_stock_ui(res, show_chart=False):
         🤖 <b>Smart Score:</b> {smart_score}/100 <br>
         🎯 <b>التقييم الذكي:</b> {smart_text}
     </div>
-    "", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-    # 📊 Chart Toggle (Fast Mode)
-    if show_chart:
-        st.components.v1.html(f"""
-        <iframe src="https://s.tradingview.com/widgetembed/?symbol=EGX:{res['name']}&interval=60"
-        width="100%" height="400"></iframe>
-        """, height=400)
-
+    
     tab_analysis, tab_management, tab_scenario = st.tabs([
         "📊 التحليل الفني",
         "📉 إدارة المخاطر والسيولة",
@@ -288,10 +283,10 @@ def render_stock_ui(res, show_chart=False):
         with c3: st.caption(f"🧠 {rr_desc}")
         with c4: st.caption(f"📈 حالة الزخم: {rsi_label}")
 
-        # 🏛️ [بلوك المستثمر الجديد]
+        #  [بلوك المستثمر الجديد]
         st.markdown(f"""
         <div class='investor-card'>
-            <span class='investor-title'>🏛️ بيانات استرشادية (للمستثمر طويل الأجل)</span>
+            <span class='investor-title'> بيانات استرشادية (للمستثمر طويل الأجل)</span>
             <div class='level-box'><span>المقاومة التاريخية الثانية (R2):</span><span class='res-text'>{res['r2']:.2f}</span></div>
             <div class='level-box'><span>المقاومة التاريخية الأولى (R1):</span><span class='res-text'>{res['r1']:.2f}</span></div>
             <div style='text-align:center; color:#8b949e; font-size:11px; margin:5px 0;'>--- نقطة الارتكاز: {res['pp']:.2f} ---</div>
@@ -548,7 +543,7 @@ elif st.session_state.page == 'gold':
         an = analyze_stock(r)
         if an and classify_stock(an) == "gold":
             with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']} | RSI: {an['rsi']:.1f})"): 
-                render_stock_ui(an, show_chart=True)
+                render_stock_ui(an)
                 found = True
     if not found: st.info("لا توجد فرص ذهبية حالياً.")
 
@@ -562,9 +557,8 @@ elif st.session_state.page == 'scanner':
         if an and classify_stock(an) == "watchlist":
             results.append(an)
     results.sort(key=lambda x: (x['score'], x['rr']), reverse=True)
-    for i, an in enumerate(results[:15]):
-        with st.expander(f"{an['name']} | {an['signal']}"):
-            render_stock_ui(an, show_chart=(i < 2))
+    for an in results[:15]:
+        with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
 
 elif st.session_state.page == 'breakout':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -584,7 +578,7 @@ elif st.session_state.page == 'scalp':
         an = analyze_stock(r)
         if an and classify_stock(an) == "scalp":
             with st.expander(f"⚡ مضاربة: {an['name']} (RSI: {an['rsi']:.1f})"):
-                render_stock_ui(an, show_chart=True)
+                render_stock_ui(an)
                 found = True
     if not found:
         st.info("لا توجد مضاربات سريعة حالياً.")
