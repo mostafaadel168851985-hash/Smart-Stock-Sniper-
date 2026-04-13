@@ -226,8 +226,7 @@ def analyze_stock(d_row):
 
 # ================== UI RENDERER ==================
 def render_stock_ui(res):
-    st.markdown(f"<div class='stock-header'>{res['name']} - {res['desc']} <span class='score-tag'>Score: {res['score']}</span></div>)
-
+    st.markdown(f"<div class='stock-header'>{res['name']} - {res['desc']} <span class='score-tag'>Score: {res['score']}</span></div>")
     # ================== 🔥 SMART UI ==================
     smart_text, smart_type = smart_decision(res)
     smart_score = smart_score_pro(res)
