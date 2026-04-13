@@ -33,7 +33,6 @@ def record_trade(res, trade_type):
     trades = load_trades()
     today = datetime.now().strftime("%Y-%m-%d")
     
-    # التحقق من عدم التكرار
     for t in trades:
         if t.get('name') == res['name'] and t.get('date_recorded') == today:
             return
@@ -76,18 +75,15 @@ def update_all_trades(current_prices):
                 trade['last_price'] = current_price
                 trade['last_update'] = datetime.now().strftime("%Y-%m-%d %H:%M")
                 
-                # التحقق من دخول السعر في النطاق
                 if not trade.get('entry_hit', False):
                     entry_min = trade.get('entry_min', 0)
                     entry_max = trade.get('entry_max', 0)
                     if entry_min <= current_price <= entry_max:
                         trade['entry_hit'] = True
                 
-                # حساب Holding Time
                 recorded_date = datetime.strptime(trade['date_recorded'], "%Y-%m-%d").date()
                 trade['days_open'] = (today - recorded_date).days
                 
-                # تحديث الحالة والربح
                 target = trade.get('target', 0)
                 stop_loss = trade.get('stop_loss', 0)
                 target_pct = trade.get('target_pct', 0)
@@ -130,22 +126,18 @@ def get_performance_stats(trades):
     closed = hit_target + stopped_out
     success_rate = (hit_target / closed * 100) if closed > 0 else 0
     
-    # حساب العوائد
     completed_trades = [t for t in trades if t.get('profit_pct') is not None]
     total_return = sum(t.get('profit_pct', 0) for t in completed_trades)
     avg_return = total_return / len(completed_trades) if completed_trades else 0
     
     avg_rr = sum(t.get('rr', 0) for t in trades) / total if total > 0 else 0
     
-    # متوسط فترة الاحتفاظ
     closed_trades = [t for t in trades if t.get('status') in ['hit_target', 'stopped_out'] and t.get('days_open') is not None]
     avg_holding_days = sum(t.get('days_open', 0) for t in closed_trades) / len(closed_trades) if closed_trades else 0
     
-    # Entry Accuracy
     trades_with_entry = [t for t in trades if t.get('entry_hit', False)]
     entry_accuracy = (len(trades_with_entry) / total * 100) if total > 0 else 0
     
-    # إحصائيات حسب النوع
     top10_trades = [t for t in trades if t.get('trade_type') == 'top10']
     gold_trades = [t for t in trades if t.get('trade_type') == 'gold']
     
@@ -358,7 +350,7 @@ def render_mode_selector():
     """, unsafe_allow_html=True)
 
 # ================== DATA & ANALYSIS ENGINE ==================
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_all_data():
     """جلب البيانات من TradingView مع headers لتجنب الحظر"""
     url = "https://scanner.tradingview.com/egypt/scan"
@@ -382,10 +374,11 @@ def get_all_data():
         return []
 
 def fetch_single_stock(symbol):
+    """جلب بيانات سهم واحد - مع تصحيح match → equal"""
     url = "https://scanner.tradingview.com/egypt/scan"
     cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA20","SMA50","SMA200"]
     payload = {
-        "filter": [{"left": "name", "operation": "match", "right": symbol.upper()}],
+        "filter": [{"left": "name", "operation": "equal", "right": symbol.upper()}],  # ✅ match → equal
         "columns": cols,
         "range": [0, 1]
     }
@@ -798,7 +791,6 @@ elif st.session_state.page == 'performance':
     
     stats = get_performance_stats(trades)
     
-    # عرض الإحصائيات
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("📊 إجمالي الصفقات", stats['total'])
     col2.metric("✅ حققت الهدف", stats['hit_target'])
@@ -822,14 +814,12 @@ elif st.session_state.page == 'performance':
     </div>
     """, unsafe_allow_html=True)
     
-    # Insights
     if stats['gold_count'] >= 5:
         if stats['gold_success'] > stats['top10_success']:
             st.success("💡 Insight: الفرص الذهبية تتفوق على أفضل 10 فرص!")
         elif stats['top10_success'] > stats['gold_success']:
             st.info("💡 Insight: أفضل 10 فرص تتفوق على الفرص الذهبية!")
     
-    # الفلتر
     st.markdown("---")
     st.markdown("### 📋 تفاصيل الصفقات")
     
@@ -943,8 +933,18 @@ elif st.session_state.page == 'analyze':
     render_mode_selector()
     sym = st.text_input("رمز السهم").upper().strip()
     if sym:
-        data = fetch_single_stock(sym)
-        if data:
-            res = analyze_stock(data[0])
-            if res: render_stock_ui(res)
-        else: st.error("الرمز غير متوفر.")
+        with st.spinner("🔍 جاري تحليل السهم..."):
+            data = fetch_single_stock(sym)
+            
+            if not data:
+                st.error("❌ لم يتم العثور على السهم أو API لم يرجع بيانات")
+                st.info("💡 تأكد من كتابة الرمز بشكل صحيح (مثل: COMI, EFIH, TMGH)")
+            else:
+                res = analyze_stock(data[0])
+                
+                if not res:
+                    st.warning("⚠️ تم جلب البيانات لكن التحليل فشل")
+                    with st.expander("🔧 بيانات debug"):
+                        st.json(data[0])
+                else:
+                    render_stock_ui(res)
