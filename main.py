@@ -304,45 +304,21 @@ def get_rsi_signal(rsi):
     else: return "🔴 تشبع شراء خطر", "overbought"
 
 def classify_stock(res):
-    """تصنيف السهم بعد تشديد الشروط"""
     rr = res.get('rr', 0)
     ratio = res.get('ratio', 0)
     t_short = res.get('t_short', 'هابط')
     t_med = res.get('t_med', 'هابط')
     rsi = res.get('rsi', 50)
     mode = st.session_state.mode
-    
-    # تحديد حدود RR حسب نمط التداول
-    if "محافظ" in mode:
-        rr_min = 1.7
-        rr_gold = 2.2
-    elif "هجومي" in mode:
-        rr_min = 1.0
-        rr_gold = 1.8
-    else:  # متوازن
-        rr_min = 1.3
-        rr_gold = 2.0
-    
-    if ratio == 0:
-        return "weak"
-    
-    # 🔥 الذهبي - شديد (نادر)
-    if rr >= rr_gold and t_short == "صاعد" and t_med == "صاعد" and 45 < rsi < 60:
-        return "gold"
-    
-    # 🚀 اختراق قوي
-    if ratio > 2.5 and t_short == "صاعد" and rsi < 70:
-        return "breakout"
-    
-    # ⚡ مضاربة سريعة
-    if ratio > 1.8 and rr >= 1.3 and rsi < 75:
-        return "scalp"
-    
-    # 📋 قائمة مراقبة
-    if rr >= rr_min and ratio > 1.2:
-        return "watchlist"
-    
-    return "weak"
+    if "محافظ" in mode: rr_min = 1.7
+    elif "هجومي" in mode: rr_min = 1.0
+    else: rr_min = 1.3
+    if ratio == 0: return "weak"
+    if rr >= 1.5 and t_short == "صاعد" and 50 < rsi < 70: return "gold"
+    elif ratio > 2 and t_short == "صاعد" and rsi < 75: return "breakout"
+    elif ratio > 1.5 and rr >= 1.2 and rsi < 80: return "scalp"
+    elif rr >= rr_min and ratio > 1.2: return "watchlist"
+    else: return "weak"
 
 # ================== SESSION STATE ==================
 if "mode" not in st.session_state:
@@ -804,6 +780,7 @@ elif st.session_state.page == 'avg':
         avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
         st.success(f"📊 متوسط السعر الجديد: {avg:.2f}")
 
+# 🆕 صفحة دليل المؤشرات
 elif st.session_state.page == 'guide':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     st.title("📖 دليل المؤشرات الفنية")
