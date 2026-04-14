@@ -3,6 +3,8 @@ import requests
 from datetime import datetime, date
 import json
 import os
+from fpdf import FPDF
+import base64
 
 # ================== 📁 PERFORMANCE TRACKING ==================
 TRADES_FILE = "trades_data.json"
@@ -154,6 +156,107 @@ def get_performance_stats(trades):
         'top10_return': round(top10_return, 1), 'gold_return': round(gold_return, 1),
         'avg_holding_days': round(avg_holding_days, 1), 'entry_accuracy': round(entry_accuracy, 1)
     }
+
+
+# ================== 📄 PDF GENERATION ==================
+def generate_pdf_report(all_results, top_results, gold_results, scalp_results):
+    """توليد تقرير PDF بالفرص"""
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # عنوان رئيسي
+    pdf.set_font("Arial", "B", 20)
+    pdf.cell(0, 10, "EGX Sniper Pro - تقرير الفرص", ln=True, align="C")
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(0, 5, f"تاريخ التقرير: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align="C")
+    pdf.ln(10)
+    
+    # أفضل 10 فرص
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 8, "🏆 أفضل 10 فرص حسب Smart Score", ln=True)
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(40, 8, "السهم", 1)
+    pdf.cell(30, 8, "السعر", 1)
+    pdf.cell(25, 8, "Smart Score", 1)
+    pdf.cell(25, 8, "RR", 1)
+    pdf.cell(30, 8, "RSI", 1)
+    pdf.cell(40, 8, "الهدف", 1)
+    pdf.ln()
+    
+    pdf.set_font("Arial", "", 9)
+    for an in top_results[:10]:
+        pdf.cell(40, 7, an['name'][:20], 1)
+        pdf.cell(30, 7, f"{an['p']:.2f}", 1)
+        pdf.cell(25, 7, str(an['smart_score']), 1)
+        pdf.cell(25, 7, str(an['rr']), 1)
+        pdf.cell(30, 7, f"{an['rsi']:.1f}", 1)
+        pdf.cell(40, 7, f"{an['target']:.2f}", 1)
+        pdf.ln()
+    
+    pdf.ln(10)
+    
+    # الفرص الذهبية
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 8, "💎 الفرص الذهبية", ln=True)
+    if gold_results:
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(50, 8, "السهم", 1)
+        pdf.cell(30, 8, "السعر", 1)
+        pdf.cell(25, 8, "RR", 1)
+        pdf.cell(30, 8, "RSI", 1)
+        pdf.cell(40, 8, "الهدف", 1)
+        pdf.ln()
+        
+        pdf.set_font("Arial", "", 9)
+        for an in gold_results:
+            pdf.cell(50, 7, an['name'][:20], 1)
+            pdf.cell(30, 7, f"{an['p']:.2f}", 1)
+            pdf.cell(25, 7, str(an['rr']), 1)
+            pdf.cell(30, 7, f"{an['rsi']:.1f}", 1)
+            pdf.cell(40, 7, f"{an['target']:.2f}", 1)
+            pdf.ln()
+    else:
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(0, 8, "لا توجد فرص ذهبية حالياً", ln=True)
+    
+    pdf.ln(10)
+    
+    # المضاربات السريعة
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 8, "⚡ مضاربات سريعة", ln=True)
+    if scalp_results:
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(50, 8, "السهم", 1)
+        pdf.cell(30, 8, "السعر", 1)
+        pdf.cell(25, 8, "RR", 1)
+        pdf.cell(30, 8, "RSI", 1)
+        pdf.cell(40, 8, "الهدف", 1)
+        pdf.ln()
+        
+        pdf.set_font("Arial", "", 9)
+        for an in scalp_results:
+            pdf.cell(50, 7, an['name'][:20], 1)
+            pdf.cell(30, 7, f"{an['p']:.2f}", 1)
+            pdf.cell(25, 7, str(an['rr']), 1)
+            pdf.cell(30, 7, f"{an['rsi']:.1f}", 1)
+            pdf.cell(40, 7, f"{an['target']:.2f}", 1)
+            pdf.ln()
+    else:
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(0, 8, "لا توجد مضاربات سريعة حالياً", ln=True)
+    
+    # تذييل
+    pdf.ln(10)
+    pdf.set_font("Arial", "I", 8)
+    pdf.cell(0, 5, "تقرير تلقائي من EGX Sniper Pro - هذا التقرير لأغراض تعليمية فقط", ln=True, align="C")
+    
+    return pdf.output(dest='S').encode('latin1')
+
+def get_download_link(pdf_bytes, filename):
+    """إنشاء رابط تحميل PDF"""
+    b64 = base64.b64encode(pdf_bytes).decode()
+    href = f'<a href="data:application/octet-stream;base64,{b64}" download="{filename}">📥 اضغط لتحميل التقرير</a>'
+    return href
 
 
 # ================== 🔥 SMART ADDITIONS ==================
@@ -767,6 +870,28 @@ if st.session_state.page == 'home':
             get_fresh_data()
             st.success("✅ تم تحديث البيانات!")
             st.rerun()
+    
+    # 🆕 زر تحميل PDF
+    if st.session_state.all_results:
+        st.markdown("---")
+        st.markdown("### 📄 تقارير يومية")
+        
+        # تجهيز البيانات للتقرير
+        top_results = get_top_ranked(st.session_state.all_results, limit=10)
+        gold_results = [an for an in st.session_state.all_results if classify_stock(an) == "gold"]
+        scalp_results = [an for an in st.session_state.all_results if classify_stock(an) == "scalp"]
+        
+        if st.button("📥 تحميل تقرير PDF (أفضل 10 + ذهب + مضاربات)"):
+            with st.spinner("جاري إنشاء التقرير..."):
+                pdf_bytes = generate_pdf_report(st.session_state.all_results, top_results, gold_results, scalp_results)
+                st.download_button(
+                    label="📄 تحميل التقرير",
+                    data=pdf_bytes,
+                    file_name=f"EGX_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                    mime="application/pdf"
+                )
+    else:
+        st.info("⚠️ لا توجد بيانات لعمل تقرير. اضغط على 'تحديث البيانات' أولاً.")
 
 elif st.session_state.page == 'avg':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -780,7 +905,6 @@ elif st.session_state.page == 'avg':
         avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
         st.success(f"📊 متوسط السعر الجديد: {avg:.2f}")
 
-# 🆕 صفحة دليل المؤشرات
 elif st.session_state.page == 'guide':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     st.title("📖 دليل المؤشرات الفنية")
