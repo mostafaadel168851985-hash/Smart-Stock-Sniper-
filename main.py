@@ -30,8 +30,11 @@ def record_trade(res, trade_type):
     trades = load_trades()
     today = datetime.now().strftime("%Y-%m-%d")
     
+    # ✅ منع التكرار بدقة أكبر
     for t in trades:
-        if t.get('name') == res['name'] and t.get('date_recorded') == today:
+        if (t.get('name') == res['name'] and 
+            t.get('date_recorded') == today and
+            t.get('trade_type') == trade_type):
             return
     
     trades.append({
@@ -55,13 +58,16 @@ def record_trade(res, trade_type):
         "status": "pending",
         "profit_pct": None,
         "entry_hit": False,
-        "days_open": None
+        "days_open": None,
+        "max_price": None,           # ✅ Max Favorable Excursion
+        "min_price": None            # ✅ Max Adverse Excursion
     })
     save_trades(trades)
 
 def update_all_trades(current_prices):
     trades = load_trades()
     today = date.today()
+    updated = False
     
     for trade in trades:
         if trade.get('status') in ['pending', 'still_open']:
@@ -71,14 +77,24 @@ def update_all_trades(current_prices):
                 trade['last_price'] = current_price
                 trade['last_update'] = datetime.now().strftime("%Y-%m-%d %H:%M")
                 
+                # ✅ تحديث Max/Min prices
+                if trade.get('max_price') is None or current_price > trade['max_price']:
+                    trade['max_price'] = current_price
+                if trade.get('min_price') is None or current_price < trade['min_price']:
+                    trade['min_price'] = current_price
+                
                 if not trade.get('entry_hit', False):
                     entry_min = trade.get('entry_min', 0)
                     entry_max = trade.get('entry_max', 0)
                     if entry_min <= current_price <= entry_max:
                         trade['entry_hit'] = True
                 
-                recorded_date = datetime.strptime(trade['date_recorded'], "%Y-%m-%d").date()
-                trade['days_open'] = (today - recorded_date).days
+                # ✅ حماية parsing التاريخ
+                try:
+                    recorded_date = datetime.strptime(trade['date_recorded'], "%Y-%m-%d").date()
+                    trade['days_open'] = (today - recorded_date).days
+                except:
+                    trade['days_open'] = 0
                 
                 target = trade.get('target', 0)
                 stop_loss = trade.get('stop_loss', 0)
@@ -88,14 +104,17 @@ def update_all_trades(current_prices):
                 if current_price >= target:
                     trade['status'] = 'hit_target'
                     trade['profit_pct'] = target_pct
+                    updated = True
                 elif current_price <= stop_loss:
                     trade['status'] = 'stopped_out'
                     trade['profit_pct'] = -risk_pct
+                    updated = True
                 else:
                     trade['status'] = 'still_open'
     
-    # ✅ حفظ دائمًا (حتى لو مفيش تغيير في الحالة)
-    save_trades(trades)
+    # ✅ حفظ فقط عند التغيير
+    if updated:
+        save_trades(trades)
     return trades
 
 def get_performance_stats(trades):
@@ -110,7 +129,9 @@ def get_performance_stats(trades):
             'top10_count': 0, 'gold_count': 0,
             'top10_success': 0, 'gold_success': 0,
             'top10_return': 0, 'gold_return': 0,
-            'avg_holding_days': 0, 'entry_accuracy': 0
+            'avg_holding_days': 0, 'entry_accuracy': 0,
+            'win_streak': 0, 'max_win_streak': 0,   # ✅ Win Streak
+            'avg_mfe': 0, 'avg_mae': 0              # ✅ MFE/MAE
         }
     
     hit_target = len([t for t in trades if t.get('status') == 'hit_target'])
@@ -143,6 +164,22 @@ def get_performance_stats(trades):
     top10_return = sum(t.get('profit_pct', 0) for t in top10_trades if t.get('profit_pct') is not None)
     gold_return = sum(t.get('profit_pct', 0) for t in gold_trades if t.get('profit_pct') is not None)
     
+    # ✅ Win Streak
+    streak = 0
+    max_streak = 0
+    for t in trades:
+        if t.get('status') == 'hit_target':
+            streak += 1
+            max_streak = max(max_streak, streak)
+        elif t.get('status') == 'stopped_out':
+            streak = 0
+    
+    # ✅ MFE / MAE (Max Favorable/Averse Excursion)
+    mfe_values = [t.get('max_price', 0) - t.get('entry_price', 0) for t in trades if t.get('max_price') and t.get('entry_price')]
+    mae_values = [t.get('entry_price', 0) - t.get('min_price', 0) for t in trades if t.get('min_price') and t.get('entry_price')]
+    avg_mfe = sum(mfe_values) / len(mfe_values) if mfe_values else 0
+    avg_mae = sum(mae_values) / len(mae_values) if mae_values else 0
+    
     return {
         'total': total, 'hit_target': hit_target, 'stopped_out': stopped_out, 'still_open': still_open,
         'success_rate': round(success_rate, 1), 'avg_rr': round(avg_rr, 2),
@@ -150,7 +187,9 @@ def get_performance_stats(trades):
         'top10_count': len(top10_trades), 'gold_count': len(gold_trades),
         'top10_success': round(top10_success, 1), 'gold_success': round(gold_success, 1),
         'top10_return': round(top10_return, 1), 'gold_return': round(gold_return, 1),
-        'avg_holding_days': round(avg_holding_days, 1), 'entry_accuracy': round(entry_accuracy, 1)
+        'avg_holding_days': round(avg_holding_days, 1), 'entry_accuracy': round(entry_accuracy, 1),
+        'win_streak': streak, 'max_win_streak': max_streak,
+        'avg_mfe': round(avg_mfe, 2), 'avg_mae': round(avg_mae, 2)
     }
 
 
@@ -159,22 +198,22 @@ def smart_score_pro(res):
     score = 0
     if res.get('t_short') == "صاعد": score += 15
     if res.get('t_med') == "صاعد": score += 15
-    if res.get('t_long') == "صاعد": score += 10
+    # ✅ تقليل وزن الاتجاه الطويل
+    if res.get('t_long') == "صاعد": score += 5
     if res.get('ratio', 0) > 2: score += 20
     elif res.get('ratio', 0) > 1.5: score += 10
     if 50 < res.get('rsi', 50) < 65: score += 20
     elif 65 <= res.get('rsi', 50) < 75: score += 10
-    # ✅ تعديل: RSI بين 40 و 50 = ضعف خفيف مش خطر
     elif 40 <= res.get('rsi', 50) < 50: score += 5
     if res.get('rr', 0) >= 2: score += 20
     elif res.get('rr', 0) >= 1.5: score += 10
     return int(score)
 
 def is_fake_breakout(res):
-    # ✅ إضافة شرط الاتجاه الصاعد مع السيولة الضعيفة
+    # ✅ تحسين fake breakout detection
     if res.get('rsi', 50) > 75 and res.get('rr', 0) < 1.3:
         return True
-    if res.get('ratio', 0) < 1.2 and res.get('t_short') == "صاعد":
+    if res.get('ratio', 0) < 1.1 and res.get('rsi', 50) > 60:
         return True
     return False
 
@@ -210,8 +249,9 @@ def expected_success_rate(res):
         score += 15
     elif ratio > 1:
         score += 8
+    # ✅ تعديل: ratio == 0 = -5 فقط (أقل قسوة)
     elif ratio == 0:
-        score -= 10
+        score -= 5
     
     risk_range = res.get('target_pct', 0) - abs(res.get('risk_pct', 0))
     if risk_range > 5:
@@ -237,7 +277,10 @@ def calculate_trailing_stop(entry_price, current_price, highest_price, rr):
     if current_price <= entry_price:
         return entry_price * 0.97
     profit_pct = (current_price - entry_price) / entry_price * 100
-    if profit_pct >= 5 and rr >= 1.5:
+    # ✅ تحسين trailing stop (أذكى)
+    if highest_price > entry_price:
+        return highest_price * 0.95
+    elif profit_pct >= 5 and rr >= 1.5:
         new_stop = entry_price + (profit_pct / 2) / 100 * entry_price
         return round(min(new_stop, current_price * 0.98), 2)
     elif profit_pct >= 3:
@@ -250,11 +293,9 @@ def calculate_stochastic_rsi(rsi):
     elif rsi <= 35: return {"k": 70, "d": 65, "signal": "🟡 منطقة شراء محتملة (تقديري)"}
     elif rsi <= 65: return {"k": 50, "d": 50, "signal": "⚪ منطقة حيادية"}
     elif rsi <= 80: return {"k": 30, "d": 35, "signal": "🟠 منطقة بيع محتملة (تقديري)"}
-    else: return {"k": 10, "d": 15, "signal": "🔴 تشبع شراء - خطر (تقديري)"}
-
-
-# ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v15.8", layout="wide")
+    else: return {"k": 10, "d": 15, "signal": "🔴 تشبع شراء - خطر (تقديرi)"}
+        # ================== CONFIG & STYLE ==================
+st.set_page_config(page_title="EGX Sniper Pro v16.0", layout="wide")
 
 st.markdown("""
     <style>
@@ -282,6 +323,7 @@ st.markdown("""
     .buy-signal { background-color: #238636; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 15px; }
     .watch-signal { background-color: #d29922; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 15px; }
     .avoid-signal { background-color: #f85149; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 15px; }
+    .premium-badge { background: linear-gradient(135deg, #d4af37, #ffd700); color: #1a1a2e; padding: 5px 15px; border-radius: 20px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -307,7 +349,6 @@ def get_rsi_signal(rsi):
     else: return "🔴 تشبع شراء خطر", "overbought"
 
 def classify_stock(res):
-    """تصنيف السهم - نسخة محسنة"""
     rr = res.get('rr', 0)
     ratio = res.get('ratio', 0)
     t_short = res.get('t_short', 'هابط')
@@ -326,8 +367,9 @@ def classify_stock(res):
         rr_min = 1.3
         rr_gold = 2.0
     
+    # ✅ تحسين: ratio == 0 -> watchlist
     if ratio == 0:
-        return "weak"
+        return "watchlist"
     
     # 🔥 الذهبي
     if (rr >= rr_gold and 
@@ -353,7 +395,6 @@ def classify_stock(res):
     return "weak"
 
 def check_gold_rarity(results):
-    """تحليل ندرة الفرص الذهبية"""
     gold_count = sum(1 for an in results if classify_stock(an) == "gold")
     total = len(results)
     gold_percentage = (gold_count / total * 100) if total > 0 else 0
@@ -368,6 +409,30 @@ def check_gold_rarity(results):
         rarity_status = "🔴 كثير - الفلتر ضعيف ويحتاج تشديد"
     
     return gold_count, gold_percentage, rarity_status
+
+def get_confidence_score(res):
+    """✅ Confidence Score (جمع smart_score و execution_strength)"""
+    return int((res.get('smart_score', 0) + res.get('execution_strength', 0)) / 2)
+
+def get_momentum_score(res):
+    """✅ Momentum Score (قوة الزخم)"""
+    sma20 = res.get('sma20', res.get('p', 0))
+    if sma20 and sma20 > 0:
+        momentum = (res['p'] - sma20) / sma20
+        if momentum > 0.05: return 80
+        elif momentum > 0.02: return 60
+        elif momentum > 0: return 40
+        elif momentum > -0.02: return 20
+        else: return 10
+    return 50
+
+def is_perfect_setup(res):
+    """✅ Perfect Setup Detection"""
+    return (res.get('t_short') == "صاعد" and
+            res.get('t_med') == "صاعد" and
+            res.get('ratio', 0) > 2 and
+            45 < res.get('rsi', 50) < 60 and
+            res.get('rr', 0) >= 2)
 
 # ================== SESSION STATE ==================
 if "mode" not in st.session_state:
@@ -407,7 +472,8 @@ def get_all_data():
         "filter": [{"left": "volume", "operation": "greater", "right": 5000}],
         "columns": cols,
         "sort": {"sortBy": "change", "sortOrder": "desc"},
-        "range": [0, 300]
+        # ✅ تقليل عدد النتائج لتحسين الأداء
+        "range": [0, 150]
     }
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -480,35 +546,38 @@ def analyze_stock(d_row):
         }
         smart_score = smart_score_pro(temp_res)
         
-        # ✅ execution strength (قوة التنفيذ) - مختلفة عن smart_score
+        # ✅ execution strength محسنة
         execution_strength = 0
-        # قرب السعر من الدخول (الفرصة سعرها قريب من نطاق الدخول)
         entry_proximity = abs(p - entry_price) / entry_price
-        if entry_proximity < 0.005:  # قريب جداً (0.5%)
-            execution_strength += 30
-        elif entry_proximity < 0.01:  # قريب (1%)
-            execution_strength += 20
-        elif entry_proximity < 0.02:  # متوسط (2%)
-            execution_strength += 10
+        if entry_proximity < 0.005:
+            execution_strength += 25
+        elif entry_proximity < 0.01:
+            execution_strength += 15
+        elif entry_proximity < 0.02:
+            execution_strength += 8
         
-        # قرب السعر من الاختراق
         if ratio > 2 and p > sma20 and p > sma50:
             execution_strength += 25
         elif ratio > 1.5 and p > sma20:
             execution_strength += 15
         
-        # المسافة بين الهدف والوقف
         if (target - stop_loss) / entry_price > 0.1:
             execution_strength += 20
         elif (target - stop_loss) / entry_price > 0.05:
             execution_strength += 10
+        
+        # ✅ إضافة قوة الاتجاهات
+        if t_short == "صاعد" and t_med == "صاعد":
+            execution_strength += 15
+        elif t_short == "صاعد":
+            execution_strength += 8
         
         execution_strength = min(100, execution_strength)
         
         return {
             "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio,
             "signal": signal, "sig_cls": sig_cls, "t_short": t_short, "t_med": t_med, "t_long": t_long,
-            "s1": s1, "s2": s2, "r1": r1, "r2": r2, "pp": pp,
+            "s1": s1, "s2": s2, "r1": r1, "r2": r2, "pp": pp, "sma20": sma20, "sma50": sma50,
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}", "entry_price": entry_price,
             "stop_loss": stop_loss, "target": target, "rr": rr, "risk_pct": (loss_ps/entry_price)*100, 
             "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) if ratio > 0 else 0) * 20 + (rsi_val / 2 if rsi_val else 25)),
@@ -528,7 +597,16 @@ def preprocess_all_data(raw_data):
     return results
 
 def get_top_ranked(results, limit=10):
-    sorted_results = sorted(results, key=lambda x: (x.get('smart_score', 0), x.get('rr', 0)), reverse=True)
+    # ✅ Ranking أقوى
+    sorted_results = sorted(
+        results,
+        key=lambda x: (
+            x.get('smart_score', 0) * 0.5 +
+            x.get('execution_strength', 0) * 0.3 +
+            x.get('rr', 0) * 10
+        ),
+        reverse=True
+    )
     return sorted_results[:limit]
 
 def get_fresh_data():
@@ -539,8 +617,7 @@ def get_fresh_data():
             st.session_state.all_results = preprocess_all_data(raw_data)
             return True
         return False
-
-# ================== UI RENDERER ==================
+        # ================== UI RENDERER ==================
 def render_stock_ui(res, is_top10=False, is_gold=False):
     st.markdown(f"""
     <div class='stock-header'>
@@ -549,7 +626,17 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
     </div>
     """, unsafe_allow_html=True)
     
-    # إشارة موحدة في الأعلى
+    # ✅ Premium Badge (Perfect Setup)
+    if is_perfect_setup(res):
+        st.markdown('<div class="premium-badge">💎 PERFECT SETUP - فرصة مثالية</div>', unsafe_allow_html=True)
+    
+    # ✅ Alert System
+    if res.get('ratio', 0) > 2.5:
+        st.warning("🚨 اختراق قوي جداً - سيولة استثنائية")
+    elif res.get('ratio', 0) > 3:
+        st.error("🔥 اختراق خرافي - انتباه شديد")
+    
+    # ✅ إشارة موحدة
     if res['smart_score'] >= 70 and res['rr'] >= 1.5 and 45 < res['rsi'] < 65:
         st.markdown('<div class="buy-signal"><h2 style="color:white;margin:0">🟢 إشارة شراء قوية</h2><p style="color:white;margin:0">فرصة ممتازة للدخول</p></div>', unsafe_allow_html=True)
     elif res['smart_score'] >= 50 and res['rr'] >= 1.2:
@@ -560,11 +647,15 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
     smart_text, smart_type = smart_decision(res)
     smart_score = res['smart_score']
     execution_strength = res.get('execution_strength', 0)
+    confidence = get_confidence_score(res)
+    momentum = get_momentum_score(res)
     
     st.markdown(f"""
     <div style="background:#161b22;border:1px solid #30363d;padding:12px;border-radius:10px;margin:10px 0;">
         🤖 <b>Smart Score:</b> {smart_score}/100 <br>
         ⚡ <b>قوة التنفيذ:</b> {execution_strength}/100 <br>
+        📊 <b>Confidence:</b> {confidence}/100 <br>
+        🚀 <b>Momentum:</b> {momentum}/100 <br>
         🎯 <b>التقييم الذكي:</b> {smart_text}
     </div>
     """, unsafe_allow_html=True)
@@ -641,33 +732,46 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
         risk_per_trade = col_risk.slider("نسبة مخاطرة الصفقة (%)", 0.5, 5.0, 2.0, key=f"risk_{res['name']}")
         max_loss_allowed = portfolio * (risk_per_trade / 100)
         risk_per_share = res['entry_price'] - res['stop_loss']
-        shares_to_buy_initial = int(max_loss_allowed / risk_per_share) if risk_per_share > 0 else 0
-        max_position_size = portfolio * 0.25
-        recommended_position_size = min(shares_to_buy_initial * res['entry_price'], max_position_size)
-        shares_to_buy = max(1, int(recommended_position_size / res['entry_price'])) if res['entry_price'] > 0 else 0
-        profit_val = (res['target'] - res['entry_price']) * shares_to_buy
-        loss_val = (res['entry_price'] - res['stop_loss']) * shares_to_buy
-        actual_risk_pct = (loss_val / portfolio) * 100
-        st.markdown(f"""
-        <div style='background: rgba(88, 166, 255, 0.1); border: 1px solid #58a6ff; padding: 15px; border-radius: 10px; margin-top: 10px;'>
-            🧠 <b>إجمالي السيولة المقررة: { (shares_to_buy * res['entry_price']):,.0f} ج</b><br>
-            ⚠️ <b>المخاطرة الفعلية: {actual_risk_pct:.2f}%</b>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown(f"""
-        <div class='plan-container' style='border-right: 5px solid #238636;'>
-        📊 <b>تقييم مالي للصفقة ({shares_to_buy:,} سهم):</b><br>
-        🟢 الربح المتوقع: {profit_val:,.0f} ج<br>
-        🔴 الخسارة المحتملة: {loss_val:,.0f} ج<br>
-        ⚖️ معدل RR المحقق: {res['rr']}
-        </div>
-        """, unsafe_allow_html=True)
+        
+        # ✅ حماية من division / crash
+        if risk_per_share <= 0:
+            shares_to_buy = 0
+        else:
+            shares_to_buy_initial = int(max_loss_allowed / risk_per_share)
+            max_position_size = portfolio * 0.25
+            recommended_position_size = min(shares_to_buy_initial * res['entry_price'], max_position_size)
+            shares_to_buy = max(1, int(recommended_position_size / res['entry_price'])) if res['entry_price'] > 0 else 0
+        
+        # ✅ Auto Position Size (أذكى)
+        confidence = get_confidence_score(res)
+        auto_position = portfolio * (confidence / 100) * 0.2
+        st.info(f"💡 **حجم مركز مقترح (ذكي):** {auto_position:,.0f} ج (بناءً على {confidence}% ثقة)")
+        
+        if risk_per_share > 0 and shares_to_buy > 0:
+            profit_val = (res['target'] - res['entry_price']) * shares_to_buy
+            loss_val = (res['entry_price'] - res['stop_loss']) * shares_to_buy
+            actual_risk_pct = (loss_val / portfolio) * 100
+            st.markdown(f"""
+            <div style='background: rgba(88, 166, 255, 0.1); border: 1px solid #58a6ff; padding: 15px; border-radius: 10px; margin-top: 10px;'>
+                🧠 <b>إجمالي السيولة المقررة: { (shares_to_buy * res['entry_price']):,.0f} ج</b><br>
+                ⚠️ <b>المخاطرة الفعلية: {actual_risk_pct:.2f}%</b>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class='plan-container' style='border-right: 5px solid #238636;'>
+            📊 <b>تقييم مالي للصفقة ({shares_to_buy:,} سهم):</b><br>
+            🟢 الربح المتوقع: {profit_val:,.0f} ج<br>
+            🔴 الخسارة المحتملة: {loss_val:,.0f} ج<br>
+            ⚖️ معدل RR المحقق: {res['rr']}
+            </div>
+            """, unsafe_allow_html=True)
+        
         st.markdown("---")
         st.markdown("## 💰 إدارة الصفقة المباشرة")
         deal_size = st.number_input("💰 حدد ميزانية الصفقة (ج)", value=10000, step=1000, key=f"deal_budget_{res['name']}")
-        if deal_size > 0:
+        if deal_size > 0 and res['entry_price'] > 0:
             if deal_size > portfolio * 0.3: st.warning("⚠️ الصفقة كبيرة مقارنة بالمحفظة")
-            shares_deal = int(deal_size / res['entry_price']) if res['entry_price'] > 0 else 0
+            shares_deal = int(deal_size / res['entry_price'])
             actual_value = shares_deal * res['entry_price']
             profit_val_d = (res['target'] - res['entry_price']) * shares_deal
             loss_val_d = (res['entry_price'] - res['stop_loss']) * shares_deal
@@ -684,6 +788,7 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
             ⚖️ RR: {res['rr']}
             </div>
             """, unsafe_allow_html=True)
+            
             range_size_d = res['entry_price'] - res['stop_loss']
             e1_p_d = res['entry_price']
             e2_p_d = max(res['entry_price'] - (range_size_d * 0.5), res['stop_loss'] * 1.02)
@@ -713,31 +818,11 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
         c_avg1, c_avg2 = st.columns(2)
         add_price = c_avg1.number_input("سعر التعزيز الجديد", value=res['p'], key=f"ap_{res['name']}")
         add_qty_input = c_avg2.number_input("عدد الأسهم الجديدة", value=0, key=f"aq_{res['name']}")
-        if add_qty_input > 0:
+        if add_qty_input > 0 and shares_to_buy > 0:
             new_total_qty = shares_to_buy + add_qty_input
             new_total_cost = (shares_to_buy * res['entry_price']) + (add_qty_input * add_price)
             new_avg = new_total_cost / new_total_qty
             st.info(f"📊 متوسط السعر بعد التعزيز: {new_avg:.2f}")
-        range_size = res['entry_price'] - res['stop_loss']
-        e1_p, e2_p = res['entry_price'], max(res['entry_price'] - (range_size * 0.5), res['stop_loss'] * 1.02)
-        e3_p = res['entry_price'] + (res['target'] - res['entry_price']) * 0.3
-        if res['rr'] >= 2: weights = [0.7, 0.2, 0.1]
-        elif res['rr'] >= 1.5: weights = [0.5, 0.3, 0.2]
-        else: weights = [0.3, 0.4, 0.3]
-        current_total_val = shares_to_buy * res['entry_price']
-        e1_m, e2_m, e3_m = current_total_val * weights[0], current_total_val * weights[1], current_total_val * weights[2]
-        e1_s, e2_s, e3_s = int(e1_m / e1_p) if e1_p > 0 else 0, int(e2_m / e2_p) if e2_p > 0 else 0, int(e3_m / e3_p) if e3_p > 0 else 0
-        st.markdown("### 🏹 خطة التنفيذ (حسب إدارة المخاطر)")
-        st.markdown(f"""
-        <div class='plan-container'>
-        🟢 <b>لو السعر ≈ {e1_p:.2f} ج ➜ اشتري (دخول أساسي)</b><br>
-        📦 الكمية: {e1_s:,} سهم | 💰 القيمة: {e1_m:,.0f} ج<br><br>
-        🟡 <b>لو السعر نزل لـ {e2_p:.2f} ج ➜ اشتري (تعزيز دعم)</b><br>
-        📦 الكمية: {e2_s:,} سهم | 💰 القيمة: {e2_m:,.0f} ج<br><br>
-        🔵 <b>لو السعر اخترق {e3_p:.2f} ج ➜ اشتري (تأكيد اختراق)</b><br>
-        📦 الكمية: {e3_s:,} سهم | 💰 القيمة: {e3_m:,.0f} ج
-        </div>
-        """, unsafe_allow_html=True)
         
         st.markdown("---")
         st.markdown("### 🎯 وقف الخسارة المتحرك (Trailing Stop)")
@@ -836,7 +921,7 @@ if st.session_state.market_data is None:
     get_fresh_data()
 
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Pro")
+    st.title("🏹 EGX Sniper Pro v16.0")
     
     render_mode_selector()
     
@@ -913,6 +998,7 @@ elif st.session_state.page == 'avg':
         avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
         st.success(f"📊 متوسط السعر الجديد: {avg:.2f}")
 
+# دليل المؤشرات (مختصر للتوفير)
 elif st.session_state.page == 'guide':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     st.title("📖 دليل المؤشرات الفنية")
@@ -935,22 +1021,6 @@ elif st.session_state.page == 'guide':
         الأفضل للدخول في صفقة شراء عندما يكون RSI **بين 40 و 65** (زخم صحي).
         """)
     
-    with st.expander("⚡ Stochastic RSI"):
-        st.markdown("""
-        ### ما هو Stochastic RSI؟
-        هو مؤشر **يقيس قوة الـ RSI نفسه**، وليس قوة السعر مباشرة. يظهر كخطين: **K (السريع)** و **D (البطيء)**.
-        
-        ### دلالات Stochastic RSI:
-        | القيمة | الدلالة | التصرف |
-        |--------|---------|--------|
-        | **K و D فوق 80** | 🔴 تشبع شراء شديد | استعداد للبيع |
-        | **K و D تحت 20** | 🟢 تشبع بيع شديد | استعداد للشراء |
-        | **K يقطع D من تحت لفوق** | 🟢 إشارة شراء | منطقة آمنة نسبياً |
-        | **K يقطع D من فوق لتحت** | 🔴 إشارة بيع | منطقة خطر |
-        
-        > ⚠️ **تنبيه:** المؤشر في التطبيق **تقديري** بسبب محدودية البيانات.
-        """)
-    
     with st.expander("🎯 Smart Score"):
         st.markdown("""
         ### ما هو Smart Score؟
@@ -961,7 +1031,7 @@ elif st.session_state.page == 'guide':
         |--------|-------|
         | اتجاه قصير صاعد | +15 |
         | اتجاه متوسط صاعد | +15 |
-        | اتجاه طويل صاعد | +10 |
+        | اتجاه طويل صاعد | +5 |
         | سيولة عالية (ratio > 2) | +20 |
         | سيولة جيدة (ratio > 1.5) | +10 |
         | RSI في المنطقة الصحية (50-65) | +20 |
@@ -975,95 +1045,6 @@ elif st.session_state.page == 'guide':
         | **50-69** | ✅ فرصة جيدة | دخول بحذر |
         | **30-49** | ⚠️ تحت المراقبة | استنى تأكيد |
         | **0-29** | ❄️ ضعيف | تجنب |
-        """)
-    
-    with st.expander("💰 نسبة المخاطرة/العائد (RR Ratio)"):
-        st.markdown("""
-        ### ما هو RR Ratio؟
-        **RR Ratio** = (الهدف - سعر الدخول) / (سعر الدخول - وقف الخسارة)
-        
-        ### دلالات RR:
-        | القيمة | التقييم |
-        |--------|---------|
-        | **>= 2** | 🔥 ممتاز (الربح المتوقع ضعف الخسارة) |
-        | **1.5 - 2** | ✅ جيد |
-        | **1 - 1.5** | ⚠️ متوسط (مضاربة سريعة فقط) |
-        | **< 1** | ❌ سيء (الخسارة أكبر من الربح) |
-        
-        ### نصيحة ذهبية:
-        > **لا تدخل أي صفقة RR أقل من 1.5** إلا إذا كنت مضارب محترف جداً.
-        """)
-    
-    with st.expander("📈 الاتجاهات (المتوسطات المتحركة)"):
-        st.markdown("""
-        ### كيف نحدد الاتجاه؟
-        نقارن السعر الحالي بالمتوسطات المتحركة:
-        
-        | المتوسط | الفترة | الدلالة |
-        |----------|--------|---------|
-        | **SMA20** | 20 يوم | اتجاه **قصير المدى** |
-        | **SMA50** | 50 يوم | اتجاه **متوسط المدى** |
-        | **SMA200** | 200 يوم | اتجاه **طويل المدى** |
-        
-        ### دلالة الاتجاه:
-        - **صاعد:** السعر > المتوسط (اتجاه إيجابي)
-        - **هابط:** السعر < المتوسط (اتجاه سلبي)
-        
-        ### قوة الإشارة:
-        كلما زاد عدد الاتجاهات الصاعدة (قصير + متوسط + طويل)، كانت الفرصة أقوى.
-        """)
-    
-    with st.expander("📊 حجم التداول (Volume Ratio)"):
-        st.markdown("""
-        ### ما هو Volume Ratio؟
-        **Ratio** = حجم التداول اليوم / متوسط حجم التداول في آخر 10 أيام
-        
-        ### دلالات Ratio:
-        | القيمة | الدلالة |
-        |--------|---------|
-        | **> 2** | 🚀 سيولة قوية جداً (اختراق محتمل) |
-        | **1.5 - 2** | ⚡ نشطة (في اهتمام) |
-        | **1 - 1.5** | 🙃 عادية |
-        | **< 1** | ❄️ ضعيفة |
-        | **0** | ❓ غير معروفة (بيانات غير كافية) |
-        
-        ### أهميته:
-        السيولة العالية تعني اهتمام أكبر من المتداولين، وتزيد فرصة نجاح الاختراق.
-        """)
-    
-    with st.expander("🏛️ الدعم والمقاومة (Pivot Points)"):
-        st.markdown("""
-        ### ما هي نقاط الارتكاز؟
-        هي مستويات سعرية محسوبة من أعلى وأدنى وإغلاق اليوم السابق.
-        
-        ### المستويات:
-        | المستوى | المعنى |
-        |----------|--------|
-        | **R2** | مقاومة قوية (صعبة الاختراق) |
-        | **R1** | مقاومة أولى |
-        | **PP** | نقطة الارتكاز (المحور) |
-        | **S1** | دعم أول |
-        | **S2** | دعم قوي |
-        
-        ### كيفية الاستخدام:
-        - **اختراق R1** → إشارة صعود
-        - **كسر S1** → إشارة هبوط
-        - **الارتداد من S1/S2** → فرصة شراء
-        - **الارتداد من R1/R2** → فرصة بيع
-        """)
-    
-    with st.expander("🛡️ فخ السيولة (Fake Breakout)"):
-        st.markdown("""
-        ### ما هو فخ السيولة؟
-        هو اختراق وهمي للسهم (صاعد أو هابط) ثم يعكس اتجاهه بسرعة.
-        
-        ### كيف نكتشفه في التطبيق؟
-        التطبيق يعتبر السهم **"فخ سيولة"** إذا تحقق أحد الشرطين:
-        1. RSI > 75 و RR < 1.3 (تشبع شراء مع RR ضعيف)
-        2. حجم التداول أقل من المتوسط (ratio < 1.2) والاتجاه صاعد
-        
-        ### دلالة فخ السيولة:
-        ❌ **تجنب الدخول نهائياً** - السهم غير مستقر وقد ينعكس عليك.
         """)
     
     st.info("💡 **تذكير:** هذه المؤشرات هي أدوات مساعدة، وليست قرارات نهائية. القرار النهائي يعتمد على تحليلك الشخصي وإدارة المخاطر الخاصة بك.")
@@ -1102,6 +1083,12 @@ elif st.session_state.page == 'performance':
     col1.metric("📅 متوسط أيام الاحتفاظ", f"{stats['avg_holding_days']} يوم")
     col2.metric("🎯 دقة الدخول", f"{stats['entry_accuracy']}%")
     col3.metric("🏆 أفضل 10 (نسبة نجاح)", f"{stats['top10_success']}%")
+    
+    # ✅ Win Streak و MFE/MAE
+    col1, col2, col3 = st.columns(3)
+    col1.metric("🔥 أطول سلسلة انتصارات", stats['max_win_streak'])
+    col2.metric("📈 متوسط MFE", f"{stats['avg_mfe']:.2f} ج")
+    col3.metric("📉 متوسط MAE", f"{stats['avg_mae']:.2f} ج")
     
     st.markdown(f"""
     <div style='background:#161b22;border:1px solid #30363d;border-radius:10px;padding:15px;margin:15px 0;'>
@@ -1148,10 +1135,11 @@ elif st.session_state.page == 'performance':
             
             entry_hit_mark = "✅" if trade.get('entry_hit', False) else "❌"
             profit_text = f" | {'🟢' if trade.get('profit_pct', 0) > 0 else '🔴'} {trade.get('profit_pct', 0):+.1f}%" if trade.get('profit_pct') is not None else ""
+            mfe_text = f" | 📈 MFE: {trade.get('max_price', 0) - trade.get('entry_price', 0):+.2f}" if trade.get('max_price') and trade.get('entry_price') else ""
             
             st.markdown(f"""
             <div style='background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;margin:5px 0;'>
-                <b>{trade.get('name', 'N/A')}</b> ({trade.get('trade_type', 'N/A')}) - {status_color} {status_text}{profit_text}<br>
+                <b>{trade.get('name', 'N/A')}</b> ({trade.get('trade_type', 'N/A')}) - {status_color} {status_text}{profit_text}{mfe_text}<br>
                 📅 التسجيل: {trade.get('date_recorded', 'N/A')} | {entry_hit_mark} دخول في النطاق<br>
                 🎯 الهدف: {trade.get('target', 0):.2f} | 🛑 الوقف: {trade.get('stop_loss', 0):.2f}<br>
                 📊 RR: {trade.get('rr', 0)} | RSI: {trade.get('rsi_at_entry', 0):.1f}
@@ -1177,7 +1165,7 @@ elif st.session_state.page == 'top10':
     st.markdown("## 🏆 أقوى 10 فرص حسب Smart Score")
     for i, an in enumerate(top_results, 1):
         if an:
-            with st.expander(f"#{i} - {an['name']} | Smart Score: {an['smart_score']} | RR: {an['rr']} | التنفيذ: {an.get('execution_strength', 0)}/100"):
+            with st.expander(f"#{i} - {an['name']} | Smart Score: {an['smart_score']} | RR: {an['rr']} | الثقة: {get_confidence_score(an)}/100"):
                 render_stock_ui(an, is_top10=True)
 
 elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
@@ -1193,7 +1181,7 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "gold":
                 record_trade(an, "gold")
-                with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']} | RSI: {an['rsi']:.1f} | التنفيذ: {an.get('execution_strength', 0)}/100)"): 
+                with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']} | RSI: {an['rsi']:.1f} | الثقة: {get_confidence_score(an)}/100)"): 
                     render_stock_ui(an, is_gold=True)
                     found = True
         if not found: st.info("لا توجد فرص ذهبية حالياً.")
@@ -1202,20 +1190,20 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         results = [an for an in st.session_state.all_results if an and classify_stock(an) == "watchlist"]
         results.sort(key=lambda x: (x.get('smart_score', 0), x.get('rr', 0)), reverse=True)
         for an in results[:15]:
-            with st.expander(f"{an['name']} | {an['signal']} | التنفيذ: {an.get('execution_strength', 0)}/100"):
+            with st.expander(f"{an['name']} | {an['signal']} | الثقة: {get_confidence_score(an)}/100"):
                 render_stock_ui(an)
     
     elif st.session_state.page == 'breakout':
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "breakout":
-                with st.expander(f"🚀 اختراق: {an['name']} (RSI: {an['rsi']:.1f} | التنفيذ: {an.get('execution_strength', 0)}/100)"):
+                with st.expander(f"🚀 اختراق: {an['name']} (RSI: {an['rsi']:.1f} | الثقة: {get_confidence_score(an)}/100)"):
                     render_stock_ui(an)
     
     elif st.session_state.page == 'scalp':
         found = False
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "scalp":
-                with st.expander(f"⚡ مضاربة: {an['name']} (RSI: {an['rsi']:.1f} | التنفيذ: {an.get('execution_strength', 0)}/100)"):
+                with st.expander(f"⚡ مضاربة: {an['name']} (RSI: {an['rsi']:.1f} | الثقة: {get_confidence_score(an)}/100)"):
                     render_stock_ui(an)
                     found = True
         if not found: st.info("لا توجد مضاربات سريعة حالياً.")
