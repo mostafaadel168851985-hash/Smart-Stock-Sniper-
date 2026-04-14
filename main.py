@@ -3,8 +3,14 @@ import requests
 from datetime import datetime, date
 import json
 import os
-from fpdf import FPDF
-import base64
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import io
 
 # ================== 📁 PERFORMANCE TRACKING ==================
 TRADES_FILE = "trades_data.json"
@@ -159,104 +165,110 @@ def get_performance_stats(trades):
 
 
 # ================== 📄 PDF GENERATION ==================
-def generate_pdf_report(all_results, top_results, gold_results, scalp_results):
-    """توليد تقرير PDF بالفرص"""
-    pdf = FPDF()
-    pdf.add_page()
+def generate_pdf_report(top_results, gold_results, scalp_results):
+    """توليد تقرير PDF بالفرص (يدعم العربية)"""
     
-    # عنوان رئيسي
-    pdf.set_font("Arial", "B", 20)
-    pdf.cell(0, 10, "EGX Sniper Pro - تقرير الفرص", ln=True, align="C")
-    pdf.set_font("Arial", "", 10)
-    pdf.cell(0, 5, f"تاريخ التقرير: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align="C")
-    pdf.ln(10)
+    # إنشاء ملف PDF في الذاكرة
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=1*cm, leftMargin=1*cm, topMargin=1*cm, bottomMargin=1*cm)
+    
+    # استخدام خط يدعم العربية (Helvetica كبديل)
+    font_name = 'Helvetica'
+    
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='ArabicTitle', fontName=font_name, fontSize=18, alignment=1, spaceAfter=20))
+    styles.add(ParagraphStyle(name='ArabicHeading', fontName=font_name, fontSize=14, alignment=0, spaceAfter=10, textColor=colors.HexColor('#238636')))
+    styles.add(ParagraphStyle(name='ArabicBody', fontName=font_name, fontSize=9, alignment=0))
+    styles.add(ParagraphStyle(name='ArabicCell', fontName=font_name, fontSize=8, alignment=1))
+    
+    elements = []
+    
+    # عنوان التقرير
+    elements.append(Paragraph("EGX Sniper Pro - تقرير الفرص", styles['ArabicTitle']))
+    elements.append(Paragraph(f"تاريخ التقرير: {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles['ArabicBody']))
+    elements.append(Spacer(1, 20))
     
     # أفضل 10 فرص
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 8, "🏆 أفضل 10 فرص حسب Smart Score", ln=True)
-    pdf.set_font("Arial", "B", 10)
-    pdf.cell(40, 8, "السهم", 1)
-    pdf.cell(30, 8, "السعر", 1)
-    pdf.cell(25, 8, "Smart Score", 1)
-    pdf.cell(25, 8, "RR", 1)
-    pdf.cell(30, 8, "RSI", 1)
-    pdf.cell(40, 8, "الهدف", 1)
-    pdf.ln()
+    elements.append(Paragraph("أفضل 10 فرص حسب Smart Score", styles['ArabicHeading']))
+    elements.append(Spacer(1, 10))
     
-    pdf.set_font("Arial", "", 9)
-    for an in top_results[:10]:
-        pdf.cell(40, 7, an['name'][:20], 1)
-        pdf.cell(30, 7, f"{an['p']:.2f}", 1)
-        pdf.cell(25, 7, str(an['smart_score']), 1)
-        pdf.cell(25, 7, str(an['rr']), 1)
-        pdf.cell(30, 7, f"{an['rsi']:.1f}", 1)
-        pdf.cell(40, 7, f"{an['target']:.2f}", 1)
-        pdf.ln()
+    if top_results:
+        top_data = [["#", "السهم", "السعر", "Smart", "RR", "RSI", "الهدف"]]
+        for i, an in enumerate(top_results[:10], 1):
+            top_data.append([
+                str(i), an['name'][:15], f"{an['p']:.2f}", str(an['smart_score']),
+                str(an['rr']), f"{an['rsi']:.1f}", f"{an['target']:.2f}"
+            ])
+        top_table = Table(top_data, colWidths=[0.8*cm, 3.5*cm, 1.5*cm, 1.2*cm, 1*cm, 1.2*cm, 1.8*cm])
+        top_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#238636')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, -1), font_name),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+        elements.append(top_table)
+    else:
+        elements.append(Paragraph("لا توجد بيانات كافية لأفضل 10 فرص", styles['ArabicBody']))
     
-    pdf.ln(10)
+    elements.append(Spacer(1, 20))
     
     # الفرص الذهبية
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 8, "💎 الفرص الذهبية", ln=True)
-    if gold_results:
-        pdf.set_font("Arial", "B", 10)
-        pdf.cell(50, 8, "السهم", 1)
-        pdf.cell(30, 8, "السعر", 1)
-        pdf.cell(25, 8, "RR", 1)
-        pdf.cell(30, 8, "RSI", 1)
-        pdf.cell(40, 8, "الهدف", 1)
-        pdf.ln()
-        
-        pdf.set_font("Arial", "", 9)
-        for an in gold_results:
-            pdf.cell(50, 7, an['name'][:20], 1)
-            pdf.cell(30, 7, f"{an['p']:.2f}", 1)
-            pdf.cell(25, 7, str(an['rr']), 1)
-            pdf.cell(30, 7, f"{an['rsi']:.1f}", 1)
-            pdf.cell(40, 7, f"{an['target']:.2f}", 1)
-            pdf.ln()
-    else:
-        pdf.set_font("Arial", "", 10)
-        pdf.cell(0, 8, "لا توجد فرص ذهبية حالياً", ln=True)
+    elements.append(Paragraph("الفرص الذهبية", styles['ArabicHeading']))
+    elements.append(Spacer(1, 10))
     
-    pdf.ln(10)
+    if gold_results:
+        gold_data = [["السهم", "السعر", "RR", "RSI", "الهدف"]]
+        for an in gold_results[:10]:
+            gold_data.append([an['name'][:15], f"{an['p']:.2f}", str(an['rr']), f"{an['rsi']:.1f}", f"{an['target']:.2f}"])
+        gold_table = Table(gold_data, colWidths=[3.5*cm, 1.5*cm, 1*cm, 1.2*cm, 1.8*cm])
+        gold_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#d29922')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, -1), font_name),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+        elements.append(gold_table)
+    else:
+        elements.append(Paragraph("لا توجد فرص ذهبية حاليا", styles['ArabicBody']))
+    
+    elements.append(Spacer(1, 20))
     
     # المضاربات السريعة
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 8, "⚡ مضاربات سريعة", ln=True)
+    elements.append(Paragraph("مضاربات سريعة", styles['ArabicHeading']))
+    elements.append(Spacer(1, 10))
+    
     if scalp_results:
-        pdf.set_font("Arial", "B", 10)
-        pdf.cell(50, 8, "السهم", 1)
-        pdf.cell(30, 8, "السعر", 1)
-        pdf.cell(25, 8, "RR", 1)
-        pdf.cell(30, 8, "RSI", 1)
-        pdf.cell(40, 8, "الهدف", 1)
-        pdf.ln()
-        
-        pdf.set_font("Arial", "", 9)
-        for an in scalp_results:
-            pdf.cell(50, 7, an['name'][:20], 1)
-            pdf.cell(30, 7, f"{an['p']:.2f}", 1)
-            pdf.cell(25, 7, str(an['rr']), 1)
-            pdf.cell(30, 7, f"{an['rsi']:.1f}", 1)
-            pdf.cell(40, 7, f"{an['target']:.2f}", 1)
-            pdf.ln()
+        scalp_data = [["السهم", "السعر", "RR", "RSI", "الهدف"]]
+        for an in scalp_results[:10]:
+            scalp_data.append([an['name'][:15], f"{an['p']:.2f}", str(an['rr']), f"{an['rsi']:.1f}", f"{an['target']:.2f}"])
+        scalp_table = Table(scalp_data, colWidths=[3.5*cm, 1.5*cm, 1*cm, 1.2*cm, 1.8*cm])
+        scalp_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#58a6ff')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, -1), font_name),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+        elements.append(scalp_table)
     else:
-        pdf.set_font("Arial", "", 10)
-        pdf.cell(0, 8, "لا توجد مضاربات سريعة حالياً", ln=True)
+        elements.append(Paragraph("لا توجد مضاربات سريعة حاليا", styles['ArabicBody']))
     
     # تذييل
-    pdf.ln(10)
-    pdf.set_font("Arial", "I", 8)
-    pdf.cell(0, 5, "تقرير تلقائي من EGX Sniper Pro - هذا التقرير لأغراض تعليمية فقط", ln=True, align="C")
+    elements.append(Spacer(1, 20))
+    elements.append(Paragraph("تقرير تلقائي من EGX Sniper Pro - هذا التقرير لأغراض تعليمية فقط", styles['ArabicBody']))
     
-    return pdf.output(dest='S').encode('latin1')
-
-def get_download_link(pdf_bytes, filename):
-    """إنشاء رابط تحميل PDF"""
-    b64 = base64.b64encode(pdf_bytes).decode()
-    href = f'<a href="data:application/octet-stream;base64,{b64}" download="{filename}">📥 اضغط لتحميل التقرير</a>'
-    return href
+    # بناء PDF
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 # ================== 🔥 SMART ADDITIONS ==================
@@ -871,7 +883,7 @@ if st.session_state.page == 'home':
             st.success("✅ تم تحديث البيانات!")
             st.rerun()
     
-    # 🆕 زر تحميل PDF
+    # زر تحميل PDF
     if st.session_state.all_results:
         st.markdown("---")
         st.markdown("### 📄 تقارير يومية")
@@ -883,7 +895,7 @@ if st.session_state.page == 'home':
         
         if st.button("📥 تحميل تقرير PDF (أفضل 10 + ذهب + مضاربات)"):
             with st.spinner("جاري إنشاء التقرير..."):
-                pdf_bytes = generate_pdf_report(st.session_state.all_results, top_results, gold_results, scalp_results)
+                pdf_bytes = generate_pdf_report(top_results, gold_results, scalp_results)
                 st.download_button(
                     label="📄 تحميل التقرير",
                     data=pdf_bytes,
