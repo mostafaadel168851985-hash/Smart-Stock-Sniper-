@@ -3,14 +3,6 @@ import requests
 from datetime import datetime, date
 import json
 import os
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import cm
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-import io
 
 # ================== 📁 PERFORMANCE TRACKING ==================
 TRADES_FILE = "trades_data.json"
@@ -164,113 +156,6 @@ def get_performance_stats(trades):
     }
 
 
-# ================== 📄 PDF GENERATION ==================
-def generate_pdf_report(top_results, gold_results, scalp_results):
-    """توليد تقرير PDF بالفرص (يدعم العربية)"""
-    
-    # إنشاء ملف PDF في الذاكرة
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=1*cm, leftMargin=1*cm, topMargin=1*cm, bottomMargin=1*cm)
-    
-    # استخدام خط يدعم العربية (Helvetica كبديل)
-    font_name = 'Helvetica'
-    
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name='ArabicTitle', fontName=font_name, fontSize=18, alignment=1, spaceAfter=20))
-    styles.add(ParagraphStyle(name='ArabicHeading', fontName=font_name, fontSize=14, alignment=0, spaceAfter=10, textColor=colors.HexColor('#238636')))
-    styles.add(ParagraphStyle(name='ArabicBody', fontName=font_name, fontSize=9, alignment=0))
-    styles.add(ParagraphStyle(name='ArabicCell', fontName=font_name, fontSize=8, alignment=1))
-    
-    elements = []
-    
-    # عنوان التقرير
-    elements.append(Paragraph("EGX Sniper Pro - تقرير الفرص", styles['ArabicTitle']))
-    elements.append(Paragraph(f"تاريخ التقرير: {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles['ArabicBody']))
-    elements.append(Spacer(1, 20))
-    
-    # أفضل 10 فرص
-    elements.append(Paragraph("أفضل 10 فرص حسب Smart Score", styles['ArabicHeading']))
-    elements.append(Spacer(1, 10))
-    
-    if top_results:
-        top_data = [["#", "السهم", "السعر", "Smart", "RR", "RSI", "الهدف"]]
-        for i, an in enumerate(top_results[:10], 1):
-            top_data.append([
-                str(i), an['name'][:15], f"{an['p']:.2f}", str(an['smart_score']),
-                str(an['rr']), f"{an['rsi']:.1f}", f"{an['target']:.2f}"
-            ])
-        top_table = Table(top_data, colWidths=[0.8*cm, 3.5*cm, 1.5*cm, 1.2*cm, 1*cm, 1.2*cm, 1.8*cm])
-        top_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#238636')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, -1), font_name),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ]))
-        elements.append(top_table)
-    else:
-        elements.append(Paragraph("لا توجد بيانات كافية لأفضل 10 فرص", styles['ArabicBody']))
-    
-    elements.append(Spacer(1, 20))
-    
-    # الفرص الذهبية
-    elements.append(Paragraph("الفرص الذهبية", styles['ArabicHeading']))
-    elements.append(Spacer(1, 10))
-    
-    if gold_results:
-        gold_data = [["السهم", "السعر", "RR", "RSI", "الهدف"]]
-        for an in gold_results[:10]:
-            gold_data.append([an['name'][:15], f"{an['p']:.2f}", str(an['rr']), f"{an['rsi']:.1f}", f"{an['target']:.2f}"])
-        gold_table = Table(gold_data, colWidths=[3.5*cm, 1.5*cm, 1*cm, 1.2*cm, 1.8*cm])
-        gold_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#d29922')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, -1), font_name),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ]))
-        elements.append(gold_table)
-    else:
-        elements.append(Paragraph("لا توجد فرص ذهبية حاليا", styles['ArabicBody']))
-    
-    elements.append(Spacer(1, 20))
-    
-    # المضاربات السريعة
-    elements.append(Paragraph("مضاربات سريعة", styles['ArabicHeading']))
-    elements.append(Spacer(1, 10))
-    
-    if scalp_results:
-        scalp_data = [["السهم", "السعر", "RR", "RSI", "الهدف"]]
-        for an in scalp_results[:10]:
-            scalp_data.append([an['name'][:15], f"{an['p']:.2f}", str(an['rr']), f"{an['rsi']:.1f}", f"{an['target']:.2f}"])
-        scalp_table = Table(scalp_data, colWidths=[3.5*cm, 1.5*cm, 1*cm, 1.2*cm, 1.8*cm])
-        scalp_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#58a6ff')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, -1), font_name),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ]))
-        elements.append(scalp_table)
-    else:
-        elements.append(Paragraph("لا توجد مضاربات سريعة حاليا", styles['ArabicBody']))
-    
-    # تذييل
-    elements.append(Spacer(1, 20))
-    elements.append(Paragraph("تقرير تلقائي من EGX Sniper Pro - هذا التقرير لأغراض تعليمية فقط", styles['ArabicBody']))
-    
-    # بناء PDF
-    doc.build(elements)
-    buffer.seek(0)
-    return buffer.getvalue()
-
-
 # ================== 🔥 SMART ADDITIONS ==================
 def smart_score_pro(res):
     score = 0
@@ -419,21 +304,45 @@ def get_rsi_signal(rsi):
     else: return "🔴 تشبع شراء خطر", "overbought"
 
 def classify_stock(res):
+    """تصنيف السهم بعد تشديد الشروط"""
     rr = res.get('rr', 0)
     ratio = res.get('ratio', 0)
     t_short = res.get('t_short', 'هابط')
     t_med = res.get('t_med', 'هابط')
     rsi = res.get('rsi', 50)
     mode = st.session_state.mode
-    if "محافظ" in mode: rr_min = 1.7
-    elif "هجومي" in mode: rr_min = 1.0
-    else: rr_min = 1.3
-    if ratio == 0: return "weak"
-    if rr >= 1.5 and t_short == "صاعد" and 50 < rsi < 70: return "gold"
-    elif ratio > 2 and t_short == "صاعد" and rsi < 75: return "breakout"
-    elif ratio > 1.5 and rr >= 1.2 and rsi < 80: return "scalp"
-    elif rr >= rr_min and ratio > 1.2: return "watchlist"
-    else: return "weak"
+    
+    # تحديد حدود RR حسب نمط التداول
+    if "محافظ" in mode:
+        rr_min = 1.7
+        rr_gold = 2.2
+    elif "هجومي" in mode:
+        rr_min = 1.0
+        rr_gold = 1.8
+    else:  # متوازن
+        rr_min = 1.3
+        rr_gold = 2.0
+    
+    if ratio == 0:
+        return "weak"
+    
+    # 🔥 الذهبي - شديد (نادر)
+    if rr >= rr_gold and t_short == "صاعد" and t_med == "صاعد" and 45 < rsi < 60:
+        return "gold"
+    
+    # 🚀 اختراق قوي
+    if ratio > 2.5 and t_short == "صاعد" and rsi < 70:
+        return "breakout"
+    
+    # ⚡ مضاربة سريعة
+    if ratio > 1.8 and rr >= 1.3 and rsi < 75:
+        return "scalp"
+    
+    # 📋 قائمة مراقبة
+    if rr >= rr_min and ratio > 1.2:
+        return "watchlist"
+    
+    return "weak"
 
 # ================== SESSION STATE ==================
 if "mode" not in st.session_state:
@@ -882,28 +791,6 @@ if st.session_state.page == 'home':
             get_fresh_data()
             st.success("✅ تم تحديث البيانات!")
             st.rerun()
-    
-    # زر تحميل PDF
-    if st.session_state.all_results:
-        st.markdown("---")
-        st.markdown("### 📄 تقارير يومية")
-        
-        # تجهيز البيانات للتقرير
-        top_results = get_top_ranked(st.session_state.all_results, limit=10)
-        gold_results = [an for an in st.session_state.all_results if classify_stock(an) == "gold"]
-        scalp_results = [an for an in st.session_state.all_results if classify_stock(an) == "scalp"]
-        
-        if st.button("📥 تحميل تقرير PDF (أفضل 10 + ذهب + مضاربات)"):
-            with st.spinner("جاري إنشاء التقرير..."):
-                pdf_bytes = generate_pdf_report(top_results, gold_results, scalp_results)
-                st.download_button(
-                    label="📄 تحميل التقرير",
-                    data=pdf_bytes,
-                    file_name=f"EGX_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                    mime="application/pdf"
-                )
-    else:
-        st.info("⚠️ لا توجد بيانات لعمل تقرير. اضغط على 'تحديث البيانات' أولاً.")
 
 elif st.session_state.page == 'avg':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
