@@ -47,6 +47,7 @@ def record_trade(res, trade_type):
         "rr": res['rr'],
         "rsi_at_entry": res['rsi'],
         "smart_score": res['smart_score'],
+        "trade_strength": res.get('trade_strength', 0),
         "trade_type": trade_type,
         "date_recorded": today,
         "last_price": None,
@@ -279,6 +280,9 @@ st.markdown("""
     .res-text { color: #f85149; font-weight: bold; }
     .alert-success { background-color: rgba(63, 185, 80, 0.2); border-right: 4px solid #3fb950; padding: 10px; border-radius: 8px; margin: 10px 0; }
     .alert-danger { background-color: rgba(248, 81, 73, 0.2); border-right: 4px solid #f85149; padding: 10px; border-radius: 8px; margin: 10px 0; }
+    .buy-signal { background-color: #238636; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 15px; }
+    .watch-signal { background-color: #d29922; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 15px; }
+    .avoid-signal { background-color: #f85149; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 15px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -304,21 +308,44 @@ def get_rsi_signal(rsi):
     else: return "🔴 تشبع شراء خطر", "overbought"
 
 def classify_stock(res):
+    """تصنيف السهم - نسخة محسنة (الذهب نادر)"""
     rr = res.get('rr', 0)
     ratio = res.get('ratio', 0)
     t_short = res.get('t_short', 'هابط')
     t_med = res.get('t_med', 'هابط')
     rsi = res.get('rsi', 50)
     mode = st.session_state.mode
-    if "محافظ" in mode: rr_min = 1.7
-    elif "هجومي" in mode: rr_min = 1.0
-    else: rr_min = 1.3
-    if ratio == 0: return "weak"
-    if rr >= 1.5 and t_short == "صاعد" and 50 < rsi < 70: return "gold"
-    elif ratio > 2 and t_short == "صاعد" and rsi < 75: return "breakout"
-    elif ratio > 1.5 and rr >= 1.2 and rsi < 80: return "scalp"
-    elif rr >= rr_min and ratio > 1.2: return "watchlist"
-    else: return "weak"
+    
+    if "محافظ" in mode:
+        rr_min = 1.7
+        rr_gold = 2.2
+    elif "هجومي" in mode:
+        rr_min = 1.0
+        rr_gold = 1.8
+    else:
+        rr_min = 1.3
+        rr_gold = 2.0
+    
+    if ratio == 0:
+        return "weak"
+    
+    # 🔥 الذهبي - نادر جداً
+    if rr >= rr_gold and t_short == "صاعد" and t_med == "صاعد" and 45 < rsi < 60:
+        return "gold"
+    
+    # 🚀 اختراق قوي
+    if ratio > 2.5 and t_short == "صاعد" and rsi < 70:
+        return "breakout"
+    
+    # ⚡ مضاربة سريعة
+    if ratio > 1.8 and rr >= 1.3 and rsi < 75:
+        return "scalp"
+    
+    # 📋 قائمة مراقبة
+    if rr >= rr_min and ratio > 1.2:
+        return "watchlist"
+    
+    return "weak"
 
 # ================== SESSION STATE ==================
 if "mode" not in st.session_state:
@@ -431,6 +458,17 @@ def analyze_stock(d_row):
         }
         smart_score = smart_score_pro(temp_res)
         
+        # ✅ حساب قوة الصفقة (trade_strength)
+        trade_strength = 0
+        if t_short == "صاعد": trade_strength += 20
+        if t_med == "صاعد": trade_strength += 15
+        if rr >= 2: trade_strength += 30
+        elif rr >= 1.5: trade_strength += 15
+        if 45 < rsi_val < 60: trade_strength += 20
+        elif 40 < rsi_val < 65: trade_strength += 10
+        if ratio > 2: trade_strength += 15
+        trade_strength = min(100, trade_strength)
+        
         return {
             "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio,
             "signal": signal, "sig_cls": sig_cls, "t_short": t_short, "t_med": t_med, "t_long": t_long,
@@ -438,7 +476,8 @@ def analyze_stock(d_row):
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}", "entry_price": entry_price,
             "stop_loss": stop_loss, "target": target, "rr": rr, "risk_pct": (loss_ps/entry_price)*100, 
             "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) if ratio > 0 else 0) * 20 + (rsi_val / 2 if rsi_val else 25)),
-            "smart_score": smart_score
+            "smart_score": smart_score,
+            "trade_strength": trade_strength
         }
     except Exception as e:
         print(f"Analysis Error: {e}")
@@ -473,11 +512,23 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
         <span class='score-tag'>Score: {res['score']}</span>
     </div>
     """, unsafe_allow_html=True)
+    
+    # ✅ إشارة موحدة في الأعلى
+    if res['smart_score'] >= 70 and res['rr'] >= 1.5 and 45 < res['rsi'] < 65:
+        st.markdown('<div class="buy-signal"><h2 style="color:white;margin:0">🟢 إشارة شراء قوية</h2><p style="color:white;margin:0">فرصة ممتازة للدخول</p></div>', unsafe_allow_html=True)
+    elif res['smart_score'] >= 50 and res['rr'] >= 1.2:
+        st.markdown('<div class="watch-signal"><h2 style="color:white;margin:0">🟡 مراقبة - دخول بحذر</h2><p style="color:white;margin:0">استنى تأكيد إضافي من الشارت</p></div>', unsafe_allow_html=True)
+    elif res['smart_score'] < 50 or res['rr'] < 1:
+        st.markdown('<div class="avoid-signal"><h2 style="color:white;margin:0">🔴 تجنب - فرصة ضعيفة</h2><p style="color:white;margin:0">لا يفضل الدخول في هذه الصفقة</p></div>', unsafe_allow_html=True)
+    
     smart_text, smart_type = smart_decision(res)
     smart_score = res['smart_score']
+    trade_strength = res.get('trade_strength', 0)
+    
     st.markdown(f"""
     <div style="background:#161b22;border:1px solid #30363d;padding:12px;border-radius:10px;margin:10px 0;">
         🤖 <b>Smart Score:</b> {smart_score}/100 <br>
+        💪 <b>قوة الصفقة:</b> {trade_strength}/100 <br>
         🎯 <b>التقييم الذكي:</b> {smart_text}
     </div>
     """, unsafe_allow_html=True)
@@ -749,24 +800,65 @@ if st.session_state.market_data is None:
     get_fresh_data()
 
 if st.session_state.page == 'home':
-    st.title("🏹 Sniper Elite v15.8 Pro")
+    st.title("🏹 EGX Sniper Pro")
+    
+    # ✅ وضع التداول
     render_mode_selector()
+    
+    # ✅ القسم الرئيسي (الأهم)
+    st.markdown("### 🎯 ابدأ هنا")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("📡 تحليل سهم محدد"): st.session_state.page = 'analyze'; st.rerun()
-        if st.button("🔭 كشاف السوق"): st.session_state.page = 'scanner'; st.rerun()
-        if st.button("🧮 حاسبة المتوسط"): st.session_state.page = 'avg'; st.rerun()
-    with col2:
-        if st.button("🚀 الاختراقات"): st.session_state.page = 'breakout'; st.rerun()
-        if st.button("💎 قنص الذهب"): st.session_state.page = 'gold'; st.rerun()
-        if st.button("⚡ مضاربات سريعة"): st.session_state.page = 'scalp'; st.rerun()
-        if st.button("🏆 أفضل 10 فرص"): st.session_state.page = 'top10'; st.rerun()
-        if st.button("📊 تقييم الأداء"): st.session_state.page = 'performance'; st.rerun()
-        if st.button("📖 دليل المؤشرات"): st.session_state.page = 'guide'; st.rerun()
-        if st.button("🔄 تحديث البيانات"): 
-            get_fresh_data()
-            st.success("✅ تم تحديث البيانات!")
+        if st.button("🔍 أفضل 10 فرص اليوم", use_container_width=True):
+            st.session_state.page = 'top10'
             st.rerun()
+        st.caption("أقوى الفرص بناءً على Smart Score")
+    with col2:
+        if st.button("📊 تحليل سهم", use_container_width=True):
+            st.session_state.page = 'analyze'
+            st.rerun()
+        st.caption("أدخل رمز السهم للتحليل المفصل")
+    
+    # ✅ أدوات متقدمة (في expander عشان الواجهة تكون نظيفة)
+    with st.expander("🛠️ أدوات متقدمة", expanded=False):
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            if st.button("💎 الفرص الذهبية"):
+                st.session_state.page = 'gold'
+                st.rerun()
+        with col2:
+            if st.button("🚀 الاختراقات"):
+                st.session_state.page = 'breakout'
+                st.rerun()
+        with col3:
+            if st.button("⚡ مضاربات سريعة"):
+                st.session_state.page = 'scalp'
+                st.rerun()
+        with col4:
+            if st.button("🔭 كشاف السوق"):
+                st.session_state.page = 'scanner'
+                st.rerun()
+    
+    # ✅ إدارة التطبيق
+    with st.expander("⚙️ إدارة التطبيق", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("📊 تقييم الأداء"):
+                st.session_state.page = 'performance'
+                st.rerun()
+        with col2:
+            if st.button("📖 دليل المؤشرات"):
+                st.session_state.page = 'guide'
+                st.rerun()
+        with col3:
+            if st.button("🔄 تحديث البيانات"):
+                get_fresh_data()
+                st.success("✅ تم تحديث البيانات!")
+                st.rerun()
+        with col1:
+            if st.button("🧮 حاسبة المتوسط"):
+                st.session_state.page = 'avg'
+                st.rerun()
 
 elif st.session_state.page == 'avg':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -780,7 +872,6 @@ elif st.session_state.page == 'avg':
         avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
         st.success(f"📊 متوسط السعر الجديد: {avg:.2f}")
 
-# 🆕 صفحة دليل المؤشرات
 elif st.session_state.page == 'guide':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     st.title("📖 دليل المؤشرات الفنية")
@@ -1045,7 +1136,7 @@ elif st.session_state.page == 'top10':
     st.markdown("## 🏆 أقوى 10 فرص حسب Smart Score")
     for i, an in enumerate(top_results, 1):
         if an:
-            with st.expander(f"#{i} - {an['name']} | Smart Score: {an['smart_score']} | RR: {an['rr']}"):
+            with st.expander(f"#{i} - {an['name']} | Smart Score: {an['smart_score']} | RR: {an['rr']} | القوة: {an.get('trade_strength', 0)}/100"):
                 render_stock_ui(an, is_top10=True)
 
 elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
@@ -1061,7 +1152,7 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "gold":
                 record_trade(an, "gold")
-                with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']} | RSI: {an['rsi']:.1f})"): 
+                with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']} | RSI: {an['rsi']:.1f} | القوة: {an.get('trade_strength', 0)}/100)"): 
                     render_stock_ui(an, is_gold=True)
                     found = True
         if not found: st.info("لا توجد فرص ذهبية حالياً.")
@@ -1070,18 +1161,20 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         results = [an for an in st.session_state.all_results if an and classify_stock(an) == "watchlist"]
         results.sort(key=lambda x: (x.get('smart_score', 0), x.get('rr', 0)), reverse=True)
         for an in results[:15]:
-            with st.expander(f"{an['name']} | {an['signal']}"): render_stock_ui(an)
+            with st.expander(f"{an['name']} | {an['signal']} | القوة: {an.get('trade_strength', 0)}/100"):
+                render_stock_ui(an)
     
     elif st.session_state.page == 'breakout':
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "breakout":
-                with st.expander(f"🚀 اختراق: {an['name']} (RSI: {an['rsi']:.1f})"): render_stock_ui(an)
+                with st.expander(f"🚀 اختراق: {an['name']} (RSI: {an['rsi']:.1f} | القوة: {an.get('trade_strength', 0)}/100)"):
+                    render_stock_ui(an)
     
     elif st.session_state.page == 'scalp':
         found = False
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "scalp":
-                with st.expander(f"⚡ مضاربة: {an['name']} (RSI: {an['rsi']:.1f})"):
+                with st.expander(f"⚡ مضاربة: {an['name']} (RSI: {an['rsi']:.1f} | القوة: {an.get('trade_strength', 0)}/100)"):
                     render_stock_ui(an)
                     found = True
         if not found: st.info("لا توجد مضاربات سريعة حالياً.")
