@@ -8,7 +8,6 @@ import os
 TRADES_FILE = "trades_data.json"
 
 def load_trades():
-    """تحميل الصفقات المسجلة من الملف"""
     if os.path.exists(TRADES_FILE):
         try:
             with open(TRADES_FILE, 'r', encoding='utf-8') as f:
@@ -21,7 +20,6 @@ def load_trades():
     return []
 
 def save_trades(trades):
-    """حفظ الصفقات في الملف"""
     try:
         with open(TRADES_FILE, 'w', encoding='utf-8') as f:
             json.dump(trades, f, ensure_ascii=False, indent=2)
@@ -29,7 +27,6 @@ def save_trades(trades):
         print(f"Error saving trades: {e}")
 
 def record_trade(res, trade_type):
-    """تسجيل صفقة جديدة (أفضل 10 فرص أو ذهبية فقط)"""
     trades = load_trades()
     today = datetime.now().strftime("%Y-%m-%d")
     
@@ -62,7 +59,6 @@ def record_trade(res, trade_type):
     save_trades(trades)
 
 def update_all_trades(current_prices):
-    """تحديث حالة كل الصفقات بناءً على الأسعار الحالية"""
     trades = load_trades()
     today = date.today()
     updated = False
@@ -105,7 +101,6 @@ def update_all_trades(current_prices):
     return trades
 
 def get_performance_stats(trades):
-    """حساب إحصائيات الأداء المتقدمة"""
     if not trades or not isinstance(trades, list):
         trades = []
     
@@ -331,7 +326,6 @@ if "mode" not in st.session_state:
 if 'page' not in st.session_state: 
     st.session_state.page = 'home'
 
-# ✅ تحسين: تخزين البيانات في session_state لتجنب API calls متكررة
 if "market_data" not in st.session_state:
     st.session_state.market_data = None
 if "all_results" not in st.session_state:
@@ -358,7 +352,6 @@ def render_mode_selector():
 # ================== DATA & ANALYSIS ENGINE ==================
 @st.cache_data(ttl=300, show_spinner=False)
 def get_all_data():
-    """جلب البيانات من TradingView مع headers لتجنب الحظر"""
     url = "https://scanner.tradingview.com/egypt/scan"
     cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA20","SMA50","SMA200"]
     payload = {
@@ -386,19 +379,15 @@ def get_all_data():
         return []
 
 def analyze_stock(d_row):
-    """تحليل بيانات السهم مع التحقق الكامل"""
     try:
         d = d_row.get('d', [])
         
-        # ✅ التحقق من طول البيانات
         if len(d) != 12:
-            st.warning(f"⚠️ بيانات ناقصة للسهم: {d[:3] if len(d) > 0 else 'empty'}")
             return None
         
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d
         if p is None: return None
         
-        # ✅ حل مشكلة description الفاضي
         if not desc or desc == "":
             desc = name
         
@@ -468,7 +457,6 @@ def get_top_ranked(results, limit=10):
     return sorted_results[:limit]
 
 def get_fresh_data():
-    """جلب بيانات جديدة وتخزينها في session_state"""
     with st.spinner("🔄 جاري تحميل بيانات السوق..."):
         raw_data = get_all_data()
         if raw_data:
@@ -757,7 +745,6 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
 
 
 # ================== NAVIGATION ==================
-# ✅ تحميل البيانات مرة واحدة فقط عند بدء التطبيق
 if st.session_state.market_data is None:
     get_fresh_data()
 
@@ -775,6 +762,7 @@ if st.session_state.page == 'home':
         if st.button("⚡ مضاربات سريعة"): st.session_state.page = 'scalp'; st.rerun()
         if st.button("🏆 أفضل 10 فرص"): st.session_state.page = 'top10'; st.rerun()
         if st.button("📊 تقييم الأداء"): st.session_state.page = 'performance'; st.rerun()
+        if st.button("📖 دليل المؤشرات"): st.session_state.page = 'guide'; st.rerun()
         if st.button("🔄 تحديث البيانات"): 
             get_fresh_data()
             st.success("✅ تم تحديث البيانات!")
@@ -791,6 +779,162 @@ elif st.session_state.page == 'avg':
     if (q1 + q2) > 0:
         avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
         st.success(f"📊 متوسط السعر الجديد: {avg:.2f}")
+
+# 🆕 صفحة دليل المؤشرات
+elif st.session_state.page == 'guide':
+    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
+    st.title("📖 دليل المؤشرات الفنية")
+    st.markdown("مرحباً بك في دليل المؤشرات! هنا شرح مبسط لكل مؤشر تستخدمه في التطبيق.")
+    
+    with st.expander("📊 مؤشر القوة النسبية (RSI)"):
+        st.markdown("""
+        ### ما هو RSI؟
+        **RSI** هو مؤشر يقيس سرعة وتغير حركة السعر. قيمته تتراوح بين 0 و 100.
+        
+        ### دلالات RSI:
+        | القيمة | الدلالة | التصرف المتوقع |
+        |--------|---------|----------------|
+        | **فوق 70** | 🔴 **تشبع شراء** | السهم ممكن ينزل (بيع/جني أرباح) |
+        | **تحت 30** | 🟢 **تشبع بيع** | السهم ممكن يصعد (فرصة شراء) |
+        | **بين 40 و 60** | 🟡 **منطقة محايدة** | استنى تأكيد إضافي |
+        | **بين 30 و 40 أو 60 و 70** | ⚪ **ضعيف** | زخم السهم ضعيف |
+        
+        ### نصيحة:
+        الأفضل للدخول في صفقة شراء عندما يكون RSI **بين 40 و 65** (زخم صحي).
+        """)
+    
+    with st.expander("⚡ Stochastic RSI"):
+        st.markdown("""
+        ### ما هو Stochastic RSI؟
+        هو مؤشر **يقيس قوة الـ RSI نفسه**، وليس قوة السعر مباشرة. يظهر كخطين: **K (السريع)** و **D (البطيء)**.
+        
+        ### دلالات Stochastic RSI:
+        | القيمة | الدلالة | التصرف |
+        |--------|---------|--------|
+        | **K و D فوق 80** | 🔴 تشبع شراء شديد | استعداد للبيع |
+        | **K و D تحت 20** | 🟢 تشبع بيع شديد | استعداد للشراء |
+        | **K يقطع D من تحت لفوق** | 🟢 إشارة شراء | منطقة آمنة نسبياً |
+        | **K يقطع D من فوق لتحت** | 🔴 إشارة بيع | منطقة خطر |
+        
+        > ⚠️ **تنبيه:** المؤشر في التطبيق **تقديري** بسبب محدودية البيانات.
+        """)
+    
+    with st.expander("🎯 Smart Score"):
+        st.markdown("""
+        ### ما هو Smart Score؟
+        **Smart Score** هو ابتكارنا الخاص في هذا التطبيق! هو درجة مركبة من 0 إلى 100 تقييم قوة السهم.
+        
+        ### كيفية حسابه:
+        | العامل | الوزن |
+        |--------|-------|
+        | اتجاه قصير صاعد | +15 |
+        | اتجاه متوسط صاعد | +15 |
+        | اتجاه طويل صاعد | +10 |
+        | سيولة عالية (ratio > 2) | +20 |
+        | سيولة جيدة (ratio > 1.5) | +10 |
+        | RSI في المنطقة الصحية (50-65) | +20 |
+        | RR ممتاز (>= 2) | +20 |
+        | RR جيد (>= 1.5) | +10 |
+        
+        ### دلالات Smart Score:
+        | الدرجة | التقييم | التصرف |
+        |--------|---------|--------|
+        | **70-100** | 🔥 فرصة قوية جداً | مناسب للدخول |
+        | **50-69** | ✅ فرصة جيدة | دخول بحذر |
+        | **30-49** | ⚠️ تحت المراقبة | استنى تأكيد |
+        | **0-29** | ❄️ ضعيف | تجنب |
+        """)
+    
+    with st.expander("💰 نسبة المخاطرة/العائد (RR Ratio)"):
+        st.markdown("""
+        ### ما هو RR Ratio؟
+        **RR Ratio** = (الهدف - سعر الدخول) / (سعر الدخول - وقف الخسارة)
+        
+        ### دلالات RR:
+        | القيمة | التقييم |
+        |--------|---------|
+        | **>= 2** | 🔥 ممتاز (الربح المتوقع ضعف الخسارة) |
+        | **1.5 - 2** | ✅ جيد |
+        | **1 - 1.5** | ⚠️ متوسط (مضاربة سريعة فقط) |
+        | **< 1** | ❌ سيء (الخسارة أكبر من الربح) |
+        
+        ### نصيحة ذهبية:
+        > **لا تدخل أي صفقة RR أقل من 1.5** إلا إذا كنت مضارب محترف جداً.
+        """)
+    
+    with st.expander("📈 الاتجاهات (المتوسطات المتحركة)"):
+        st.markdown("""
+        ### كيف نحدد الاتجاه؟
+        نقارن السعر الحالي بالمتوسطات المتحركة:
+        
+        | المتوسط | الفترة | الدلالة |
+        |----------|--------|---------|
+        | **SMA20** | 20 يوم | اتجاه **قصير المدى** |
+        | **SMA50** | 50 يوم | اتجاه **متوسط المدى** |
+        | **SMA200** | 200 يوم | اتجاه **طويل المدى** |
+        
+        ### دلالة الاتجاه:
+        - **صاعد:** السعر > المتوسط (اتجاه إيجابي)
+        - **هابط:** السعر < المتوسط (اتجاه سلبي)
+        
+        ### قوة الإشارة:
+        كلما زاد عدد الاتجاهات الصاعدة (قصير + متوسط + طويل)، كانت الفرصة أقوى.
+        """)
+    
+    with st.expander("📊 حجم التداول (Volume Ratio)"):
+        st.markdown("""
+        ### ما هو Volume Ratio؟
+        **Ratio** = حجم التداول اليوم / متوسط حجم التداول في آخر 10 أيام
+        
+        ### دلالات Ratio:
+        | القيمة | الدلالة |
+        |--------|---------|
+        | **> 2** | 🚀 سيولة قوية جداً (اختراق محتمل) |
+        | **1.5 - 2** | ⚡ نشطة (في اهتمام) |
+        | **1 - 1.5** | 🙃 عادية |
+        | **< 1** | ❄️ ضعيفة |
+        | **0** | ❓ غير معروفة (بيانات غير كافية) |
+        
+        ### أهميته:
+        السيولة العالية تعني اهتمام أكبر من المتداولين، وتزيد فرصة نجاح الاختراق.
+        """)
+    
+    with st.expander("🏛️ الدعم والمقاومة (Pivot Points)"):
+        st.markdown("""
+        ### ما هي نقاط الارتكاز؟
+        هي مستويات سعرية محسوبة من أعلى وأدنى وإغلاق اليوم السابق.
+        
+        ### المستويات:
+        | المستوى | المعنى |
+        |----------|--------|
+        | **R2** | مقاومة قوية (صعبة الاختراق) |
+        | **R1** | مقاومة أولى |
+        | **PP** | نقطة الارتكاز (المحور) |
+        | **S1** | دعم أول |
+        | **S2** | دعم قوي |
+        
+        ### كيفية الاستخدام:
+        - **اختراق R1** → إشارة صعود
+        - **كسر S1** → إشارة هبوط
+        - **الارتداد من S1/S2** → فرصة شراء
+        - **الارتداد من R1/R2** → فرصة بيع
+        """)
+    
+    with st.expander("🛡️ فخ السيولة (Fake Breakout)"):
+        st.markdown("""
+        ### ما هو فخ السيولة؟
+        هو اختراق وهمي للسهم (صاعد أو هابط) ثم يعكس اتجاهه بسرعة.
+        
+        ### كيف نكتشفه في التطبيق؟
+        التطبيق يعتبر السهم **"فخ سيولة"** إذا تحقق أحد الشرطين:
+        1. RSI > 75 و RR < 1.3 (تشبع شراء مع RR ضعيف)
+        2. حجم التداول أقل من المتوسط (ratio < 1.2)
+        
+        ### دلالة فخ السيولة:
+        ❌ **تجنب الدخول نهائياً** - السهم غير مستقر وقد ينعكس عليك.
+        """)
+    
+    st.info("💡 **تذكير:** هذه المؤشرات هي أدوات مساعدة، وليست قرارات نهائية. القرار النهائي يعتمد على تحليلك الشخصي وإدارة المخاطر الخاصة بك.")
 
 elif st.session_state.page == 'performance':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -953,12 +1097,10 @@ elif st.session_state.page == 'analyze':
     sym = st.text_input("رمز السهم").upper().strip()
     if sym:
         with st.spinner("🔍 جاري البحث عن السهم..."):
-            # ✅ استخدام البيانات المخزنة بدل API call جديد
             res = next((x for x in st.session_state.all_results if x['name'] == sym), None)
             
             if not res:
                 st.error("❌ السهم غير موجود في البيانات الحالية")
-                # ✅ اقتراح أسهم مشابهة
                 symbols = [x['name'] for x in st.session_state.all_results]
                 similar = [s for s in symbols if sym[:2] in s or s[:2] in sym][:5]
                 if similar:
