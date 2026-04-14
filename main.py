@@ -308,17 +308,19 @@ def get_rsi_signal(rsi):
     else: return "🔴 تشبع شراء خطر", "overbought"
 
 def classify_stock(res):
-    """تصنيف السهم - نسخة محسنة (الذهب نادر)"""
+    """تصنيف السهم - نسخة محسنة مع إضافة ratio و smart_score"""
     rr = res.get('rr', 0)
     ratio = res.get('ratio', 0)
     t_short = res.get('t_short', 'هابط')
     t_med = res.get('t_med', 'هابط')
     rsi = res.get('rsi', 50)
+    smart_score = res.get('smart_score', 0)
     mode = st.session_state.mode
     
+    # ✅ تحديد حدود RR حسب نمط التداول (تم التخفيف للمحافظ)
     if "محافظ" in mode:
-        rr_min = 1.7
-        rr_gold = 2.2
+        rr_min = 1.5      # تم التخفيف من 1.7
+        rr_gold = 2.0     # تم التخفيف من 2.2
     elif "هجومي" in mode:
         rr_min = 1.0
         rr_gold = 1.8
@@ -329,8 +331,13 @@ def classify_stock(res):
     if ratio == 0:
         return "weak"
     
-    # 🔥 الذهبي - نادر جداً
-    if rr >= rr_gold and t_short == "صاعد" and t_med == "صاعد" and 45 < rsi < 60:
+    # 🔥 الذهبي - مع إضافة ratio و smart_score
+    if (rr >= rr_gold and 
+        t_short == "صاعد" and 
+        t_med == "صاعد" and 
+        45 < rsi < 60 and 
+        ratio > 1.5 and           # ✅ إضافة شرط السيولة
+        smart_score >= 70):       # ✅ إضافة شرط smart_score
         return "gold"
     
     # 🚀 اختراق قوي
@@ -346,6 +353,23 @@ def classify_stock(res):
         return "watchlist"
     
     return "weak"
+
+def check_gold_rarity(results):
+    """تحليل ندرة الفرص الذهبية"""
+    gold_count = sum(1 for an in results if classify_stock(an) == "gold")
+    total = len(results)
+    gold_percentage = (gold_count / total * 100) if total > 0 else 0
+    
+    if gold_count == 0:
+        rarity_status = "❄️ نادر جداً (لا توجد فرص ذهبية)"
+    elif gold_count <= 3:
+        rarity_status = "✅ ممتاز - نادر كما يجب"
+    elif gold_count <= 6:
+        rarity_status = "⚠️ متوسط - قد يكون الفلتر قاسي قليلاً"
+    else:
+        rarity_status = "🔴 كثير - الفلتر ضعيف ويحتاج تشديد"
+    
+    return gold_count, gold_percentage, rarity_status
 
 # ================== SESSION STATE ==================
 if "mode" not in st.session_state:
@@ -859,6 +883,16 @@ if st.session_state.page == 'home':
             if st.button("🧮 حاسبة المتوسط"):
                 st.session_state.page = 'avg'
                 st.rerun()
+    
+    # ✅ إحصائية ندرة الذهب (في الصفحة الرئيسية)
+    if st.session_state.all_results:
+        gold_count, gold_percentage, rarity_status = check_gold_rarity(st.session_state.all_results)
+        st.markdown("---")
+        st.markdown(f"### 💎 إحصائية الفرص الذهبية")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("عدد الفرص الذهبية", gold_count)
+        col2.metric("نسبة الذهب من السوق", f"{gold_percentage:.1f}%")
+        col3.markdown(f"**الحالة:** {rarity_status}")
 
 elif st.session_state.page == 'avg':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
