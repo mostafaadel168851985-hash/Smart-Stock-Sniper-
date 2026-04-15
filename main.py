@@ -167,7 +167,6 @@ def get_performance_stats(trades):
     top10_return = sum(t.get('profit_pct', 0) for t in top10_trades if t.get('profit_pct') is not None)
     gold_return = sum(t.get('profit_pct', 0) for t in gold_trades if t.get('profit_pct') is not None)
     
-    # ✅ Win Streak (تصحيح)
     current_streak = 0
     max_streak = 0
     for t in trades:
@@ -177,7 +176,6 @@ def get_performance_stats(trades):
         elif t.get('status') == 'stopped_out':
             current_streak = 0
     
-    # MFE / MAE
     mfe_values = [t.get('max_price', 0) - t.get('entry_price', 0) for t in trades if t.get('max_price') and t.get('entry_price')]
     mae_values = [t.get('entry_price', 0) - t.get('min_price', 0) for t in trades if t.get('min_price') and t.get('entry_price')]
     avg_mfe = sum(mfe_values) / len(mfe_values) if mfe_values else 0
@@ -962,6 +960,16 @@ if st.session_state.page == 'home':
                 st.session_state.page = 'avg'
                 st.rerun()
     
+    # ✅ زر مسح البيانات في الصفحة الرئيسية
+    with st.expander("⚠️ أدوات خطيرة", expanded=False):
+        if st.button("🗑️ إعادة ضبط جميع البيانات (مسح التقييم)", use_container_width=True):
+            if os.path.exists(TRADES_FILE):
+                os.remove(TRADES_FILE)
+                st.success("✅ تم مسح جميع بيانات التقييم! سيتم البدء من جديد")
+                st.rerun()
+            else:
+                st.info("لا توجد بيانات للمسح")
+    
     if st.session_state.all_results:
         gold_count, gold_percentage, rarity_status = check_gold_rarity(st.session_state.all_results)
         st.markdown("---")
@@ -1037,18 +1045,29 @@ elif st.session_state.page == 'performance':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     st.title("📊 تقييم أداء التطبيق")
     
-    trades = load_trades()
+    # ✅ زر مسح البيانات في صفحة الأداء
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔄 تحديث البيانات", use_container_width=True):
+            with st.spinner("جاري تحديث البيانات..."):
+                if st.session_state.all_results:
+                    current_prices = {res['name']: res['p'] for res in st.session_state.all_results if res}
+                    trades = update_all_trades(current_prices)
+                    st.success("تم تحديث البيانات بنجاح!")
+                    st.rerun()
+                else:
+                    st.error("لا توجد بيانات محدثة")
     
-    if st.button("🔄 تحديث البيانات"):
-        with st.spinner("جاري تحديث البيانات..."):
-            if st.session_state.all_results:
-                current_prices = {res['name']: res['p'] for res in st.session_state.all_results if res}
-                trades = update_all_trades(current_prices)
-                st.success("تم تحديث البيانات بنجاح!")
+    with col2:
+        if st.button("🗑️ مسح جميع بيانات التقييم", use_container_width=True):
+            if os.path.exists(TRADES_FILE):
+                os.remove(TRADES_FILE)
+                st.success("✅ تم مسح جميع بيانات التقييم! سيتم البدء من جديد")
                 st.rerun()
             else:
-                st.error("لا توجد بيانات محدثة")
+                st.info("لا توجد بيانات للمسح")
     
+    trades = load_trades()
     stats = get_performance_stats(trades)
     
     col1, col2, col3, col4 = st.columns(4)
