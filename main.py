@@ -302,7 +302,6 @@ def calculate_stochastic_rsi(rsi):
     elif rsi <= 80: return {"k": 30, "d": 35, "signal": "🟠 منطقة بيع محتملة (تقديري)"}
     else: return {"k": 10, "d": 15, "signal": "🔴 تشبع شراء - خطر (تقديري)"}
 
-# ✅ مؤشر ROC (معدل التغير)
 def calculate_roc(current_price, previous_price):
     if previous_price and previous_price > 0:
         return ((current_price - previous_price) / previous_price) * 100
@@ -443,7 +442,6 @@ def is_perfect_setup(res):
             res.get('rr', 0) >= 2)
 
 def is_real_breakout(res):
-    """✅ اختراق حقيقي (سيولة عالية + اتجاه قوي + زخم صحي)"""
     return (res.get('ratio', 0) > 2.5 and 
             res.get('t_short') == "صاعد" and 
             res.get('t_med') == "صاعد" and
@@ -629,7 +627,7 @@ def get_fresh_data():
             return True
         return False
 
-# ================== UI RENDERER (محسن للموبيل) ==================
+# ================== UI RENDERER ==================
 def render_stock_ui(res, is_top10=False, is_gold=False):
     # عنوان السهم
     st.markdown(f"""
@@ -639,7 +637,7 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
     </div>
     """, unsafe_allow_html=True)
     
-    # ✅ اختراق حقيقي
+    # اختراق حقيقي
     if is_real_breakout(res):
         st.markdown('<div class="real-breakout">✅ اختراق حقيقي - سيولة عالية واتجاه قوي</div>', unsafe_allow_html=True)
     
@@ -653,7 +651,7 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
     elif res.get('ratio', 0) > 3:
         st.error("🔥 اختراق خرافي - انتباه شديد")
     
-    # ================== QUICK SUMMARY (مكثف) ==================
+    # ================== QUICK SUMMARY ==================
     st.markdown("### 📊 خلاصة")
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -665,7 +663,7 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
     with c4:
         st.metric("RSI", f"{res['rsi']:.0f}")
     
-    # إشارة سريعة ملونة
+    # إشارة سريعة
     if res['smart_score'] >= 70 and res['rr'] >= 1.5 and 45 < res['rsi'] < 65:
         st.success("🟢 إشارة شراء قوية")
     elif res['smart_score'] >= 50 and res['rr'] >= 1.2:
@@ -705,12 +703,12 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
         rsi_label, _ = get_rsi_signal(res['rsi'])
         st.metric("RSI", f"{res['rsi']:.1f}", rsi_label)
         
-        # ✅ مؤشر ROC (معدل التغير)
+        # ROC
         roc = calculate_roc(res['p'], res.get('sma20', res['p']))
         roc_color = "🟢" if roc > 0 else "🔴"
-        st.metric("ROC (معدل التغير)", f"{roc_color} {roc:+.1f}%", help="معدل التغير عن المتوسط المتحرك 20")
+        st.metric("ROC (معدل التغير)", f"{roc_color} {roc:+.1f}%")
         
-        # ================== 🏛️ الدعم والمقاومة (مع أسماء واضحة) ==================
+        # ================== 🏛️ الدعم والمقاومة ==================
         st.markdown("### 🏛️ مستويات الدعم والمقاومة (للمستثمر طويل الأجل)")
         st.markdown(f"""
         | المستوى | السعر | الدلالة |
@@ -722,7 +720,7 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
         | 🟢 **دعم ثاني S2** | {res['s2']:.2f} | دعم قوي |
         """)
         
-        # ================== 🎯 نطاق الدخول (للمضارب والسوينج) ==================
+        # ================== 🎯 نطاق الدخول ==================
         st.markdown(f"""
         <div class='entry-card-new'>
             🎯 <b>نطاق الدخول (مضاربة/سوينج):</b> {res['entry_range']}<br>
@@ -731,43 +729,93 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
         </div>
         """, unsafe_allow_html=True)
     
-    # ================== 💰 إدارة المخاطر ==================
-    with st.expander("💰 إدارة المخاطر", expanded=False):
-        portfolio = st.number_input("إجمالي حجم المحفظة (ج):", value=100000, step=1000, key=f"port_{res['name']}")
-        risk_per_trade = st.slider("نسبة مخاطرة الصفقة (%)", 0.5, 5.0, 2.0, key=f"risk_{res['name']}")
-        max_loss_allowed = portfolio * (risk_per_trade / 100)
-        risk_per_share = res['entry_price'] - res['stop_loss']
+    # ================== 💰 إدارة المخاطر وخطة الدخول ==================
+    with st.expander("💰 إدارة المخاطر وخطة الدخول", expanded=False):
         
-        if risk_per_share <= 0:
-            shares_to_buy = 0
-        else:
-            shares_to_buy_initial = int(max_loss_allowed / risk_per_share)
-            max_position_size = portfolio * 0.25
-            recommended_position_size = min(shares_to_buy_initial * res['entry_price'], max_position_size)
-            shares_to_buy = max(1, int(recommended_position_size / res['entry_price'])) if res['entry_price'] > 0 else 0
+        # ميزانية الصفقة
+        deal_size = st.number_input("💰 ميزانية الصفقة (ج)", value=10000, step=1000, key=f"deal_{res['name']}")
         
-        confidence = get_confidence_score(res)
-        auto_position = portfolio * (confidence / 100) * 0.2
-        st.info(f"💡 **حجم مركز مقترح:** {auto_position:,.0f} ج (ثقة {confidence}%)")
-        
-        if risk_per_share > 0 and shares_to_buy > 0:
-            profit_val = (res['target'] - res['entry_price']) * shares_to_buy
-            loss_val = (res['entry_price'] - res['stop_loss']) * shares_to_buy
-            actual_risk_pct = (loss_val / portfolio) * 100
+        if deal_size > 0 and res['entry_price'] > 0:
+            shares_deal = int(deal_size / res['entry_price'])
+            actual_value = shares_deal * res['entry_price']
+            profit_val = (res['target'] - res['entry_price']) * shares_deal
+            loss_val = (res['entry_price'] - res['stop_loss']) * shares_deal
             
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("الربح المتوقع", f"{profit_val:,.0f} ج", delta=f"+{res['target_pct']:.1f}%")
+                st.metric("📦 عدد الأسهم", f"{shares_deal:,}")
+                st.metric("💰 قيمة الصفقة", f"{actual_value:,.0f} ج")
             with col2:
-                st.metric("الخسارة المحتملة", f"{loss_val:,.0f} ج", delta=f"-{actual_risk_pct:.1f}%")
+                st.metric("🟢 الربح المتوقع", f"{profit_val:,.0f} ج", delta=f"+{res['target_pct']:.1f}%")
+                st.metric("🔴 الخسارة المحتملة", f"{loss_val:,.0f} ج", delta=f"-{res['risk_pct']:.1f}%")
+            
+            # ================== 🏹 خطة الدخول المتكاملة ==================
+            st.markdown("### 🏹 خطة الدخول")
+            
+            range_size = res['entry_price'] - res['stop_loss']
+            
+            # مستويات الدخول
+            entry_level_1 = res['entry_price']  # الدخول الأساسي
+            entry_level_2 = max(res['entry_price'] - (range_size * 0.5), res['stop_loss'] * 1.02)  # تعزيز دعم
+            entry_level_3 = res['entry_price'] + (res['target'] - res['entry_price']) * 0.3  # تأكيد اختراق
+            
+            # توزيع الميزانية حسب قوة الصفقة
+            if res['rr'] >= 2:
+                weights = [0.6, 0.25, 0.15]  # 60% أساسي، 25% تعزيز، 15% اختراق
+            elif res['rr'] >= 1.5:
+                weights = [0.5, 0.3, 0.2]   # 50% أساسي، 30% تعزيز، 20% اختراق
+            else:
+                weights = [0.4, 0.35, 0.25]  # 40% أساسي، 35% تعزيز، 25% اختراق
+            
+            amount_1 = deal_size * weights[0]
+            amount_2 = deal_size * weights[1]
+            amount_3 = deal_size * weights[2]
+            
+            shares_1 = int(amount_1 / entry_level_1) if entry_level_1 > 0 else 0
+            shares_2 = int(amount_2 / entry_level_2) if entry_level_2 > 0 else 0
+            shares_3 = int(amount_3 / entry_level_3) if entry_level_3 > 0 else 0
+            
+            # عرض خطة الدخول
+            st.markdown(f"""
+            <div style='background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:15px;margin:10px 0;'>
+                <b>📌 المستوى الأول - الدخول الأساسي</b><br>
+                🟢 السعر: <b>{entry_level_1:.2f}</b> ج<br>
+                📦 الكمية: <b>{shares_1:,}</b> سهم | 💰 المبلغ: <b>{amount_1:,.0f}</b> ج ({weights[0]*100:.0f}% من الميزانية)<br>
+                <small>🔹 يتم التنفيذ عند وصول السعر للنطاق</small>
+            </div>
+            
+            <div style='background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:15px;margin:10px 0;'>
+                <b>📌 المستوى الثاني - تعزيز الدعم</b><br>
+                🟡 السعر: <b>{entry_level_2:.2f}</b> ج<br>
+                📦 الكمية: <b>{shares_2:,}</b> سهم | 💰 المبلغ: <b>{amount_2:,.0f}</b> ج ({weights[1]*100:.0f}% من الميزانية)<br>
+                <small>🔹 يتم التنفيذ إذا هبط السعر للدعم دون كسر الوقف</small>
+            </div>
+            
+            <div style='background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:15px;margin:10px 0;'>
+                <b>📌 المستوى الثالث - تأكيد الاختراق</b><br>
+                🔵 السعر: <b>{entry_level_3:.2f}</b> ج<br>
+                📦 الكمية: <b>{shares_3:,}</b> سهم | 💰 المبلغ: <b>{amount_3:,.0f}</b> ج ({weights[2]*100:.0f}% من الميزانية)<br>
+                <small>🔹 يتم التنفيذ عند اختراق مقاومة أولى</small>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # متوسط السعر بعد التنفيذ الكامل
+            total_shares = shares_1 + shares_2 + shares_3
+            total_cost = amount_1 + amount_2 + amount_3
+            if total_shares > 0:
+                avg_price = total_cost / total_shares
+                st.info(f"📊 **متوسط السعر بعد التنفيذ الكامل:** {avg_price:.2f} ج ({total_shares:,} سهم)")
         
-        # Trailing Stop
+        # وقف الخسارة المتحرك
         st.markdown("---")
         st.markdown("### 🎯 وقف الخسارة المتحرك")
         current_price_trail = st.number_input("السعر الحالي", value=res['p'], key=f"trail_price_{res['name']}")
         highest_price_trail = st.number_input("أعلى سعر تم الوصول إليه", value=res['p'], key=f"highest_{res['name']}")
         trailing_stop = calculate_trailing_stop(res['entry_price'], current_price_trail, highest_price_trail, res['rr'])
-        st.info(f"🛡️ **الوقف المقترح:** {trailing_stop:.2f} (الأصلي: {res['stop_loss']:.2f})")
+        st.info(f"🛡️ **وقف الخسارة المتحرك المقترح:** {trailing_stop:.2f} ج (الأصلي: {res['stop_loss']:.2f} ج)")
+        
+        # تنبيه حول إدارة المخاطر
+        st.warning("⚠️ **تذكير:** هذه الخطة استرشادية. القرار النهائي يعتمد على تحليلك الشخصي وظروف السوق.")
     
     # ================== 🧠 تحليل الوضع الحالي ==================
     with st.expander("🧠 تحليل الوضع الحالي", expanded=False):
@@ -799,14 +847,6 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
                 st.success(f"✅ استمر طالما السعر فوق {res['stop_loss']:.2f}")
             else:
                 st.warning("⚠️ اتجاه ضعيف - فكر في تأمين الأرباح")
-            
-            avg_zone = res['entry_price'] * 0.97
-            if res['t_short'] == "صاعد" and res['ratio'] > 1.2 and current_price > res['stop_loss']:
-                st.success(f"✅ تبريد آمن عند {avg_zone:.2f}")
-            else:
-                st.warning(f"⚠️ تبريد خطر عند {avg_zone:.2f}")
-            
-            st.error(f"🔴 الخروج: كسر {res['stop_loss']:.2f}")
     
     # ================== 📈 مؤشرات متقدمة ==================
     with st.expander("📈 مؤشرات متقدمة", expanded=False):
@@ -827,7 +867,6 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
         </div>
         """, unsafe_allow_html=True)
         
-        # تفاصيل إضافية
         smart_text, _ = smart_decision(res)
         st.markdown(f"""
         <div style='background:#161b22;border:1px solid #30363d;border-radius:10px;padding:15px;'>
@@ -978,22 +1017,6 @@ elif st.session_state.page == 'guide':
         | **50-69** | ✅ فرصة جيدة | دخول بحذر |
         | **30-49** | ⚠️ تحت المراقبة | استنى تأكيد |
         | **0-29** | ❄️ ضعيف | تجنب |
-        """)
-    
-    with st.expander("📈 ROC (معدل التغير)"):
-        st.markdown("""
-        ### ما هو ROC؟
-        **ROC** = (السعر الحالي - السعر السابق) / السعر السابق × 100
-        
-        ### دلالات ROC:
-        | القيمة | الدلالة |
-        |--------|---------|
-        | **موجب كبير (> 5%)** | زخم صعودي قوي |
-        | **موجب صغير (0-5%)** | زخم صعودي ضعيف |
-        | **سالب** | زخم هبوطي |
-        
-        ### نصيحة:
-        ROC الموجب مع RSI بين 40-65 يعطي تأكيد إضافي للصعود.
         """)
     
     st.info("💡 **تذكير:** هذه المؤشرات هي أدوات مساعدة، وليست قرارات نهائية. القرار النهائي يعتمد على تحليلك الشخصي وإدارة المخاطر الخاصة بك.")
