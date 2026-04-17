@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import requests
 from datetime import datetime, date
 import json
@@ -306,6 +307,44 @@ def calculate_roc(current_price, previous_price):
     if previous_price and previous_price > 0:
         return ((current_price - previous_price) / previous_price) * 100
     return 0
+
+# ================== 📈 TRADINGVIEW CHART ==================
+def render_tradingview_chart(symbol, height=450, theme='dark', interval='D'):
+    """عرض شارت TradingView الحقيقي"""
+    
+    # إضافة EGX: للرمز (للبورصة المصرية)
+    full_symbol = f"EGX:{symbol}" if not symbol.startswith("EGX:") else symbol
+    
+    # كود HTML الخاص بالشارت
+    chart_html = f"""
+    <div class="tradingview-widget-container">
+        <div id="tradingview_chart_{symbol.replace(':', '_')}"></div>
+        <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+        <script type="text/javascript">
+        new TradingView.widget({{
+            "container_id": "tradingview_chart_{symbol.replace(':', '_')}",
+            "width": "100%",
+            "height": {height},
+            "symbol": "{full_symbol}",
+            "interval": "{interval}",
+            "timezone": "Africa/Cairo",
+            "theme": "{theme}",
+            "style": "1",
+            "locale": "ar",
+            "toolbar_bg": "#f1f3f6",
+            "enable_publishing": false,
+            "allow_symbol_change": false,
+            "hideideas": true,
+            "studies": [
+                "RSI@tv-basicstudies",
+                "MASimple@tv-basicstudies"
+            ]
+        }});
+        </script>
+    </div>
+    """
+    
+    components.html(chart_html, height=height)
 
 
 # ================== CONFIG & STYLE ==================
@@ -675,6 +714,12 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
     
     # ================== 📊 التحليل الفني ==================
     with st.expander("📊 التحليل الفني", expanded=True):
+        # ✅ عرض شارت TradingView الحقيقي
+        st.markdown("### 📈 شارت السهم")
+        render_tradingview_chart(res['name'], height=450)
+        
+        st.markdown("---")
+        
         # الاتجاهات
         t_short_c = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
         t_med_c = "trend-up" if res['t_med'] == "صاعد" else "trend-down"
@@ -761,11 +806,11 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
             
             # توزيع الميزانية حسب قوة الصفقة
             if res['rr'] >= 2:
-                weights = [0.6, 0.25, 0.15]  # 60% أساسي، 25% تعزيز، 15% اختراق
+                weights = [0.6, 0.25, 0.15]
             elif res['rr'] >= 1.5:
-                weights = [0.5, 0.3, 0.2]   # 50% أساسي، 30% تعزيز، 20% اختراق
+                weights = [0.5, 0.3, 0.2]
             else:
-                weights = [0.4, 0.35, 0.25]  # 40% أساسي، 35% تعزيز، 25% اختراق
+                weights = [0.4, 0.35, 0.25]
             
             amount_1 = deal_size * weights[0]
             amount_2 = deal_size * weights[1]
