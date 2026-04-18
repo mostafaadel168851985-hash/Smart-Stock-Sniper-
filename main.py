@@ -311,11 +311,10 @@ def calculate_roc(current_price, previous_price):
 
 # ================== 📈 TRADINGVIEW CHART ==================
 def render_tradingview_chart(symbol, height=450, theme='dark', interval='D'):
-    """عرض شارت TradingView مع مؤشرات الدعم والمقاومة والترند التلقائية"""
+    """عرض شارت TradingView مع مؤشرات الدعم والمقاومة"""
     
     full_symbol = f"EGX:{symbol}" if not symbol.startswith("EGX:") else symbol
     
-    # ✅ إضافة مؤشر Auto Trendlines
     chart_html = f"""
     <div class="tradingview-widget-container">
         <div id="tradingview_chart_{symbol.replace(':', '_')}"></div>
@@ -338,7 +337,7 @@ def render_tradingview_chart(symbol, height=450, theme='dark', interval='D'):
             "studies": [
                 "RSI@tv-basicstudies",
                 "MASimple@tv-basicstudies",
-                "AutoTrendLines@tv-basicstudies"
+                "PivotPointsHighLow@tv-basicstudies"
             ]
         }});
         </script>
@@ -375,54 +374,6 @@ def share_on_whatsapp(res):
     
     encoded_msg = urllib.parse.quote(message)
     return f"https://wa.me/?text={encoded_msg}"
-
-
-# ================== 🆕 COMPARE WITH CHART ==================
-def compare_with_chart(res):
-    """مقارنة أرقام التطبيق مع السوق الفعلي"""
-    
-    st.markdown("### 🎯 مقارنة التطبيق مع السوق الفعلي")
-    st.caption("استخدم الشارت أعلاه لتأكيد صحة التحليل واكتشاف أي تغيرات مفاجئة")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        app_price = res['p']
-        st.metric("📊 سعر التطبيق", f"{app_price:.2f} ج")
-        st.caption("✓ نفس السعر الظاهر على الشارت")
-    
-    with col2:
-        app_trend = res['t_short']
-        st.metric("📈 اتجاه التطبيق (قصير)", app_trend)
-        if app_trend == "صاعد":
-            st.caption("🟢 راجع الشارت - هل الاتجاه صاعد فعلاً؟")
-        else:
-            st.caption("🔴 راجع الشارت - هل الاتجاه هابط فعلاً؟")
-    
-    with col3:
-        app_liquidity = f"{res['ratio']:.1f}x"
-        st.metric("💧 سيولة التطبيق", app_liquidity)
-        st.caption("قارن مع حجم التداول على الشارت")
-    
-    st.markdown("---")
-    
-    # تنبيهات ذكية للمقارنة
-    if res['ratio'] > 2:
-        st.info("💡 **ملاحظة:** التطبيق يرى سيولة عالية جداً. تأكد من الشارت أن الاختراق حقيقي وليس فخ سيولة.")
-    elif res['ratio'] < 0.8:
-        st.warning("⚠️ **ملاحظة:** التطبيق يحذر من سيولة ضعيفة. تأكد من الشارت قبل اتخاذ أي قرار.")
-    elif res['ratio'] == 0:
-        st.error("❌ **تنبيه:** لا توجد بيانات سيولة كافية. الشارت هو المصدر الوحيد الموثوق حالياً.")
-    
-    if res['smart_score'] >= 70:
-        st.success("✅ **التطبيق:** إشارة شراء قوية. استخدم الشارت لتأكيد الاتجاه الصاعد.")
-    elif res['smart_score'] <= 30:
-        st.error("❌ **التطبيق:** يوصي بالتجنب. راجع الشارت هل هناك اختراق قادم يغير التحليل.")
-    else:
-        st.warning("🟡 **التطبيق:** فرصة متوسطة. استخدم الشارت للحصول على تأكيد إضافي.")
-    
-    # تنبيه خاص بالشارت
-    st.info("📌 **تذكير:** الشارت أعلاه يظهر بيانات حية من السوق. أي أخبار أو أحداث مفاجئة ستظهر أولاً على الشارت قبل أن تنعكس في أرقام التطبيق.")
 
 
 # ================== CONFIG & STYLE ==================
@@ -808,12 +759,9 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
     
     # ================== 📊 التحليل الفني ==================
     with st.expander("📊 التحليل الفني", expanded=True):
-        # عرض شارت TradingView الحقيقي مع Auto Trendlines
+        # عرض شارت TradingView الحقيقي
         st.markdown("### 📈 شارت السهم (بيانات حية من السوق)")
         render_tradingview_chart(res['name'], height=450)
-        
-        # مقارنة التطبيق مع الشارت
-        compare_with_chart(res)
         
         # الاتجاهات
         t_short_c = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
