@@ -309,6 +309,52 @@ def calculate_roc(current_price, previous_price):
         return ((current_price - previous_price) / previous_price) * 100
     return 0
 
+# ================== 🆕 QUALITY RATING ==================
+def get_quality_rating(res, section_type):
+    """تقييم جودة السهم داخل كل قسم"""
+    
+    if section_type == "breakout":
+        if res.get('ratio', 0) > 3.5 and res.get('rsi', 50) < 65:
+            return "🔥 ممتاز - اختراق قوي جداً"
+        elif res.get('ratio', 0) > 2.5 and res.get('rsi', 50) < 70:
+            return "✅ جيد - اختراق موثوق"
+        else:
+            return "⚠️ عادي - يحتاج متابعة"
+    
+    elif section_type == "scalp":
+        if res.get('ratio', 0) > 2.5 and res.get('rr', 0) >= 1.8 and 45 < res.get('rsi', 50) < 60:
+            return "🔥 ممتاز - مضاربة مثالية"
+        elif res.get('ratio', 0) > 1.8 and res.get('rr', 0) >= 1.5:
+            return "✅ جيد - مضاربة مناسبة"
+        else:
+            return "⚠️ عادي - يحتاج تركيز"
+    
+    elif section_type == "gold":
+        if res.get('rr', 0) >= 2.2 and res.get('ratio', 0) > 2:
+            return "🔥 ذهبي ممتاز - فرصة نادرة"
+        else:
+            return "✅ ذهبي - فرصة قوية"
+    
+    elif section_type == "top10":
+        if res.get('smart_score', 0) >= 85:
+            return "🏆 الأفضل اليوم"
+        elif res.get('smart_score', 0) >= 75:
+            return "⭐ ممتاز"
+        elif res.get('smart_score', 0) >= 65:
+            return "✅ جيد"
+        else:
+            return "📌 للمتابعة"
+    
+    elif section_type == "watchlist":
+        if res.get('rr', 0) >= 1.8 and res.get('ratio', 0) > 1.8:
+            return "🔥 واعد - قريب من الاختراق"
+        elif res.get('rr', 0) >= 1.5:
+            return "✅ جيد - يستحق المتابعة"
+        else:
+            return "📌 عادي"
+    
+    return "📌 عادي"
+
 # ================== 📈 TRADINGVIEW CHART ==================
 def render_tradingview_chart(symbol, height=450, theme='dark', interval='D'):
     """عرض شارت TradingView مع مؤشرات الدعم والمقاومة"""
@@ -409,6 +455,10 @@ st.markdown("""
     .real-breakout { background: linear-gradient(135deg, #00c853, #69f0ae); color: #1a1a2e; padding: 5px 15px; border-radius: 20px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
     .whatsapp-btn { background-color: #25D366; color: white; border: none; border-radius: 12px; padding: 10px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; text-align: center; text-decoration: none; display: inline-block; }
     .whatsapp-btn:hover { background-color: #128C7E; }
+    .quality-badge { padding: 5px 10px; border-radius: 10px; margin-bottom: 10px; text-align: center; font-weight: bold; }
+    .quality-excellent { background: linear-gradient(135deg, #1f4f2b, #2e7d32); color: white; }
+    .quality-good { background: linear-gradient(135deg, #1f3a4f, #1565c0); color: white; }
+    .quality-normal { background: linear-gradient(135deg, #4a4a4a, #616161); color: white; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -710,6 +760,22 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
         <span class='score-tag'>Score: {res['score']}</span>
     </div>
     """, unsafe_allow_html=True)
+    
+    # ✅ تقييم الجودة حسب نوع القسم
+    if is_top10:
+        quality = get_quality_rating(res, "top10")
+        if "الأفضل" in quality:
+            st.markdown(f'<div class="quality-badge quality-excellent">🏆 {quality}</div>', unsafe_allow_html=True)
+        elif "ممتاز" in quality:
+            st.markdown(f'<div class="quality-badge quality-good">⭐ {quality}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="quality-badge quality-normal">📌 {quality}</div>', unsafe_allow_html=True)
+    elif is_gold:
+        quality = get_quality_rating(res, "gold")
+        if "ممتاز" in quality:
+            st.markdown(f'<div class="quality-badge quality-excellent">💎 {quality}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="quality-badge quality-good">💎 {quality}</div>', unsafe_allow_html=True)
     
     # اختراق حقيقي
     if is_real_breakout(res):
@@ -1102,7 +1168,7 @@ elif st.session_state.page == 'guide':
         | **0-29** | ❄️ ضعيف | تجنب |
         """)
     
-    # 🆕 دليل أقسام التطبيق
+    # دليل أقسام التطبيق
     with st.expander("🎯 دليل أقسام التطبيق - إزاي تختار الأسهم؟"):
         st.markdown("""
         ### 📊 شرح أقسام التطبيق
@@ -1344,7 +1410,15 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "gold":
                 record_trade(an, "gold")
+                # ✅ إضافة تقييم الجودة للذهب
+                quality = get_quality_rating(an, "gold")
+                if "ممتاز" in quality:
+                    quality_display = f'<div class="quality-badge quality-excellent">💎 {quality}</div>'
+                else:
+                    quality_display = f'<div class="quality-badge quality-good">💎 {quality}</div>'
+                
                 with st.expander(f"✨ ذهبي: {an['name']} (RR: {an['rr']} | RSI: {an['rsi']:.1f} | ثقة: {get_confidence_score(an)}%)"): 
+                    st.markdown(quality_display, unsafe_allow_html=True)
                     render_stock_ui(an, is_gold=True)
                     found = True
         if not found: st.info("لا توجد فرص ذهبية حالياً.")
@@ -1353,20 +1427,50 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         results = [an for an in st.session_state.all_results if an and classify_stock(an) == "watchlist"]
         results.sort(key=lambda x: (x.get('smart_score', 0), x.get('rr', 0)), reverse=True)
         for an in results[:15]:
+            # ✅ إضافة تقييم الجودة لكشاف السوق
+            quality = get_quality_rating(an, "watchlist")
+            if "واعد" in quality:
+                quality_display = f'<div class="quality-badge quality-excellent">🔥 {quality}</div>'
+            elif "جيد" in quality:
+                quality_display = f'<div class="quality-badge quality-good">✅ {quality}</div>'
+            else:
+                quality_display = f'<div class="quality-badge quality-normal">📌 {quality}</div>'
+            
             with st.expander(f"{an['name']} | {an['signal']} | ثقة: {get_confidence_score(an)}%"):
+                st.markdown(quality_display, unsafe_allow_html=True)
                 render_stock_ui(an)
     
     elif st.session_state.page == 'breakout':
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "breakout":
+                # ✅ إضافة تقييم الجودة للاختراقات
+                quality = get_quality_rating(an, "breakout")
+                if "ممتاز" in quality:
+                    quality_display = f'<div class="quality-badge quality-excellent">🚀 {quality}</div>'
+                elif "جيد" in quality:
+                    quality_display = f'<div class="quality-badge quality-good">🚀 {quality}</div>'
+                else:
+                    quality_display = f'<div class="quality-badge quality-normal">🚀 {quality}</div>'
+                
                 with st.expander(f"🚀 اختراق: {an['name']} (RSI: {an['rsi']:.1f} | ثقة: {get_confidence_score(an)}%)"):
+                    st.markdown(quality_display, unsafe_allow_html=True)
                     render_stock_ui(an)
     
     elif st.session_state.page == 'scalp':
         found = False
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "scalp":
+                # ✅ إضافة تقييم الجودة للمضاربات
+                quality = get_quality_rating(an, "scalp")
+                if "ممتاز" in quality:
+                    quality_display = f'<div class="quality-badge quality-excellent">⚡ {quality}</div>'
+                elif "جيد" in quality:
+                    quality_display = f'<div class="quality-badge quality-good">⚡ {quality}</div>'
+                else:
+                    quality_display = f'<div class="quality-badge quality-normal">⚡ {quality}</div>'
+                
                 with st.expander(f"⚡ مضاربة: {an['name']} (RSI: {an['rsi']:.1f} | ثقة: {get_confidence_score(an)}%)"):
+                    st.markdown(quality_display, unsafe_allow_html=True)
                     render_stock_ui(an)
                     found = True
         if not found: st.info("لا توجد مضاربات سريعة حالياً.")
