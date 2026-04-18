@@ -311,8 +311,11 @@ def calculate_roc(current_price, previous_price):
 
 # ================== 📈 TRADINGVIEW CHART ==================
 def render_tradingview_chart(symbol, height=450, theme='dark', interval='D'):
+    """عرض شارت TradingView مع مؤشرات الدعم والمقاومة والترند التلقائية"""
+    
     full_symbol = f"EGX:{symbol}" if not symbol.startswith("EGX:") else symbol
     
+    # ✅ إضافة مؤشر Auto Trendlines
     chart_html = f"""
     <div class="tradingview-widget-container">
         <div id="tradingview_chart_{symbol.replace(':', '_')}"></div>
@@ -334,7 +337,8 @@ def render_tradingview_chart(symbol, height=450, theme='dark', interval='D'):
             "hideideas": true,
             "studies": [
                 "RSI@tv-basicstudies",
-                "MASimple@tv-basicstudies"
+                "MASimple@tv-basicstudies",
+                "AutoTrendLines@tv-basicstudies"
             ]
         }});
         </script>
@@ -804,11 +808,11 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
     
     # ================== 📊 التحليل الفني ==================
     with st.expander("📊 التحليل الفني", expanded=True):
-        # عرض شارت TradingView الحقيقي
+        # عرض شارت TradingView الحقيقي مع Auto Trendlines
         st.markdown("### 📈 شارت السهم (بيانات حية من السوق)")
         render_tradingview_chart(res['name'], height=450)
         
-        # 🆕 مقارنة التطبيق مع الشارت
+        # مقارنة التطبيق مع الشارت
         compare_with_chart(res)
         
         # الاتجاهات
