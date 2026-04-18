@@ -311,8 +311,6 @@ def calculate_roc(current_price, previous_price):
 
 # ================== 📈 TRADINGVIEW CHART ==================
 def render_tradingview_chart(symbol, height=450, theme='dark', interval='D'):
-    """عرض شارت TradingView الحقيقي"""
-    
     full_symbol = f"EGX:{symbol}" if not symbol.startswith("EGX:") else symbol
     
     chart_html = f"""
@@ -342,14 +340,11 @@ def render_tradingview_chart(symbol, height=450, theme='dark', interval='D'):
         </script>
     </div>
     """
-    
     components.html(chart_html, height=height)
 
 
 # ================== 📤 SHARE ON WHATSAPP ==================
 def share_on_whatsapp(res):
-    """إنشاء رابط مشاركة التحليل عبر واتساب"""
-    
     smart_text, _ = smart_decision(res)
     
     message = f"""📊 *EGX Sniper Pro - تحليل سهم {res['name']}*
@@ -376,6 +371,54 @@ def share_on_whatsapp(res):
     
     encoded_msg = urllib.parse.quote(message)
     return f"https://wa.me/?text={encoded_msg}"
+
+
+# ================== 🆕 COMPARE WITH CHART ==================
+def compare_with_chart(res):
+    """مقارنة أرقام التطبيق مع السوق الفعلي"""
+    
+    st.markdown("### 🎯 مقارنة التطبيق مع السوق الفعلي")
+    st.caption("استخدم الشارت أعلاه لتأكيد صحة التحليل واكتشاف أي تغيرات مفاجئة")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        app_price = res['p']
+        st.metric("📊 سعر التطبيق", f"{app_price:.2f} ج")
+        st.caption("✓ نفس السعر الظاهر على الشارت")
+    
+    with col2:
+        app_trend = res['t_short']
+        st.metric("📈 اتجاه التطبيق (قصير)", app_trend)
+        if app_trend == "صاعد":
+            st.caption("🟢 راجع الشارت - هل الاتجاه صاعد فعلاً؟")
+        else:
+            st.caption("🔴 راجع الشارت - هل الاتجاه هابط فعلاً؟")
+    
+    with col3:
+        app_liquidity = f"{res['ratio']:.1f}x"
+        st.metric("💧 سيولة التطبيق", app_liquidity)
+        st.caption("قارن مع حجم التداول على الشارت")
+    
+    st.markdown("---")
+    
+    # تنبيهات ذكية للمقارنة
+    if res['ratio'] > 2:
+        st.info("💡 **ملاحظة:** التطبيق يرى سيولة عالية جداً. تأكد من الشارت أن الاختراق حقيقي وليس فخ سيولة.")
+    elif res['ratio'] < 0.8:
+        st.warning("⚠️ **ملاحظة:** التطبيق يحذر من سيولة ضعيفة. تأكد من الشارت قبل اتخاذ أي قرار.")
+    elif res['ratio'] == 0:
+        st.error("❌ **تنبيه:** لا توجد بيانات سيولة كافية. الشارت هو المصدر الوحيد الموثوق حالياً.")
+    
+    if res['smart_score'] >= 70:
+        st.success("✅ **التطبيق:** إشارة شراء قوية. استخدم الشارت لتأكيد الاتجاه الصاعد.")
+    elif res['smart_score'] <= 30:
+        st.error("❌ **التطبيق:** يوصي بالتجنب. راجع الشارت هل هناك اختراق قادم يغير التحليل.")
+    else:
+        st.warning("🟡 **التطبيق:** فرصة متوسطة. استخدم الشارت للحصول على تأكيد إضافي.")
+    
+    # تنبيه خاص بالشارت
+    st.info("📌 **تذكير:** الشارت أعلاه يظهر بيانات حية من السوق. أي أخبار أو أحداث مفاجئة ستظهر أولاً على الشارت قبل أن تنعكس في أرقام التطبيق.")
 
 
 # ================== CONFIG & STYLE ==================
@@ -445,7 +488,6 @@ def classify_stock(res):
     change_pct = res.get('chg', 0)
     mode = st.session_state.mode
     
-    # ✅ فلتر الفجوة السعرية (Gap)
     if change_pct > 3 and ratio < 1.5:
         return "weak"
     
@@ -763,10 +805,11 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
     # ================== 📊 التحليل الفني ==================
     with st.expander("📊 التحليل الفني", expanded=True):
         # عرض شارت TradingView الحقيقي
-        st.markdown("### 📈 شارت السهم")
+        st.markdown("### 📈 شارت السهم (بيانات حية من السوق)")
         render_tradingview_chart(res['name'], height=450)
         
-        st.markdown("---")
+        # 🆕 مقارنة التطبيق مع الشارت
+        compare_with_chart(res)
         
         # الاتجاهات
         t_short_c = "trend-up" if res['t_short'] == "صاعد" else "trend-down"
@@ -842,17 +885,15 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
                 st.metric("🟢 الربح المتوقع", f"{profit_val:,.0f} ج", delta=f"+{res['target_pct']:.1f}%")
                 st.metric("🔴 الخسارة المحتملة", f"{loss_val:,.0f} ج", delta=f"-{res['risk_pct']:.1f}%")
             
-            # ================== 🏹 خطة الدخول المتكاملة ==================
+            # خطة الدخول المتكاملة
             st.markdown("### 🏹 خطة الدخول")
             
             range_size = res['entry_price'] - res['stop_loss']
             
-            # مستويات الدخول
             entry_level_1 = res['entry_price']
             entry_level_2 = max(res['entry_price'] - (range_size * 0.5), res['stop_loss'] * 1.02)
             entry_level_3 = res['entry_price'] + (res['target'] - res['entry_price']) * 0.3
             
-            # توزيع الميزانية حسب قوة الصفقة
             if res['rr'] >= 2:
                 weights = [0.6, 0.25, 0.15]
             elif res['rr'] >= 1.5:
@@ -868,7 +909,6 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
             shares_2 = int(amount_2 / entry_level_2) if entry_level_2 > 0 else 0
             shares_3 = int(amount_3 / entry_level_3) if entry_level_3 > 0 else 0
             
-            # عرض خطة الدخول
             st.markdown(f"""
             <div style='background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:15px;margin:10px 0;'>
                 <b>📌 المستوى الأول - الدخول الأساسي</b><br>
@@ -892,7 +932,6 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
             </div>
             """, unsafe_allow_html=True)
             
-            # متوسط السعر بعد التنفيذ الكامل
             total_shares = shares_1 + shares_2 + shares_3
             total_cost = amount_1 + amount_2 + amount_3
             if total_shares > 0:
@@ -907,7 +946,6 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
         trailing_stop = calculate_trailing_stop(res['entry_price'], current_price_trail, highest_price_trail, res['rr'])
         st.info(f"🛡️ **وقف الخسارة المتحرك المقترح:** {trailing_stop:.2f} ج (الأصلي: {res['stop_loss']:.2f} ج)")
         
-        # تنبيه حول إدارة المخاطر
         st.warning("⚠️ **تذكير:** هذه الخطة استرشادية. القرار النهائي يعتمد على تحليلك الشخصي وظروف السوق.")
     
     # ================== 🧠 تحليل الوضع الحالي ==================
