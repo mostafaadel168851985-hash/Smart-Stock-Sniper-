@@ -5,6 +5,7 @@ from datetime import datetime, date
 import json
 import os
 import re
+import urllib.parse
 
 # ================== 📱 MOBILE DETECTION ==================
 user_agent = st.context.headers.get('User-Agent', '')
@@ -312,10 +313,8 @@ def calculate_roc(current_price, previous_price):
 def render_tradingview_chart(symbol, height=450, theme='dark', interval='D'):
     """عرض شارت TradingView الحقيقي"""
     
-    # إضافة EGX: للرمز (للبورصة المصرية)
     full_symbol = f"EGX:{symbol}" if not symbol.startswith("EGX:") else symbol
     
-    # كود HTML الخاص بالشارت
     chart_html = f"""
     <div class="tradingview-widget-container">
         <div id="tradingview_chart_{symbol.replace(':', '_')}"></div>
@@ -333,7 +332,7 @@ def render_tradingview_chart(symbol, height=450, theme='dark', interval='D'):
             "locale": "ar",
             "toolbar_bg": "#f1f3f6",
             "enable_publishing": false,
-            "allow_symbol_change": false,
+            "allow_symbol_change": true,
             "hideideas": true,
             "studies": [
                 "RSI@tv-basicstudies",
@@ -345,6 +344,38 @@ def render_tradingview_chart(symbol, height=450, theme='dark', interval='D'):
     """
     
     components.html(chart_html, height=height)
+
+
+# ================== 📤 SHARE ON WHATSAPP ==================
+def share_on_whatsapp(res):
+    """إنشاء رابط مشاركة التحليل عبر واتساب"""
+    
+    smart_text, _ = smart_decision(res)
+    
+    message = f"""📊 *EGX Sniper Pro - تحليل سهم {res['name']}*
+
+💰 السعر الحالي: {res['p']:.2f} ج ({res['chg']:+.1f}%)
+🎯 Smart Score: {res['smart_score']}/100
+📈 RSI: {res['rsi']:.1f}
+⚖️ RR Ratio: {res['rr']}
+📊 السيولة: {res['ratio']:.1f}x
+
+📌 الاتجاهات:
+- قصير المدى: {res['t_short']}
+- متوسط المدى: {res['t_med']}
+- طويل المدى: {res['t_long']}
+
+🎯 نطاق الدخول: {res['entry_range']}
+🛑 وقف الخسارة: {res['stop_loss']:.2f} (-{res['risk_pct']:.1f}%)
+🏁 الهدف: {res['target']:.2f} (+{res['target_pct']:.1f}%)
+
+🤖 التقييم: {smart_text}
+
+---
+تم التحليل بواسطة EGX Sniper Pro"""
+    
+    encoded_msg = urllib.parse.quote(message)
+    return f"https://wa.me/?text={encoded_msg}"
 
 
 # ================== CONFIG & STYLE ==================
@@ -378,6 +409,8 @@ st.markdown("""
     .avoid-signal { background-color: #f85149; padding: 10px; border-radius: 10px; text-align: center; margin-bottom: 10px; }
     .premium-badge { background: linear-gradient(135deg, #d4af37, #ffd700); color: #1a1a2e; padding: 5px 15px; border-radius: 20px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
     .real-breakout { background: linear-gradient(135deg, #00c853, #69f0ae); color: #1a1a2e; padding: 5px 15px; border-radius: 20px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
+    .whatsapp-btn { background-color: #25D366; color: white; border: none; border-radius: 12px; padding: 10px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; text-align: center; text-decoration: none; display: inline-block; }
+    .whatsapp-btn:hover { background-color: #128C7E; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -409,7 +442,12 @@ def classify_stock(res):
     t_med = res.get('t_med', 'هابط')
     rsi = res.get('rsi', 50)
     smart_score = res.get('smart_score', 0)
+    change_pct = res.get('chg', 0)
     mode = st.session_state.mode
+    
+    # ✅ فلتر الفجوة السعرية (Gap)
+    if change_pct > 3 and ratio < 1.5:
+        return "weak"
     
     if "محافظ" in mode:
         rr_min = 1.5
@@ -712,9 +750,19 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
     
     st.markdown("---")
     
+    # ================== 📤 زر مشاركة واتساب ==================
+    whatsapp_url = share_on_whatsapp(res)
+    st.markdown(f"""
+    <div style="margin-bottom: 15px;">
+        <a href="{whatsapp_url}" target="_blank" class="whatsapp-btn" style="display: block; text-align: center; background-color: #25D366; color: white; padding: 10px; border-radius: 12px; text-decoration: none; font-weight: bold;">
+            📱 مشاركة التحليل عبر واتساب
+        </a>
+    </div>
+    """, unsafe_allow_html=True)
+    
     # ================== 📊 التحليل الفني ==================
     with st.expander("📊 التحليل الفني", expanded=True):
-        # ✅ عرض شارت TradingView الحقيقي
+        # عرض شارت TradingView الحقيقي
         st.markdown("### 📈 شارت السهم")
         render_tradingview_chart(res['name'], height=450)
         
@@ -800,9 +848,9 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
             range_size = res['entry_price'] - res['stop_loss']
             
             # مستويات الدخول
-            entry_level_1 = res['entry_price']  # الدخول الأساسي
-            entry_level_2 = max(res['entry_price'] - (range_size * 0.5), res['stop_loss'] * 1.02)  # تعزيز دعم
-            entry_level_3 = res['entry_price'] + (res['target'] - res['entry_price']) * 0.3  # تأكيد اختراق
+            entry_level_1 = res['entry_price']
+            entry_level_2 = max(res['entry_price'] - (range_size * 0.5), res['stop_loss'] * 1.02)
+            entry_level_3 = res['entry_price'] + (res['target'] - res['entry_price']) * 0.3
             
             # توزيع الميزانية حسب قوة الصفقة
             if res['rr'] >= 2:
