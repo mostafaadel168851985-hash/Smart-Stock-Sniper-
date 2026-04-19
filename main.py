@@ -606,10 +606,10 @@ def get_all_data():
     url = "https://scanner.tradingview.com/egypt/scan"
     cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA20","SMA50","SMA200"]
     payload = {
-        "filter": [{"left": "volume", "operation": "greater", "right": 5000}],
+        "filter": [{"left": "volume", "operation": "greater", "right": 1000}],  # ✅ تم التخفيض من 5000 إلى 1000
         "columns": cols,
         "sort": {"sortBy": "change", "sortOrder": "desc"},
-        "range": [0, 150]
+        "range": [0, 300]
     }
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -627,6 +627,51 @@ def get_all_data():
         return data.get("data", [])
     except Exception as e:
         st.error(f"⚠️ فشل الاتصال بـ TradingView: {e}")
+        return []
+
+def fetch_single_stock(symbol):
+    """جلب بيانات سهم واحد - محاولة متعددة"""
+    url = "https://scanner.tradingview.com/egypt/scan"
+    cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA20","SMA50","SMA200"]
+    
+    # المحاولة الأولى: equal
+    payload1 = {
+        "filter": [{"left": "name", "operation": "equal", "right": symbol.upper()}],
+        "columns": cols,
+        "range": [0, 1]
+    }
+    
+    # المحاولة الثانية: match
+    payload2 = {
+        "filter": [{"left": "name", "operation": "match", "right": symbol.upper()}],
+        "columns": cols,
+        "range": [0, 1]
+    }
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
+    try:
+        # المحاولة الأولى
+        r1 = requests.post(url, json=payload1, headers=headers, timeout=20)
+        if r1.status_code == 200:
+            data = r1.json()
+            results = data.get("data", [])
+            if results and len(results) > 0:
+                return results
+        
+        # المحاولة الثانية
+        r2 = requests.post(url, json=payload2, headers=headers, timeout=20)
+        if r2.status_code == 200:
+            data = r2.json()
+            results = data.get("data", [])
+            if results and len(results) > 0:
+                return results
+        
+        return []
+    except Exception as e:
+        print(f"API Error: {e}")
         return []
 
 def analyze_stock(d_row):
@@ -1410,7 +1455,6 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "gold":
                 record_trade(an, "gold")
-                # ✅ إضافة تقييم الجودة للذهب
                 quality = get_quality_rating(an, "gold")
                 if "ممتاز" in quality:
                     quality_display = f'<div class="quality-badge quality-excellent">💎 {quality}</div>'
@@ -1427,7 +1471,6 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         results = [an for an in st.session_state.all_results if an and classify_stock(an) == "watchlist"]
         results.sort(key=lambda x: (x.get('smart_score', 0), x.get('rr', 0)), reverse=True)
         for an in results[:15]:
-            # ✅ إضافة تقييم الجودة لكشاف السوق
             quality = get_quality_rating(an, "watchlist")
             if "واعد" in quality:
                 quality_display = f'<div class="quality-badge quality-excellent">🔥 {quality}</div>'
@@ -1443,7 +1486,6 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
     elif st.session_state.page == 'breakout':
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "breakout":
-                # ✅ إضافة تقييم الجودة للاختراقات
                 quality = get_quality_rating(an, "breakout")
                 if "ممتاز" in quality:
                     quality_display = f'<div class="quality-badge quality-excellent">🚀 {quality}</div>'
@@ -1460,7 +1502,6 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         found = False
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "scalp":
-                # ✅ إضافة تقييم الجودة للمضاربات
                 quality = get_quality_rating(an, "scalp")
                 if "ممتاز" in quality:
                     quality_display = f'<div class="quality-badge quality-excellent">⚡ {quality}</div>'
@@ -1486,13 +1527,18 @@ elif st.session_state.page == 'analyze':
     sym = st.text_input("رمز السهم").upper().strip()
     if sym:
         with st.spinner("🔍 جاري البحث عن السهم..."):
-            res = next((x for x in st.session_state.all_results if x['name'] == sym), None)
+            # ✅ استخدام fetch_single_stock المحسنة
+            data = fetch_single_stock(sym)
             
-            if not res:
+            if not data:
                 st.error("❌ السهم غير موجود في البيانات الحالية")
                 symbols = [x['name'] for x in st.session_state.all_results]
                 similar = [s for s in symbols if sym[:2] in s or s[:2] in sym][:5]
                 if similar:
                     st.info(f"💡 هل تقصد: {', '.join(similar)}")
             else:
-                render_stock_ui(res)
+                res = analyze_stock(data[0])
+                if res:
+                    render_stock_ui(res)
+                else:
+                    st.warning("⚠️ تم جلب البيانات لكن التحليل فشل")
