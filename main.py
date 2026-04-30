@@ -18,6 +18,7 @@ else:
 
 # ================== 📁 PERFORMANCE TRACKING ==================
 TRADES_FILE = "trades_data.json"
+ACCUMULATION_FILE = "accumulation_data.json"
 
 def load_trades():
     if os.path.exists(TRADES_FILE):
@@ -204,6 +205,101 @@ def get_performance_stats(trades):
         'current_win_streak': current_streak, 'max_win_streak': max_streak,
         'avg_mfe': round(avg_mfe, 2), 'avg_mae': round(avg_mae, 2)
     }
+
+
+# ================== 📊 ACCUMULATION TRACKING ==================
+def load_accumulation_data():
+    """تحميل بيانات التجميع السابقة"""
+    if os.path.exists(ACCUMULATION_FILE):
+        try:
+            with open(ACCUMULATION_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+                return {}
+        except:
+            return {}
+    return {}
+
+def save_accumulation_data(data):
+    """حفظ بيانات التجميع"""
+    try:
+        with open(ACCUMULATION_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error saving accumulation data: {e}")
+
+def detect_accumulation(an):
+    """الكشف عن علامات التجميع في السهم"""
+    score = 0
+    reasons = []
+    
+    # 1. RSI بين 40 و 55 (زخم صحي)
+    if 40 < an['rsi'] < 55:
+        score += 25
+        reasons.append("RSI صحي (40-55)")
+    
+    # 2. السعر فوق أو قريب من SMA20
+    if an['sma20']:
+        if an['p'] > an['sma20']:
+            score += 20
+            reasons.append("السعر فوق المتوسط 20")
+        elif abs(an['p'] - an['sma20']) / an['sma20'] < 0.02:
+            score += 10
+            reasons.append("السعر قريب من المتوسط 20")
+    
+    # 3. سيولة جيدة
+    if an['ratio'] > 1.5:
+        score += 20
+        reasons.append(f"سيولة جيدة ({an['ratio']:.1f}x)")
+    elif an['ratio'] > 1.2:
+        score += 10
+        reasons.append(f"سيولة مقبولة ({an['ratio']:.1f}x)")
+    
+    # 4. اتجاه قصير صاعد
+    if an['t_short'] == "صاعد":
+        score += 20
+        reasons.append("اتجاه قصير صاعد")
+    
+    # 5. قرب من المقاومة R1 (أقل من 3%)
+    if an['r1']:
+        distance_to_r1 = (an['r1'] - an['p']) / an['p'] * 100
+        if 0 < distance_to_r1 < 3:
+            score += 15
+            reasons.append(f"قرب من المقاومة ({distance_to_r1:.1f}%)")
+    
+    return score, reasons
+
+def check_ready_for_breakout(current_stock, past_accumulation):
+    """التحقق مما إذا كان السهم كان في تجميع واستعد للصعود الآن"""
+    if not past_accumulation:
+        return False, []
+    
+    ready_reasons = []
+    
+    # 1. هل كان في تجميع بقوة؟
+    if past_accumulation.get('max_score', 0) >= 60:
+        ready_reasons.append("✅ كان في تجميع قوي سابقاً")
+    
+    # 2. هل RSI ارتفع؟
+    past_rsi = past_accumulation.get('rsi', 0)
+    if current_stock['rsi'] > past_rsi + 5:
+        ready_reasons.append(f"📈 RSI ارتفع من {past_rsi:.0f} إلى {current_stock['rsi']:.0f}")
+    
+    # 3. هل السعر كسر المقاومة؟
+    if current_stock['r1'] and current_stock['p'] > current_stock['r1']:
+        ready_reasons.append(f"🚀 اخترق المقاومة {current_stock['r1']:.2f}")
+    
+    # 4. هل السيولة زادت؟
+    past_ratio = past_accumulation.get('ratio', 0)
+    if current_stock['ratio'] > past_ratio * 1.2:
+        ready_reasons.append(f"💧 السيولة زادت من {past_ratio:.1f}x إلى {current_stock['ratio']:.1f}x")
+    
+    # 5. هل السعر تجاوز المتوسط؟
+    if current_stock['p'] > current_stock['sma20']:
+        ready_reasons.append("📊 السعر فوق المتوسط 20")
+    
+    return len(ready_reasons) >= 2, ready_reasons
 
 
 # ================== 🔥 SMART ADDITIONS ==================
@@ -459,6 +555,7 @@ st.markdown("""
     .quality-excellent { background: linear-gradient(135deg, #1f4f2b, #2e7d32); color: white; }
     .quality-good { background: linear-gradient(135deg, #1f3a4f, #1565c0); color: white; }
     .quality-normal { background: linear-gradient(135deg, #4a4a4a, #616161); color: white; }
+    .ready-badge { background: linear-gradient(135deg, #ff8f00, #ff6f00); color: white; padding: 5px 10px; border-radius: 10px; margin-bottom: 10px; text-align: center; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -606,7 +703,7 @@ def get_all_data():
     url = "https://scanner.tradingview.com/egypt/scan"
     cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA20","SMA50","SMA200"]
     payload = {
-        "filter": [{"left": "volume", "operation": "greater", "right": 1000}],  # ✅ تم التخفيض من 5000 إلى 1000
+        "filter": [{"left": "volume", "operation": "greater", "right": 1000}],
         "columns": cols,
         "sort": {"sortBy": "change", "sortOrder": "desc"},
         "range": [0, 300]
@@ -634,14 +731,12 @@ def fetch_single_stock(symbol):
     url = "https://scanner.tradingview.com/egypt/scan"
     cols = ["name","close","RSI","volume","average_volume_10d_calc","high","low","change","description","SMA20","SMA50","SMA200"]
     
-    # المحاولة الأولى: equal
     payload1 = {
         "filter": [{"left": "name", "operation": "equal", "right": symbol.upper()}],
         "columns": cols,
         "range": [0, 1]
     }
     
-    # المحاولة الثانية: match
     payload2 = {
         "filter": [{"left": "name", "operation": "match", "right": symbol.upper()}],
         "columns": cols,
@@ -653,7 +748,6 @@ def fetch_single_stock(symbol):
     }
     
     try:
-        # المحاولة الأولى
         r1 = requests.post(url, json=payload1, headers=headers, timeout=20)
         if r1.status_code == 200:
             data = r1.json()
@@ -661,7 +755,6 @@ def fetch_single_stock(symbol):
             if results and len(results) > 0:
                 return results
         
-        # المحاولة الثانية
         r2 = requests.post(url, json=payload2, headers=headers, timeout=20)
         if r2.status_code == 200:
             data = r2.json()
@@ -1096,7 +1189,7 @@ if st.session_state.page == 'home':
         st.caption("أدخل رمز السهم للتحليل المفصل")
     
     with st.expander("🛠️ أدوات متقدمة", expanded=False):
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             if st.button("💎 الفرص الذهبية"):
                 st.session_state.page = 'gold'
@@ -1112,6 +1205,10 @@ if st.session_state.page == 'home':
         with col4:
             if st.button("🔭 كشاف السوق"):
                 st.session_state.page = 'scanner'
+                st.rerun()
+        with col5:
+            if st.button("📈 مراقبة التجميع"):
+                st.session_state.page = 'accumulation'
                 st.rerun()
     
     with st.expander("⚙️ إدارة التطبيق", expanded=False):
@@ -1143,6 +1240,13 @@ if st.session_state.page == 'home':
                 st.rerun()
             else:
                 st.info("لا توجد بيانات للمسح")
+        if st.button("🗑️ مسح بيانات مراقبة التجميع", use_container_width=True):
+            if os.path.exists(ACCUMULATION_FILE):
+                os.remove(ACCUMULATION_FILE)
+                st.success("✅ تم مسح بيانات مراقبة التجميع!")
+                st.rerun()
+            else:
+                st.info("لا توجد بيانات للمسح")
     
     if st.session_state.all_results:
         gold_count, gold_percentage, rarity_status = check_gold_rarity(st.session_state.all_results)
@@ -1164,6 +1268,108 @@ elif st.session_state.page == 'avg':
     if (q1 + q2) > 0:
         avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
         st.success(f"📊 متوسط السعر الجديد: {avg:.2f}")
+
+# ================== 🆕 صفحة مراقبة التجميع ==================
+elif st.session_state.page == 'accumulation':
+    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
+    st.title("📈 مراقبة التجميع والاستعداد للصعود")
+    st.markdown("الأسهم اللي كانت في تجميع واستعدت للصعود النهاردة")
+    
+    if not st.session_state.all_results:
+        st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
+        st.stop()
+    
+    # تحميل بيانات التجميع السابقة
+    accumulation_history = load_accumulation_data()
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    # تحليل الأسهم الحالية وحفظها للتجميع
+    current_accumulation = {}
+    ready_stocks = []
+    
+    for an in st.session_state.all_results:
+        score, reasons = detect_accumulation(an)
+        if score >= 50:
+            current_accumulation[an['name']] = {
+                'date': today,
+                'score': score,
+                'rsi': an['rsi'],
+                'ratio': an['ratio'],
+                'price': an['p'],
+                'sma20': an['sma20'],
+                'r1': an['r1'],
+                'reasons': reasons
+            }
+        
+        # التحقق من الأسهم اللي كانت في تجميع واستعدت للصعود
+        past_data = accumulation_history.get(an['name'])
+        if past_data:
+            is_ready, ready_reasons = check_ready_for_breakout(an, past_data)
+            if is_ready:
+                ready_stocks.append({
+                    'stock': an,
+                    'past': past_data,
+                    'reasons': ready_reasons
+                })
+    
+    # حفظ بيانات التجميع الحالية
+    save_accumulation_data(current_accumulation)
+    
+    # عرض الأسهم المستعدة للصعود
+    if ready_stocks:
+        st.markdown("## 🚀 أسهم جاهزة للصعود (خلصت تجميع)")
+        for rs in ready_stocks:
+            an = rs['stock']
+            past = rs['past']
+            
+            st.markdown(f"""
+            <div style='background:#0d1117;border:2px solid #ff8f00;border-radius:12px;padding:15px;margin-bottom:15px;'>
+                <div style='display:flex;justify-content:space-between;align-items:center;'>
+                    <h3 style='color:#ff8f00;margin:0'>🚀 {an['name']} - {an['desc']}</h3>
+                    <span class='ready-badge'>جاهز للصعود</span>
+                </div>
+                <div style='margin-top:10px;'>
+                    <b>📊 مقارنة التطور:</b><br>
+                    • RSI: {past.get('rsi', 0):.0f} → {an['rsi']:.0f}<br>
+                    • السيولة: {past.get('ratio', 0):.1f}x → {an['ratio']:.1f}x<br>
+                    • السعر: {past.get('price', 0):.2f} → {an['p']:.2f}
+                </div>
+                <div style='margin-top:10px;'>
+                    <b>✅ أسباب الاستعداد للصعود:</b>
+                    {"".join([f'<div style="color:#3fb950;">{r}</div>' for r in rs['reasons']])}
+                </div>
+                <div style='margin-top:10px;color:#8b949e;font-size:12px;'>
+                    <b>📋 بيانات التجميع السابقة:</b><br>
+                    درجة التجميع: {past.get('score', 0)}/100 | الأسباب: {', '.join(past.get('reasons', []))}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # زر تحليل مفصل
+            if st.button(f"📊 تحليل {an['name']} بالتفصيل", key=f"analyze_{an['name']}"):
+                render_stock_ui(an)
+    else:
+        st.info("لا توجد أسهم مستعدة للصعود حالياً. استمر في المتابعة.")
+    
+    # عرض الأسهم اللي في تجميع حالياً
+    st.markdown("---")
+    st.markdown("## 📊 أسهم في مرحلة التجميع حالياً")
+    
+    accumulating = [an for an in st.session_state.all_results if current_accumulation.get(an['name'])]
+    if accumulating:
+        for an in accumulating[:15]:
+            acc_data = current_accumulation[an['name']]
+            with st.expander(f"📦 {an['name']} - درجة التجميع: {acc_data['score']}/100"):
+                st.markdown(f"""
+                - **RSI:** {an['rsi']:.1f}
+                - **السيولة:** {an['ratio']:.1f}x
+                - **السعر:** {an['p']:.2f} | SMA20: {an['sma20']:.2f}
+                - **المقاومة R1:** {an['r1']:.2f}
+                - **علامات التجميع:** {', '.join(acc_data['reasons'])}
+                """)
+                st.info("💡 هذا السهم في مرحلة تجميع. متابعة جيدة للاستعداد للصعود القادم.")
+    else:
+        st.info("لا توجد أسهم في مرحلة تجميع حالياً.")
 
 elif st.session_state.page == 'guide':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -1285,6 +1491,19 @@ elif st.session_state.page == 'guide':
 
         ---
 
+        #### 📈 مراقبة التجميع (Accumulation)
+        | المعيار | التفاصيل |
+        |----------|----------|
+        | **طريقة الاختيار** | تتبع الأسهم على مدار الأيام ورصد علامات التجميع |
+        | **المؤشرات المعتمدة** | RSI (40-55) + سيولة + اتجاه + قرب من المقاومة |
+        | **نوع الصفقات** | أسهم في مرحلة تجميع أو استعدت للصعود |
+        | **الهدف** | اكتشاف الأسهم قبل الاختراق |
+        | **مناسب لـ** | اللي عايز فرص قبل ما تظهر في الاختراقات |
+
+        > 💡 **نصيحة:** استخدمها عشان تكتشف الأسهم اللي بتجمع قبل ما تخترق.
+
+        ---
+
         ### 🎯 جدول مقارنة سريع:
 
         | القسم | السيولة (Ratio) | RR | RSI | عدد الفرص | السرعة |
@@ -1294,6 +1513,7 @@ elif st.session_state.page == 'guide':
         | 🚀 اختراقات | > 2.5 | أي | < 70 | قليل | سريعة |
         | ⚡ مضاربات | > 1.8 | >= 1.3 | < 75 | متوسط | سريعة جداً |
         | 💎 ذهبي | > 1.5 | >= 2 | 45-60 | نادر جداً | متوسطة |
+        | 📈 تجميع | > 1.2 | أي | 40-55 | 15+ | بطيئة (للمتابعة) |
 
         ---
 
@@ -1305,6 +1525,7 @@ elif st.session_state.page == 'guide':
         | **تتابع فرص محتملة** | 🔭 كشاف السوق |
         | **مضاربات سريعة (ربح سريع)** | 🚀 اختراقات أو ⚡ مضاربات |
         | **أقوى وأندر الفرص** | 💎 الفرص الذهبية |
+        | **تكتشف الفرص قبل الاختراق** | 📈 مراقبة التجميع |
 
         ---
 
@@ -1527,7 +1748,6 @@ elif st.session_state.page == 'analyze':
     sym = st.text_input("رمز السهم").upper().strip()
     if sym:
         with st.spinner("🔍 جاري البحث عن السهم..."):
-            # ✅ استخدام fetch_single_stock المحسنة
             data = fetch_single_stock(sym)
             
             if not data:
