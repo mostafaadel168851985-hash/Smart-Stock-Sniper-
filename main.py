@@ -18,7 +18,6 @@ else:
 
 # ================== 📁 PERFORMANCE TRACKING ==================
 TRADES_FILE = "trades_data.json"
-ACCUMULATION_FILE = "accumulation_data.json"
 
 def load_trades():
     if os.path.exists(TRADES_FILE):
@@ -205,101 +204,6 @@ def get_performance_stats(trades):
         'current_win_streak': current_streak, 'max_win_streak': max_streak,
         'avg_mfe': round(avg_mfe, 2), 'avg_mae': round(avg_mae, 2)
     }
-
-
-# ================== 📊 ACCUMULATION TRACKING ==================
-def load_accumulation_data():
-    """تحميل بيانات التجميع السابقة"""
-    if os.path.exists(ACCUMULATION_FILE):
-        try:
-            with open(ACCUMULATION_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    return data
-                return {}
-        except:
-            return {}
-    return {}
-
-def save_accumulation_data(data):
-    """حفظ بيانات التجميع"""
-    try:
-        with open(ACCUMULATION_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"Error saving accumulation data: {e}")
-
-def detect_accumulation(an):
-    """الكشف عن علامات التجميع في السهم"""
-    score = 0
-    reasons = []
-    
-    # 1. RSI بين 40 و 55 (زخم صحي)
-    if 40 < an['rsi'] < 55:
-        score += 25
-        reasons.append("RSI صحي (40-55)")
-    
-    # 2. السعر فوق أو قريب من SMA20
-    if an['sma20']:
-        if an['p'] > an['sma20']:
-            score += 20
-            reasons.append("السعر فوق المتوسط 20")
-        elif abs(an['p'] - an['sma20']) / an['sma20'] < 0.02:
-            score += 10
-            reasons.append("السعر قريب من المتوسط 20")
-    
-    # 3. سيولة جيدة
-    if an['ratio'] > 1.5:
-        score += 20
-        reasons.append(f"سيولة جيدة ({an['ratio']:.1f}x)")
-    elif an['ratio'] > 1.2:
-        score += 10
-        reasons.append(f"سيولة مقبولة ({an['ratio']:.1f}x)")
-    
-    # 4. اتجاه قصير صاعد
-    if an['t_short'] == "صاعد":
-        score += 20
-        reasons.append("اتجاه قصير صاعد")
-    
-    # 5. قرب من المقاومة R1 (أقل من 3%)
-    if an['r1']:
-        distance_to_r1 = (an['r1'] - an['p']) / an['p'] * 100
-        if 0 < distance_to_r1 < 3:
-            score += 15
-            reasons.append(f"قرب من المقاومة ({distance_to_r1:.1f}%)")
-    
-    return score, reasons
-
-def check_ready_for_breakout(current_stock, past_accumulation):
-    """التحقق مما إذا كان السهم كان في تجميع واستعد للصعود الآن"""
-    if not past_accumulation:
-        return False, []
-    
-    ready_reasons = []
-    
-    # 1. هل كان في تجميع بقوة؟
-    if past_accumulation.get('max_score', 0) >= 60:
-        ready_reasons.append("✅ كان في تجميع قوي سابقاً")
-    
-    # 2. هل RSI ارتفع؟
-    past_rsi = past_accumulation.get('rsi', 0)
-    if current_stock['rsi'] > past_rsi + 5:
-        ready_reasons.append(f"📈 RSI ارتفع من {past_rsi:.0f} إلى {current_stock['rsi']:.0f}")
-    
-    # 3. هل السعر كسر المقاومة؟
-    if current_stock['r1'] and current_stock['p'] > current_stock['r1']:
-        ready_reasons.append(f"🚀 اخترق المقاومة {current_stock['r1']:.2f}")
-    
-    # 4. هل السيولة زادت؟
-    past_ratio = past_accumulation.get('ratio', 0)
-    if current_stock['ratio'] > past_ratio * 1.2:
-        ready_reasons.append(f"💧 السيولة زادت من {past_ratio:.1f}x إلى {current_stock['ratio']:.1f}x")
-    
-    # 5. هل السعر تجاوز المتوسط؟
-    if current_stock['p'] > current_stock['sma20']:
-        ready_reasons.append("📊 السعر فوق المتوسط 20")
-    
-    return len(ready_reasons) >= 2, ready_reasons
 
 
 # ================== 🔥 SMART ADDITIONS ==================
@@ -518,6 +422,42 @@ def share_on_whatsapp(res):
     return f"https://wa.me/?text={encoded_msg}"
 
 
+# ================== 🆕 IMMINENT BREAKOUT DETECTION ==================
+def is_imminent_breakout(an):
+    """الكشف عن الأسهم على وشك الاختراق"""
+    if not an['r1']:
+        return False, []
+    
+    reasons = []
+    distance_to_r1 = (an['r1'] - an['p']) / an['p'] * 100
+    
+    # 1. السعر قرب من المقاومة R1 (أقل من 2%)
+    if 0 < distance_to_r1 < 2:
+        reasons.append(f"🎯 قرب من المقاومة R1 ({distance_to_r1:.1f}%)")
+    else:
+        return False, []
+    
+    # 2. RSI بين 50 و 65 (زخم صحي)
+    if 50 < an['rsi'] < 65:
+        reasons.append(f"📈 RSI صحي ({an['rsi']:.0f})")
+    else:
+        return False, []
+    
+    # 3. سيولة جيدة
+    if an['ratio'] > 1.5:
+        reasons.append(f"💧 سيولة جيدة ({an['ratio']:.1f}x)")
+    else:
+        return False, []
+    
+    # 4. اتجاه قصير صاعد
+    if an['t_short'] == "صاعد":
+        reasons.append("📊 اتجاه قصير صاعد")
+    else:
+        return False, []
+    
+    return True, reasons
+
+
 # ================== CONFIG & STYLE ==================
 st.set_page_config(page_title="EGX Sniper Pro v16.0", layout="wide")
 
@@ -555,7 +495,7 @@ st.markdown("""
     .quality-excellent { background: linear-gradient(135deg, #1f4f2b, #2e7d32); color: white; }
     .quality-good { background: linear-gradient(135deg, #1f3a4f, #1565c0); color: white; }
     .quality-normal { background: linear-gradient(135deg, #4a4a4a, #616161); color: white; }
-    .ready-badge { background: linear-gradient(135deg, #ff8f00, #ff6f00); color: white; padding: 5px 10px; border-radius: 10px; margin-bottom: 10px; text-align: center; font-weight: bold; }
+    .imminent-badge { background: linear-gradient(135deg, #ff8f00, #ff6f00); color: white; padding: 5px 10px; border-radius: 10px; margin-bottom: 10px; text-align: center; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1207,8 +1147,8 @@ if st.session_state.page == 'home':
                 st.session_state.page = 'scanner'
                 st.rerun()
         with col5:
-            if st.button("📈 مراقبة التجميع"):
-                st.session_state.page = 'accumulation'
+            if st.button("⚡ اختراقات وشيكة"):
+                st.session_state.page = 'imminent'
                 st.rerun()
     
     with st.expander("⚙️ إدارة التطبيق", expanded=False):
@@ -1233,17 +1173,10 @@ if st.session_state.page == 'home':
     
     # زر مسح البيانات
     with st.expander("⚠️ أدوات خطيرة", expanded=False):
-        if st.button("🗑️ إعادة ضبط جميع البيانات (مسح التقييم)", use_container_width=True):
+        if st.button("🗑️ إعادة ضبط جميع بيانات التقييم", use_container_width=True):
             if os.path.exists(TRADES_FILE):
                 os.remove(TRADES_FILE)
                 st.success("✅ تم مسح جميع بيانات التقييم! سيتم البدء من جديد")
-                st.rerun()
-            else:
-                st.info("لا توجد بيانات للمسح")
-        if st.button("🗑️ مسح بيانات مراقبة التجميع", use_container_width=True):
-            if os.path.exists(ACCUMULATION_FILE):
-                os.remove(ACCUMULATION_FILE)
-                st.success("✅ تم مسح بيانات مراقبة التجميع!")
                 st.rerun()
             else:
                 st.info("لا توجد بيانات للمسح")
@@ -1269,107 +1202,51 @@ elif st.session_state.page == 'avg':
         avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
         st.success(f"📊 متوسط السعر الجديد: {avg:.2f}")
 
-# ================== 🆕 صفحة مراقبة التجميع ==================
-elif st.session_state.page == 'accumulation':
+# ================== 🆕 صفحة اختراقات وشيكة ==================
+elif st.session_state.page == 'imminent':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    st.title("📈 مراقبة التجميع والاستعداد للصعود")
-    st.markdown("الأسهم اللي كانت في تجميع واستعدت للصعود النهاردة")
+    st.title("⚡ اختراقات وشيكة")
+    st.markdown("الأسهم اللي على وشك الاختراق (قربت من المقاومة + زخم صحي + سيولة)")
     
     if not st.session_state.all_results:
         st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
         st.stop()
     
-    # تحميل بيانات التجميع السابقة
-    accumulation_history = load_accumulation_data()
-    today = datetime.now().strftime("%Y-%m-%d")
-    
-    # تحليل الأسهم الحالية وحفظها للتجميع
-    current_accumulation = {}
-    ready_stocks = []
-    
+    imminent_stocks = []
     for an in st.session_state.all_results:
-        score, reasons = detect_accumulation(an)
-        if score >= 50:
-            current_accumulation[an['name']] = {
-                'date': today,
-                'score': score,
-                'rsi': an['rsi'],
-                'ratio': an['ratio'],
-                'price': an['p'],
-                'sma20': an['sma20'],
-                'r1': an['r1'],
-                'reasons': reasons
-            }
-        
-        # التحقق من الأسهم اللي كانت في تجميع واستعدت للصعود
-        past_data = accumulation_history.get(an['name'])
-        if past_data:
-            is_ready, ready_reasons = check_ready_for_breakout(an, past_data)
-            if is_ready:
-                ready_stocks.append({
-                    'stock': an,
-                    'past': past_data,
-                    'reasons': ready_reasons
-                })
+        is_imminent, reasons = is_imminent_breakout(an)
+        if is_imminent:
+            imminent_stocks.append({'stock': an, 'reasons': reasons})
     
-    # حفظ بيانات التجميع الحالية
-    save_accumulation_data(current_accumulation)
-    
-    # عرض الأسهم المستعدة للصعود
-    if ready_stocks:
-        st.markdown("## 🚀 أسهم جاهزة للصعود (خلصت تجميع)")
-        for rs in ready_stocks:
-            an = rs['stock']
-            past = rs['past']
+    if imminent_stocks:
+        st.markdown(f"### 🎯 عدد الأسهم على وشك الاختراق: {len(imminent_stocks)}")
+        for item in imminent_stocks:
+            an = item['stock']
+            reasons = item['reasons']
             
             st.markdown(f"""
             <div style='background:#0d1117;border:2px solid #ff8f00;border-radius:12px;padding:15px;margin-bottom:15px;'>
                 <div style='display:flex;justify-content:space-between;align-items:center;'>
-                    <h3 style='color:#ff8f00;margin:0'>🚀 {an['name']} - {an['desc']}</h3>
-                    <span class='ready-badge'>جاهز للصعود</span>
+                    <h3 style='color:#ff8f00;margin:0'>⚡ {an['name']} - {an['desc']}</h3>
+                    <span class='imminent-badge'>على وشك الاختراق</span>
                 </div>
                 <div style='margin-top:10px;'>
-                    <b>📊 مقارنة التطور:</b><br>
-                    • RSI: {past.get('rsi', 0):.0f} → {an['rsi']:.0f}<br>
-                    • السيولة: {past.get('ratio', 0):.1f}x → {an['ratio']:.1f}x<br>
-                    • السعر: {past.get('price', 0):.2f} → {an['p']:.2f}
+                    <b>📊 المعطيات:</b><br>
+                    • السعر: {an['p']:.2f} ج | المقاومة R1: {an['r1']:.2f} ج ({(an['r1']-an['p'])/an['p']*100:.1f}% متبقي)<br>
+                    • RSI: {an['rsi']:.1f} | السيولة: {an['ratio']:.1f}x<br>
+                    • الاتجاه: {an['t_short']} | Smart Score: {an['smart_score']}/100
                 </div>
                 <div style='margin-top:10px;'>
-                    <b>✅ أسباب الاستعداد للصعود:</b>
-                    {"".join([f'<div style="color:#3fb950;">{r}</div>' for r in rs['reasons']])}
-                </div>
-                <div style='margin-top:10px;color:#8b949e;font-size:12px;'>
-                    <b>📋 بيانات التجميع السابقة:</b><br>
-                    درجة التجميع: {past.get('score', 0)}/100 | الأسباب: {', '.join(past.get('reasons', []))}
+                    <b>✅ أسباب الوشك على الاختراق:</b>
+                    {"".join([f'<div style="color:#ff8f00;">{r}</div>' for r in reasons])}
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
-            # زر تحليل مفصل
             if st.button(f"📊 تحليل {an['name']} بالتفصيل", key=f"analyze_{an['name']}"):
                 render_stock_ui(an)
     else:
-        st.info("لا توجد أسهم مستعدة للصعود حالياً. استمر في المتابعة.")
-    
-    # عرض الأسهم اللي في تجميع حالياً
-    st.markdown("---")
-    st.markdown("## 📊 أسهم في مرحلة التجميع حالياً")
-    
-    accumulating = [an for an in st.session_state.all_results if current_accumulation.get(an['name'])]
-    if accumulating:
-        for an in accumulating[:15]:
-            acc_data = current_accumulation[an['name']]
-            with st.expander(f"📦 {an['name']} - درجة التجميع: {acc_data['score']}/100"):
-                st.markdown(f"""
-                - **RSI:** {an['rsi']:.1f}
-                - **السيولة:** {an['ratio']:.1f}x
-                - **السعر:** {an['p']:.2f} | SMA20: {an['sma20']:.2f}
-                - **المقاومة R1:** {an['r1']:.2f}
-                - **علامات التجميع:** {', '.join(acc_data['reasons'])}
-                """)
-                st.info("💡 هذا السهم في مرحلة تجميع. متابعة جيدة للاستعداد للصعود القادم.")
-    else:
-        st.info("لا توجد أسهم في مرحلة تجميع حالياً.")
+        st.info("لا توجد أسهم على وشك الاختراق حالياً.")
 
 elif st.session_state.page == 'guide':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -1491,16 +1368,16 @@ elif st.session_state.page == 'guide':
 
         ---
 
-        #### 📈 مراقبة التجميع (Accumulation)
+        #### ⚡ اختراقات وشيكة (Imminent Breakout)
         | المعيار | التفاصيل |
         |----------|----------|
-        | **طريقة الاختيار** | تتبع الأسهم على مدار الأيام ورصد علامات التجميع |
-        | **المؤشرات المعتمدة** | RSI (40-55) + سيولة + اتجاه + قرب من المقاومة |
-        | **نوع الصفقات** | أسهم في مرحلة تجميع أو استعدت للصعود |
-        | **الهدف** | اكتشاف الأسهم قبل الاختراق |
-        | **مناسب لـ** | اللي عايز فرص قبل ما تظهر في الاختراقات |
+        | **طريقة الاختيار** | سعر قرب من R1 (أقل من 2%) + RSI 50-65 + سيولة > 1.5x + اتجاه صاعد |
+        | **المؤشرات المعتمدة** | المسافة من المقاومة + الزخم + السيولة |
+        | **نوع الصفقات** | على وشك الاختراق (لم يخترق بعد) |
+        | **الهدف** | الدخول قبل الاختراق |
+        | **مناسب لـ** | اللي عايز يسبق الاختراق الفعلي |
 
-        > 💡 **نصيحة:** استخدمها عشان تكتشف الأسهم اللي بتجمع قبل ما تخترق.
+        > 💡 **نصيحة:** القسم ده مخصص للفرص اللي قربت تخترق، ممكن تدخل بدري وتستنى الاختراق.
 
         ---
 
@@ -1513,7 +1390,7 @@ elif st.session_state.page == 'guide':
         | 🚀 اختراقات | > 2.5 | أي | < 70 | قليل | سريعة |
         | ⚡ مضاربات | > 1.8 | >= 1.3 | < 75 | متوسط | سريعة جداً |
         | 💎 ذهبي | > 1.5 | >= 2 | 45-60 | نادر جداً | متوسطة |
-        | 📈 تجميع | > 1.2 | أي | 40-55 | 15+ | بطيئة (للمتابعة) |
+        | ⚡ اختراقات وشيكة | > 1.5 | أي | 50-65 | قليل | بطيئة (للاستباق) |
 
         ---
 
@@ -1525,7 +1402,7 @@ elif st.session_state.page == 'guide':
         | **تتابع فرص محتملة** | 🔭 كشاف السوق |
         | **مضاربات سريعة (ربح سريع)** | 🚀 اختراقات أو ⚡ مضاربات |
         | **أقوى وأندر الفرص** | 💎 الفرص الذهبية |
-        | **تكتشف الفرص قبل الاختراق** | 📈 مراقبة التجميع |
+        | **تسبق السوق وتدخل بدري** | ⚡ اختراقات وشيكة |
 
         ---
 
