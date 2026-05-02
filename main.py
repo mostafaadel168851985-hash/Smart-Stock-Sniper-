@@ -169,6 +169,8 @@ def get_performance_stats(trades):
     
     top10_trades = [t for t in trades if t.get('trade_type') == 'top10']
     gold_trades = [t for t in trades if t.get('trade_type') == 'gold']
+    support_trades = [t for t in trades if t.get('trade_type') == 'support']
+    bounce_trades = [t for t in trades if t.get('trade_type') == 'bounce']
     
     top10_closed = [t for t in top10_trades if t.get('status') in ['hit_target', 'stopped_out']]
     gold_closed = [t for t in gold_trades if t.get('status') in ['hit_target', 'stopped_out']]
@@ -200,6 +202,7 @@ def get_performance_stats(trades):
         'top10_count': len(top10_trades), 'gold_count': len(gold_trades),
         'top10_success': round(top10_success, 1), 'gold_success': round(gold_success, 1),
         'top10_return': round(top10_return, 1), 'gold_return': round(gold_return, 1),
+        'support_count': len(support_trades), 'bounce_count': len(bounce_trades),
         'avg_holding_days': round(avg_holding_days, 1), 'entry_accuracy': round(entry_accuracy, 1),
         'current_win_streak': current_streak, 'max_win_streak': max_streak,
         'avg_mfe': round(avg_mfe, 2), 'avg_mae': round(avg_mae, 2)
@@ -308,6 +311,90 @@ def calculate_roc(current_price, previous_price):
     if previous_price and previous_price > 0:
         return ((current_price - previous_price) / previous_price) * 100
     return 0
+
+# ================== 🆕 SUPPORT & BOUNCE DETECTION ==================
+def is_near_support_with_bounce(an, bounce_confirmed=False):
+    """الكشف عن الأسهم القريبة من الدعم أو المرتدة منه"""
+    s1 = an.get('s1', 0)
+    s2 = an.get('s2', 0)
+    p = an.get('p', 0)
+    change_pct = an.get('chg', 0)
+    rsi = an.get('rsi', 50)
+    
+    if s1 == 0 and s2 == 0:
+        return False, [], "عادي"
+    
+    # أقرب دعم (S1 أهم من S2)
+    nearest_support = s1 if s1 > 0 else s2
+    distance_to_support = (p - nearest_support) / nearest_support * 100 if nearest_support > 0 else 999
+    
+    reasons = []
+    level = "عادي"
+    
+    # 1. فحص قرب الدعم - حدود ضيقة جداً (0.6% كحد أقصى)
+    if 0 <= distance_to_support < 0.3:
+        level = "عند الدعم"
+        reasons.append(f"📍 عند الدعم ({distance_to_support:.2f}% فوقه)")
+    elif 0.3 <= distance_to_support < 0.6:
+        level = "قريب جداً"
+        reasons.append(f"📍 قريب جداً من الدعم ({distance_to_support:.2f}% فوقه)")
+    else:
+        return False, [], "عادي"
+    
+    # 2. لم يكسـر الدعم
+    if p < nearest_support:
+        reasons.append("❌ كسر الدعم - خطورة")
+        return False, ["كسر الدعم"], "مكسور"
+    
+    # 3. فحص الارتداد (إذا مطلوب)
+    if bounce_confirmed:
+        if change_pct > 0.3:
+            reasons.append(f"📈 ارتداد إيجابي ({change_pct:+.1f}%)")
+        else:
+            return False, [], "عادي"
+    
+    # 4. مؤشرات داعمة إضافية
+    if rsi < 35:
+        reasons.append(f"🟢 RSI منخفض جداً ({rsi:.0f}) - فرصة تشبع بيع ممتازة")
+    elif rsi < 45:
+        reasons.append(f"📊 RSI منخفض ({rsi:.0f}) - فرصة جيدة")
+    elif rsi < 55 and change_pct > 0:
+        reasons.append(f"📈 RSI بدأ بالصعود ({rsi:.0f})")
+    
+    if an.get('ratio', 0) > 1.2:
+        reasons.append(f"💧 سيولة جيدة ({an['ratio']:.1f}x)")
+    elif an.get('ratio', 0) > 0.8:
+        reasons.append(f"💧 سيولة مقبولة ({an['ratio']:.1f}x)")
+    
+    # 5. حساب الهدف المتوقع (أول مقاومة)
+    r1 = an.get('r1', p * 1.03)
+    potential_gain = (r1 - p) / p * 100 if r1 > p else 0
+    
+    if potential_gain > 3:
+        reasons.append(f"🎯 هدف محتمل: {r1:.2f} (+{potential_gain:.1f}%)")
+    
+    return True, reasons, level
+
+def get_support_quality_rating(res, level, bounce_confirmed=False):
+    """تقييم جودة فرصة الدعم/الارتداد"""
+    rr = res.get('rr', 0)
+    ratio = res.get('ratio', 0)
+    rsi = res.get('rsi', 50)
+    
+    if bounce_confirmed:
+        if level == "عند الدعم" and rr >= 1.5 and ratio > 1.2 and rsi < 45:
+            return "🔥 ارتداد ممتاز - فرصة ذهبية للشراء من القاع"
+        elif rr >= 1.3 and ratio > 1:
+            return "✅ ارتداد جيد - مناسب للمتابعة"
+        else:
+            return "⚠️ ارتداد عادي - يحتاج تأكيد"
+    else:
+        if level == "عند الدعم" and rsi < 40 and ratio > 1:
+            return "🔥 فرصة ممتازة - سهم عند الدعم مع تشبع بيع"
+        elif level == "قريب جداً" and rsi < 45:
+            return "✅ فرصة جيدة - قريب من الدعم مع زخم إيجابي"
+        else:
+            return "📌 للمراقبة - اقترب من الدعم"
 
 # ================== 🆕 QUALITY RATING ==================
 def get_quality_rating(res, section_type):
@@ -431,25 +518,21 @@ def is_imminent_breakout(an):
     reasons = []
     distance_to_r1 = (an['r1'] - an['p']) / an['p'] * 100
     
-    # 1. السعر قرب من المقاومة R1 (أقل من 2%)
     if 0 < distance_to_r1 < 2:
         reasons.append(f"🎯 قرب من المقاومة R1 ({distance_to_r1:.1f}%)")
     else:
         return False, []
     
-    # 2. RSI بين 50 و 65 (زخم صحي)
     if 50 < an['rsi'] < 65:
         reasons.append(f"📈 RSI صحي ({an['rsi']:.0f})")
     else:
         return False, []
     
-    # 3. سيولة جيدة
     if an['ratio'] > 1.5:
         reasons.append(f"💧 سيولة جيدة ({an['ratio']:.1f}x)")
     else:
         return False, []
     
-    # 4. اتجاه قصير صاعد
     if an['t_short'] == "صاعد":
         reasons.append("📊 اتجاه قصير صاعد")
     else:
@@ -459,7 +542,7 @@ def is_imminent_breakout(an):
 
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v16.0", layout="wide")
+st.set_page_config(page_title="EGX Sniper Pro v17.0", layout="wide")
 
 st.markdown("""
     <style>
@@ -496,6 +579,9 @@ st.markdown("""
     .quality-good { background: linear-gradient(135deg, #1f3a4f, #1565c0); color: white; }
     .quality-normal { background: linear-gradient(135deg, #4a4a4a, #616161); color: white; }
     .imminent-badge { background: linear-gradient(135deg, #ff8f00, #ff6f00); color: white; padding: 5px 10px; border-radius: 10px; margin-bottom: 10px; text-align: center; font-weight: bold; }
+    .support-badge-at { background: linear-gradient(135deg, #00c853, #69f0ae); color: #1a1a2e; padding: 5px 10px; border-radius: 10px; margin-bottom: 10px; text-align: center; font-weight: bold; }
+    .support-badge-near { background: linear-gradient(135deg, #ff8f00, #ff6f00); color: white; padding: 5px 10px; border-radius: 10px; margin-bottom: 10px; text-align: center; font-weight: bold; }
+    .bounce-badge { background: linear-gradient(135deg, #2196f3, #00bcd4); color: white; padding: 5px 10px; border-radius: 10px; margin-bottom: 10px; text-align: center; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1111,7 +1197,7 @@ if st.session_state.market_data is None:
     get_fresh_data()
 
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Pro v16.0")
+    st.title("🏹 EGX Sniper Pro v17.0")
     
     render_mode_selector()
     
@@ -1149,6 +1235,13 @@ if st.session_state.page == 'home':
         with col5:
             if st.button("⚡ اختراقات وشيكة"):
                 st.session_state.page = 'imminent'
+                st.rerun()
+        
+        # الصف الثاني من الأزرار
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            if st.button("🔻 دعم وارتداد"):
+                st.session_state.page = 'support_bounce'
                 st.rerun()
     
     with st.expander("⚙️ إدارة التطبيق", expanded=False):
@@ -1189,6 +1282,134 @@ if st.session_state.page == 'home':
         col1.metric("عدد الفرص الذهبية", gold_count)
         col2.metric("نسبة الذهب من السوق", f"{gold_percentage:.1f}%")
         col3.markdown(f"**الحالة:** {rarity_status}")
+
+# ================== 🆕 صفحة دعم وارتداد ==================
+elif st.session_state.page == 'support_bounce':
+    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
+    render_mode_selector()
+    
+    st.title("🔻 فرص الدعم والارتداد")
+    st.markdown("الأسهم القريبة من الدعم (أقل من 0.6%) أو التي بدأت ترتد منه")
+    
+    if not st.session_state.all_results:
+        st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
+        st.stop()
+    
+    # تبويبين
+    tab1, tab2 = st.tabs(["📏 قريبة من الدعم", "📈 مؤكد الارتداد"])
+    
+    with tab1:
+        st.markdown("### 📏 الأسهم القريبة من الدعم")
+        st.caption("السعر على بعد أقل من 0.6% من أقرب دعم (S1 أو S2)")
+        
+        support_stocks = []
+        for an in st.session_state.all_results:
+            is_support, reasons, level = is_near_support_with_bounce(an, bounce_confirmed=False)
+            if is_support:
+                support_stocks.append({'stock': an, 'reasons': reasons, 'level': level})
+        
+        if support_stocks:
+            st.markdown(f"**عدد الأسهم عند الدعم أو القريبة منه: {len(support_stocks)}**")
+            for item in support_stocks:
+                an = item['stock']
+                reasons = item['reasons']
+                level = item['level']
+                
+                quality = get_support_quality_rating(an, level, bounce_confirmed=False)
+                
+                if level == "عند الدعم":
+                    badge_color = "support-badge-at"
+                    badge_text = "📍 عند الدعم"
+                else:
+                    badge_color = "support-badge-near"
+                    badge_text = "📏 قريب جداً من الدعم"
+                
+                if "ممتاز" in quality:
+                    quality_class = "quality-excellent"
+                elif "جيد" in quality:
+                    quality_class = "quality-good"
+                else:
+                    quality_class = "quality-normal"
+                
+                st.markdown(f"""
+                <div style='background:#0d1117;border:2px solid #00c853;border-radius:12px;padding:15px;margin-bottom:15px;'>
+                    <div style='display:flex;justify-content:space-between;align-items:center;'>
+                        <h3 style='color:#00c853;margin:0'>🔻 {an['name']} - {an['desc']}</h3>
+                        <span class='{badge_color}'>{badge_text}</span>
+                    </div>
+                    <div class='quality-badge {quality_class}' style='margin-top:10px;'>⭐ {quality}</div>
+                    <div style='margin-top:10px;'>
+                        <b>📊 المعطيات:</b><br>
+                        • السعر: {an['p']:.2f} ج | الدعم S1: {an['s1']:.2f} ج | S2: {an['s2']:.2f} ج<br>
+                        • RSI: {an['rsi']:.1f} | السيولة: {an['ratio']:.1f}x<br>
+                        • التغير: {an['chg']:+.1f}% | Smart Score: {an['smart_score']}/100<br>
+                        • RR: {an['rr']} | الهدف: {an['target']:.2f} (+{an['target_pct']:.1f}%)
+                    </div>
+                    <div style='margin-top:10px;'>
+                        <b>✅ المؤشرات:</b>
+                        {"".join([f'<div style="color:#00c853;">{r}</div>' for r in reasons])}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if st.button(f"📊 تحليل {an['name']} بالتفصيل", key=f"support_{an['name']}"):
+                    record_trade(an, "support")
+                    render_stock_ui(an)
+        else:
+            st.info("لا توجد أسهم قريبة من الدعم حالياً.")
+    
+    with tab2:
+        st.markdown("### 📈 الأسهم التي ارتدت من الدعم")
+        st.caption("السعر ارتد من الدعم بنسبة +0.3% على الأقل مع مؤشرات إيجابية")
+        
+        bounce_stocks = []
+        for an in st.session_state.all_results:
+            is_bounce, reasons, level = is_near_support_with_bounce(an, bounce_confirmed=True)
+            if is_bounce:
+                bounce_stocks.append({'stock': an, 'reasons': reasons, 'level': level})
+        
+        if bounce_stocks:
+            st.markdown(f"**عدد الأسهم التي ارتدت من الدعم: {len(bounce_stocks)}**")
+            for item in bounce_stocks:
+                an = item['stock']
+                reasons = item['reasons']
+                level = item['level']
+                
+                quality = get_support_quality_rating(an, level, bounce_confirmed=True)
+                
+                if "ممتاز" in quality:
+                    quality_class = "quality-excellent"
+                elif "جيد" in quality:
+                    quality_class = "quality-good"
+                else:
+                    quality_class = "quality-normal"
+                
+                st.markdown(f"""
+                <div style='background:#0d1117;border:2px solid #2196f3;border-radius:12px;padding:15px;margin-bottom:15px;'>
+                    <div style='display:flex;justify-content:space-between;align-items:center;'>
+                        <h3 style='color:#2196f3;margin:0'>📈 {an['name']} - {an['desc']}</h3>
+                        <span class='bounce-badge'>📈 مؤكد الارتداد</span>
+                    </div>
+                    <div class='quality-badge {quality_class}' style='margin-top:10px;'>⭐ {quality}</div>
+                    <div style='margin-top:10px;'>
+                        <b>📊 المعطيات:</b><br>
+                        • السعر: {an['p']:.2f} ج | الدعم S1: {an['s1']:.2f} ج | S2: {an['s2']:.2f} ج<br>
+                        • RSI: {an['rsi']:.1f} | السيولة: {an['ratio']:.1f}x<br>
+                        • التغير: {an['chg']:+.1f}% | Smart Score: {an['smart_score']}/100<br>
+                        • RR: {an['rr']} | الهدف: {an['target']:.2f} (+{an['target_pct']:.1f}%)
+                    </div>
+                    <div style='margin-top:10px;'>
+                        <b>✅ مؤشرات الارتداد:</b>
+                        {"".join([f'<div style="color:#2196f3;">{r}</div>' for r in reasons])}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if st.button(f"📊 تحليل {an['name']} بالتفصيل", key=f"bounce_{an['name']}"):
+                    record_trade(an, "bounce")
+                    render_stock_ui(an)
+        else:
+            st.info("لا توجد أسهم مؤكد ارتدادها من الدعم حالياً.")
 
 elif st.session_state.page == 'avg':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -1381,6 +1602,19 @@ elif st.session_state.page == 'guide':
 
         ---
 
+        #### 🔻 دعم وارتداد (Support & Bounce)
+        | المعيار | التفاصيل |
+        |----------|----------|
+        | **طريقة الاختيار** | سعر قرب من S1/S2 (أقل من 0.6%) + ارتداد إيجابي للتأكيد |
+        | **المؤشرات المعتمدة** | المسافة من الدعم + RSI منخفض + تحسن السعر |
+        | **نوع الصفقات** | شراء من القيعان والارتدادات |
+        | **الهدف** | المقاومة الأولى R1 |
+        | **مناسب لـ** | المتداولين المحافظين الذين يفضلون الشراء من الدعم |
+
+        > 💡 **نصيحة:** استخدم القسم "مؤكد الارتداد" لتجنب الشراء في ترند هابط.
+
+        ---
+
         ### 🎯 جدول مقارنة سريع:
 
         | القسم | السيولة (Ratio) | RR | RSI | عدد الفرص | السرعة |
@@ -1391,6 +1625,7 @@ elif st.session_state.page == 'guide':
         | ⚡ مضاربات | > 1.8 | >= 1.3 | < 75 | متوسط | سريعة جداً |
         | 💎 ذهبي | > 1.5 | >= 2 | 45-60 | نادر جداً | متوسطة |
         | ⚡ اختراقات وشيكة | > 1.5 | أي | 50-65 | قليل | بطيئة (للاستباق) |
+        | 🔻 دعم وارتداد | > 0.8 | أي | < 50 | قليل | بطيئة |
 
         ---
 
@@ -1403,6 +1638,7 @@ elif st.session_state.page == 'guide':
         | **مضاربات سريعة (ربح سريع)** | 🚀 اختراقات أو ⚡ مضاربات |
         | **أقوى وأندر الفرص** | 💎 الفرص الذهبية |
         | **تسبق السوق وتدخل بدري** | ⚡ اختراقات وشيكة |
+        | **تشتري من القاع (محافظ)** | 🔻 دعم وارتداد |
 
         ---
 
@@ -1465,6 +1701,9 @@ elif st.session_state.page == 'performance':
     st.markdown(f"""
     <div style='background:#161b22;border:1px solid #30363d;border-radius:10px;padding:15px;margin:15px 0;'>
         <b>💎 الفرص الذهبية:</b> {stats['gold_count']} صفقة | نسبة نجاح: {stats['gold_success']}% | إجمالي العائد: {stats['gold_return']}%
+    </div>
+    <div style='background:#161b22;border:1px solid #30363d;border-radius:10px;padding:15px;margin:15px 0;'>
+        <b>🔻 فرص الدعم:</b> {stats.get('support_count', 0)} صفقة | <b>📈 فرص الارتداد:</b> {stats.get('bounce_count', 0)} صفقة
     </div>
     """, unsafe_allow_html=True)
     
