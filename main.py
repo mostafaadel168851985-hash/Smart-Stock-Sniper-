@@ -309,11 +309,13 @@ def calculate_roc(current_price, previous_price):
         return ((current_price - previous_price) / previous_price) * 100
     return 0
 
-# ================== 🆕 SUPPORT & BOUNCE DETECTION (IMPROVED v2) ==================
+# ================== 🆕 SUPPORT & BOUNCE DETECTION (FINAL VERSION) ==================
 def is_near_support_with_bounce(an, mode="near"):
     """
+    الكشف عن الأسهم القريبة من الدعم مع تقييم متعدد العوامل
+    
     mode: "near" = قريب من الدعم فقط
-          "bounce" = ارتداد بسيط مؤكد (0.15% < change < 5%)
+          "bounce" = ارتداد حقيقي محتمل (باستخدام bounce_score)
           "momentum" = زخم إيجابي
     """
     s1 = an.get('s1', 0)
@@ -321,76 +323,129 @@ def is_near_support_with_bounce(an, mode="near"):
     p = an.get('p', 0)
     change_pct = an.get('chg', 0)
     rsi = an.get('rsi', 50)
+    ratio = an.get('ratio', 0)
+    sma20 = an.get('sma20', p)
     
     if s1 == 0 and s2 == 0:
         return False, [], "عادي"
     
+    # 🔥 التعديل: مسافة الدعم الموسعة لـ 1.5%
     nearest_support = s1 if s1 > 0 else s2
     distance_to_support = (p - nearest_support) / nearest_support * 100 if nearest_support > 0 else 999
     
     reasons = []
     level = "عادي"
     
-    if 0 <= distance_to_support < 0.3:
+    if 0 <= distance_to_support < 0.5:
         level = "عند الدعم"
         reasons.append(f"📍 عند الدعم ({distance_to_support:.2f}% فوقه)")
-    elif 0.3 <= distance_to_support < 0.6:
+    elif 0.5 <= distance_to_support < 1.0:
         level = "قريب جداً"
         reasons.append(f"📍 قريب جداً من الدعم ({distance_to_support:.2f}% فوقه)")
-    elif 0.6 <= distance_to_support < 1.0:
+    elif 1.0 <= distance_to_support < 1.5:
         level = "قريب نسبياً"
         reasons.append(f"📍 قريب نسبياً من الدعم ({distance_to_support:.2f}% فوقه)")
     else:
         if mode == "near":
             return False, [], "عادي"
     
+    # كسر الدعم
     if p < nearest_support:
         reasons.append("❌ كسر الدعم - خطر")
         return False, ["كسر الدعم"], "مكسور"
     
-    # فحص حسب الوضع
+    # 🔥 التعديل الأساسي: نظام bounce_score متعدد العوامل
     if mode == "bounce":
-        # ✅ شرط جديد: ارتداد بسيط فقط (بين 0.15% و 5%)
-        if 0.15 < change_pct < 5:
-            reasons.append(f"📈 ارتداد بسيط ({change_pct:+.2f}%) - مناسب للدخول")
-        elif change_pct >= 5:
-            reasons.append(f"⚠️ ارتداد كبير ({change_pct:+.1f}%) - فاتك القطار، لا تدخل")
-            return False, ["ارتداد كبير - فاتك الفرصة"], level
+        bounce_score = 0
+        
+        # 1. تغير السعر إيجابي معتدل (0.1% - 4%)
+        if 0.1 < change_pct < 4:
+            bounce_score += 1
+            reasons.append(f"📈 تغير إيجابي معتدل ({change_pct:+.2f}%)")
+        elif change_pct >= 4:
+            reasons.append(f"⚠️ تغير كبير ({change_pct:+.1f}%) - احترس من القمة")
+            return False, ["تغير كبير - قد يكون قمة"], level
+        elif change_pct <= 0:
+            reasons.append(f"📉 تغير سلبي ({change_pct:+.2f}%) - لم يرتد بعد")
+            return False, ["تغير سلبي - لم يرتد"], level
+        
+        # 2. RSI بدأ بالتعافي (فوق 40)
+        if rsi > 40:
+            bounce_score += 1
+            reasons.append(f"📊 RSI بدأ بالتعافي ({rsi:.0f})")
+        elif rsi > 35:
+            reasons.append(f"⚠️ RSI لا يزال منخفضاً ({rsi:.0f})")
+        
+        # 3. سيولة جيدة
+        if ratio > 1.5:
+            bounce_score += 1
+            reasons.append(f"💧 سيولة ممتازة ({ratio:.1f}x)")
+        elif ratio > 1.2:
+            bounce_score += 1
+            reasons.append(f"💧 سيولة جيدة ({ratio:.1f}x)")
+        elif ratio > 0.8:
+            reasons.append(f"💧 سيولة مقبولة ({ratio:.1f}x)")
+        
+        # 4. السعر فوق المتوسط المتحرك 20 (بداية اتجاه)
+        if p > sma20:
+            bounce_score += 1
+            reasons.append(f"📈 السعر فوق SMA20 - بداية تكون قاع")
+        
+        # 5. RSI كان منخفضاً وبدأ بالصعود (مقارنة بافتراض)
+        # نستخدم فرق RSI عن 30 كتقدير
+        rsi_recovery = max(0, rsi - 30)
+        if rsi_recovery > 10:
+            bounce_score += 1
+            reasons.append(f"🔄 RSI تعافى بقوة من منطقة التشبع ({rsi_recovery:.0f} نقطة)")
+        
+        # 🔥 الشرط الأساسي: محتاج 3 عوامل على الأقل للارتداد الحقيقي
+        if bounce_score >= 3:
+            reasons.append(f"✅ ارتداد حقيقي محتمل (نقاط: {bounce_score}/5)")
         else:
-            return False, [], level
+            return False, [f"نقاط الارتداد منخفضة ({bounce_score}/5)"], level
+    
+    # وضع الزخم الإيجابي (بدون شرط تغير السعر)
     elif mode == "momentum":
-        # زخم إيجابي بدون شرط تغير السعر
         momentum_score = 0
-        if rsi > 45 and p > an.get('sma20', p):
+        
+        if rsi > 45 and p > sma20:
             momentum_score += 1
             reasons.append(f"📈 زخم إيجابي (RSI {rsi:.0f}، السعر فوق SMA20)")
-        if an.get('ratio', 0) > 1:
+        
+        if ratio > 1.2:
             momentum_score += 1
-            reasons.append(f"💧 سيولة جيدة ({an['ratio']:.1f}x)")
-        if change_pct > 0 and change_pct < 5:
+            reasons.append(f"💧 سيولة جيدة ({ratio:.1f}x)")
+        
+        if 0 < change_pct < 4:
             momentum_score += 1
-            reasons.append(f"📊 تغير إيجابي بسيط ({change_pct:+.2f}%)")
+            reasons.append(f"📊 تغير إيجابي معتدل ({change_pct:+.2f}%)")
+        
+        # إشارة RSI تشبع بيع سابق
+        if rsi < 40:
+            momentum_score += 1
+            reasons.append(f"🎯 RSI منخفض ({rsi:.0f}) - احتمال انعكاس")
+        
         if momentum_score < 2:
             return False, [], "عادي"
     
-    # مؤشرات داعمة
+    # مؤشرات داعمة عامة
     if rsi < 35:
         reasons.append(f"🟢 RSI منخفض جداً ({rsi:.0f}) - تشبع بيع ممتاز")
     elif rsi < 45:
         reasons.append(f"📊 RSI منخفض ({rsi:.0f}) - فرصة جيدة")
-    elif rsi < 55 and change_pct > 0:
-        reasons.append(f"📈 RSI بدأ بالصعود ({rsi:.0f})")
     
-    if an.get('ratio', 0) > 1.2:
-        reasons.append(f"💧 سيولة جيدة ({an['ratio']:.1f}x)")
-    elif an.get('ratio', 0) > 0.8:
-        reasons.append(f"💧 سيولة مقبولة ({an['ratio']:.1f}x)")
-    
+    # الهدف المتوقع (أول مقاومة)
     r1 = an.get('r1', p * 1.03)
     potential_gain = (r1 - p) / p * 100 if r1 > p else 0
     
     if potential_gain > 3:
         reasons.append(f"🎯 هدف محتمل: {r1:.2f} (+{potential_gain:.1f}%)")
+    
+    # حساب نسبة المخاطرة إلى العائد الحقيقية للدعم
+    if nearest_support > 0 and p > nearest_support:
+        risk_to_support = (p - nearest_support) / p * 100
+        if risk_to_support < 1:
+            reasons.append(f"🛡️ وقف خسارة قريب: {risk_to_support:.2f}% تحت السعر")
     
     return True, reasons, level
 
@@ -399,23 +454,24 @@ def get_support_quality_rating(res, level, mode="near"):
     rr = res.get('rr', 0)
     ratio = res.get('ratio', 0)
     rsi = res.get('rsi', 50)
+    change_pct = res.get('chg', 0)
     
     if mode == "bounce":
-        if level == "عند الدعم" and rr >= 1.5 and ratio > 1 and rsi < 50:
+        if level == "عند الدعم" and rr >= 1.5 and ratio > 1.2 and 40 < rsi < 55 and 0.1 < change_pct < 3:
             return "🔥 ارتداد ممتاز - فرصة ذهبية للشراء من القاع"
-        elif rr >= 1.3 and ratio > 0.8:
-            return "✅ ارتداد جيد - مناسب للدخول"
+        elif rr >= 1.3 and ratio > 1 and rsi < 55:
+            return "✅ ارتداد جيد - مناسب للدخول مع وقف قريب"
         else:
-            return "⚠️ ارتداد عادي - يحتاج متابعة"
+            return "⚠️ ارتداد عادي - يحتاج متابعة إضافية"
     elif mode == "momentum":
-        if rsi < 45 and ratio > 1 and rr >= 1.3:
+        if rsi < 45 and ratio > 1.2 and rr >= 1.5:
             return "🔥 زخم إيجابي ممتاز - قريب من الانطلاق"
         elif rsi < 55 and ratio > 0.8:
-            return "✅ زخم إيجابي - يستحق المراقبة"
+            return "✅ زخم إيجابي - يستحق المراقبة عن كثب"
         else:
             return "📌 للمتابعة"
     else:
-        if level == "عند الدعم" and rsi < 40 and ratio > 0.8:
+        if level == "عند الدعم" and rsi < 40 and ratio > 1:
             return "🔥 فرصة ممتازة - سهم عند الدعم مع تشبع بيع"
         elif level == "قريب جداً" and rsi < 45:
             return "✅ فرصة جيدة - قريب من الدعم مع مؤشرات إيجابية"
@@ -568,7 +624,7 @@ def is_imminent_breakout(an):
 
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v17.2", layout="wide")
+st.set_page_config(page_title="EGX Sniper Pro v17.3", layout="wide")
 
 st.markdown("""
     <style>
@@ -611,7 +667,7 @@ st.markdown("""
     .momentum-badge { background: linear-gradient(135deg, #9c27b0, #e040fb); color: white; padding: 5px 10px; border-radius: 10px; margin-bottom: 10px; text-align: center; font-weight: bold; }
     .warning-box { background-color: rgba(248, 81, 73, 0.15); border-right: 4px solid #f85149; padding: 10px; border-radius: 8px; margin: 10px 0; }
     .success-box { background-color: rgba(63, 185, 80, 0.15); border-right: 4px solid #3fb950; padding: 10px; border-radius: 8px; margin: 10px 0; }
-    .danger-box { background-color: rgba(248, 81, 73, 0.3); border-right: 4px solid #f85149; padding: 10px; border-radius: 8px; margin: 10px 0; }
+    .info-box { background-color: rgba(88, 166, 255, 0.15); border-right: 4px solid #58a6ff; padding: 10px; border-radius: 8px; margin: 10px 0; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1227,7 +1283,7 @@ if st.session_state.market_data is None:
     get_fresh_data()
 
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Pro v17.2")
+    st.title("🏹 EGX Sniper Pro v17.3")
     
     render_mode_selector()
     
@@ -1313,13 +1369,21 @@ if st.session_state.page == 'home':
         col2.metric("نسبة الذهب من السوق", f"{gold_percentage:.1f}%")
         col3.markdown(f"**الحالة:** {rarity_status}")
 
-# ================== 🆕 صفحة دعم وارتداد محسنة (3 تبويبات) ==================
+# ================== 🆕 صفحة دعم وارتداد محسنة (النسخة النهائية) ==================
 elif st.session_state.page == 'support_bounce':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     
-    st.title("🔻 فرص الدعم والارتداد")
-    st.markdown("الأسهم القريبة من الدعم مع تحليل متقدم - الدخول فقط عند ارتداد بسيط (أقل من 5%)")
+    st.title("🔻 فرص الدعم والارتداد - النسخة المتقدمة")
+    st.markdown("""
+    <div class='info-box'>
+    📌 <b>كيف يعمل النظام الجديد؟</b><br>
+    • <b>مسافة الدعم:</b> الموسعة إلى 1.5% (مناسبة للسوق المصري)<br>
+    • <b>نظام تقييم الارتداد:</b> 5 عوامل مختلفة (التغير، RSI، السيولة، SMA20، تعافي RSI)<br>
+    • <b>شرط الدخول:</b> يحتاج 3 عوامل على الأقل لاعتبارها ارتداداً حقيقياً<br>
+    • <b>الحماية:</b> يرفض الارتدادات الكبيرة (أكثر من 4%) لتجنب الدخول في القمم
+    </div>
+    """, unsafe_allow_html=True)
     
     if not st.session_state.all_results:
         st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
@@ -1332,8 +1396,8 @@ elif st.session_state.page == 'support_bounce':
         st.markdown("### 📏 الأسهم القريبة من الدعم - مراقبة فقط")
         st.markdown("""
         <div class='warning-box'>
-        ⚠️ <b>تنبيه مهم:</b> هذه الأسهم <b>لم تثبت الارتداد بعد</b>. لا تشتري الآن، فقط راقبها.
-        <br>✅ انتظر حتى تظهر في التبويب "مؤكد الارتداد" (ارتداد بسيط أقل من 5%) قبل الدخول.
+        ⚠️ <b>تنبيه مهم:</b> هذه الأسهم <b>لم تثبت الارتداد بعد</b> (نقاط أقل من 3/5). لا تشتري الآن، فقط راقبها.
+        <br>✅ انتظر حتى تظهر في التبويب "مؤكد الارتداد" قبل الدخول.
         </div>
         """, unsafe_allow_html=True)
         
@@ -1354,13 +1418,13 @@ elif st.session_state.page == 'support_bounce':
                 
                 if level == "عند الدعم":
                     badge_color = "support-badge-at"
-                    badge_text = "📍 عند الدعم"
+                    badge_text = "📍 عند الدعم (0-0.5%)"
                 elif level == "قريب جداً":
                     badge_color = "support-badge-near"
-                    badge_text = "📏 قريب جداً"
+                    badge_text = "📏 قريب جداً (0.5-1.0%)"
                 else:
                     badge_color = "support-badge-near"
-                    badge_text = "📏 قريب نسبياً"
+                    badge_text = "📏 قريب نسبياً (1.0-1.5%)"
                 
                 if "ممتاز" in quality:
                     quality_class = "quality-excellent"
@@ -1381,14 +1445,14 @@ elif st.session_state.page == 'support_bounce':
                         • السعر: {an['p']:.2f} ج | الدعم S1: {an['s1']:.2f} ج | S2: {an['s2']:.2f} ج<br>
                         • RSI: {an['rsi']:.1f} | السيولة: {an['ratio']:.1f}x<br>
                         • التغير: {an['chg']:+.2f}% | Smart Score: {an['smart_score']}/100<br>
-                        • RR: {an['rr']} | الهدف: {an['target']:.2f} (+{an['target_pct']:.1f}%)
+                        • SMA20: {an.get('sma20', 0):.2f} | السعر فوق SMA20: {an['p'] > an.get('sma20', an['p'])}
                     </div>
                     <div style='margin-top:10px;'>
-                        <b>📌 أسباب الاقتراب من الدعم:</b>
+                        <b>📌 حالة الاقتراب من الدعم:</b>
                         {"".join([f'<div style="color:#ff8f00;">{r}</div>' for r in reasons])}
                     </div>
                     <div class='warning-box' style='margin-top:10px;'>
-                        ⚠️ <b>مراقبة فقط</b> - لم يثبت الارتداد بعد
+                        ⚠️ <b>مراقبة فقط</b> - يحتاج تأكيد ارتداد (3+ نقاط)
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1399,11 +1463,12 @@ elif st.session_state.page == 'support_bounce':
             st.info("لا توجد أسهم قريبة من الدعم حالياً.")
     
     with tab2:
-        st.markdown("### 📈 الأسهم التي ارتدت ارتداداً بسيطاً - صالحة للدخول")
+        st.markdown("### 📈 الأسهم التي حققت ارتداداً حقيقياً - صالحة للدخول")
         st.markdown("""
         <div class='success-box'>
-        ✅ <b>تأكد الارتداد البسيط</b> - السعر ارتفع بنسبة 0.15% - 5% فقط من الدعم.
-        <br>🎯 مناسبة للدخول. <b>تجنب الأسهم التي ارتدت أكثر من 5%</b> (فاتك القطار).
+        ✅ <b>ارتداد حقيقي محتمل</b> - السهم حقق 3+ نقاط من 5 في نظام التقييم.
+        <br>🎯 مناسب للدخول مع وقف خسارة أسفل الدعم مباشرة.
+        <br>⚠️ <b>تنبيه:</b> يتم استبعاد الأسهم التي ارتفعت أكثر من 4% (فاتك القطار).
         </div>
         """, unsafe_allow_html=True)
         
@@ -1414,7 +1479,7 @@ elif st.session_state.page == 'support_bounce':
                 bounce_stocks.append({'stock': an, 'reasons': reasons, 'level': level})
         
         if bounce_stocks:
-            st.markdown(f"**عدد الأسهم التي ارتدت ارتداداً بسيطاً: {len(bounce_stocks)}**")
+            st.markdown(f"**عدد الأسهم ذات الارتداد الحقيقي: {len(bounce_stocks)}**")
             for item in bounce_stocks:
                 an = item['stock']
                 reasons = item['reasons']
@@ -1429,26 +1494,30 @@ elif st.session_state.page == 'support_bounce':
                 else:
                     quality_class = "quality-normal"
                 
+                # حساب نسبة المخاطرة
+                nearest_support = an['s1'] if an['s1'] > 0 else an['s2']
+                risk_percent = (an['p'] - nearest_support) / an['p'] * 100 if nearest_support > 0 else 0
+                
                 st.markdown(f"""
                 <div style='background:#0d1117;border:2px solid #3fb950;border-radius:12px;padding:15px;margin-bottom:15px;'>
                     <div style='display:flex;justify-content:space-between;align-items:center;'>
                         <h3 style='color:#3fb950;margin:0'>📈 {an['name']} - {an['desc']}</h3>
-                        <span class='bounce-badge'>📈 ارتداد بسيط</span>
+                        <span class='bounce-badge'>✅ ارتداد حقيقي</span>
                     </div>
                     <div class='quality-badge {quality_class}' style='margin-top:10px;'>⭐ {quality}</div>
                     <div style='margin-top:10px;'>
                         <b>📊 المعطيات:</b><br>
-                        • السعر: {an['p']:.2f} ج | الدعم S1: {an['s1']:.2f} ج | S2: {an['s2']:.2f} ج<br>
+                        • السعر: {an['p']:.2f} ج | الدعم S1: {an['s1']:.2f} ج | المسافة: {((an['p'] - nearest_support)/nearest_support*100):.2f}%<br>
                         • RSI: {an['rsi']:.1f} | السيولة: {an['ratio']:.1f}x<br>
-                        • التغير: {an['chg']:+.2f}% | Smart Score: {an['smart_score']}/100<br>
-                        • RR: {an['rr']} | الهدف: {an['target']:.2f} (+{an['target_pct']:.1f}%)
+                        • التغير: {an['chg']:+.2f}% | التغير مسموح (أقل من 4%): {"✅" if an['chg'] < 4 else "❌"}<br>
+                        • وقف الخسارة المقترح: {nearest_support * 0.99:.2f} (أسفل الدعم 1%)
                     </div>
                     <div style='margin-top:10px;'>
-                        <b>✅ مؤشرات الارتداد البسيط:</b>
+                        <b>✅ نقاط قوة الارتداد:</b>
                         {"".join([f'<div style="color:#3fb950;">{r}</div>' for r in reasons])}
                     </div>
                     <div class='success-box' style='margin-top:10px;'>
-                        ✅ <b>مناسب للدخول</b> - وقف خسارة أسفل {an['s1']:.2f}
+                        ✅ <b>مناسب للدخول</b> - وقف خسارة أسفل {nearest_support:.2f} (مخاطرة {risk_percent:.2f}%)
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1457,14 +1526,21 @@ elif st.session_state.page == 'support_bounce':
                     record_trade(an, "bounce")
                     render_stock_ui(an)
         else:
-            st.info("لا توجد أسهم بارتداد بسيط مناسب حالياً. راقب تبويب 'قريبة من الدعم' أولاً.")
+            st.info("""
+            لا توجد أسهم بارتداد حقيقي حالياً.
+            
+            **أسباب محتملة:**
+            - السوق هادئ ولا توجد ارتدادات قوية
+            - الأسهم القريبة من الدعم لم تجمع 3+ نقاط بعد
+            - راقب تبويب 'قريبة من الدعم' حتى تتكون فرصة
+            """)
     
     with tab3:
         st.markdown("### ⚡ زخم إيجابي عند الدعم - فرصة وشيكة")
         st.markdown("""
-        <div class='success-box'>
-        🟣 <b>زخم إيجابي</b> - لم يرتد السعر بشكل واضح لكن المؤشرات الفنية إيجابية.
-        <br>🎯 مناسب للمتابعة عن كثب، قد يكون على وشك الارتداد البسيط.
+        <div class='info-box'>
+        🟣 <b>زخم إيجابي</b> - المؤشرات الفنية إيجابية رغم أن السعر لم يرتد بشكل واضح.
+        <br>🎯 مناسب للمتابعة عن كثب، قد يتحول إلى تبويب "مؤكد الارتداد" قريباً.
         </div>
         """, unsafe_allow_html=True)
         
@@ -1475,7 +1551,7 @@ elif st.session_state.page == 'support_bounce':
                 momentum_stocks.append({'stock': an, 'reasons': reasons, 'level': level})
         
         if momentum_stocks:
-            st.markdown(f"**عدد الأسهم ذات الزخم الإيجابي عند الدعم: {len(momentum_stocks)}**")
+            st.markdown(f"**عدد الأسهم ذات الزخم الإيجابي: {len(momentum_stocks)}**")
             for item in momentum_stocks:
                 an = item['stock']
                 reasons = item['reasons']
@@ -1499,14 +1575,16 @@ elif st.session_state.page == 'support_bounce':
                     <div class='quality-badge {quality_class}' style='margin-top:10px;'>⭐ {quality}</div>
                     <div style='margin-top:10px;'>
                         <b>📊 المعطيات:</b><br>
-                        • السعر: {an['p']:.2f} ج | الدعم S1: {an['s1']:.2f} ج | S2: {an['s2']:.2f} ج<br>
+                        • السعر: {an['p']:.2f} ج | الدعم S1: {an['s1']:.2f} ج<br>
                         • RSI: {an['rsi']:.1f} | السيولة: {an['ratio']:.1f}x<br>
-                        • التغير: {an['chg']:+.2f}% | Smart Score: {an['smart_score']}/100<br>
-                        • RR: {an['rr']} | الهدف: {an['target']:.2f} (+{an['target_pct']:.1f}%)
+                        • التغير: {an['chg']:+.2f}% | Smart Score: {an['smart_score']}/100
                     </div>
                     <div style='margin-top:10px;'>
                         <b>🟣 مؤشرات الزخم الإيجابي:</b>
                         {"".join([f'<div style="color:#9c27b0;">{r}</div>' for r in reasons])}
+                    </div>
+                    <div class='info-box' style='margin-top:10px;'>
+                        🟣 <b>مراقبة عن كثب</b> - قد يتحول لفرصة دخول خلال الجلسة
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1577,8 +1655,16 @@ elif st.session_state.page == 'imminent':
 
 elif st.session_state.page == 'guide':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    st.title("📖 دليل المؤشرات الفنية")
-    st.markdown("مرحباً بك في دليل المؤشرات! هنا شرح مبسط لكل مؤشر تستخدمه في التطبيق.")
+    st.title("📖 دليل المؤشرات الفنية - النسخة المتقدمة")
+    st.markdown("""
+    <div class='info-box'>
+    📌 <b>ما الجديد في v17.3؟</b><br>
+    • <b>نظام تقييم الارتداد المتقدم (Bounce Score):</b> 5 عوامل مختلفة<br>
+    • <b>مسافة دعم موسعة:</b> 1.5% (مناسبة للسبريد العالي في السوق المصري)<br>
+    • <b>حماية من الارتدادات الكبيرة:</b> رفض الأسهم التي ارتفعت أكثر من 4%<br>
+    • <b>تقييم الهيكل السعري:</b> إضافة SMA20 لتأكيد بداية الاتجاه الصاعد
+    </div>
+    """, unsafe_allow_html=True)
     
     with st.expander("📊 مؤشر القوة النسبية (RSI)"):
         st.markdown("""
@@ -1624,133 +1710,32 @@ elif st.session_state.page == 'guide':
         """)
     
     # دليل أقسام التطبيق
-    with st.expander("🎯 دليل أقسام التطبيق - إزاي تختار الأسهم؟"):
+    with st.expander("🔻 دليل نظام الدعم والارتداد المتقدم"):
         st.markdown("""
-        ### 📊 شرح أقسام التطبيق
-
-        ---
-
-        #### 🏆 أفضل 10 فرص (Top 10)
-        | المعيار | التفاصيل |
-        |----------|----------|
-        | **طريقة الاختيار** | ترتيب تنازلي حسب `Smart Score` (أعلى 10 أسهم في السوق كله) |
-        | **المؤشرات المعتمدة** | Smart Score (الاتجاهات + السيولة + RSI + RR) |
-        | **نوع الصفقات** | متنوعة (ذهب، اختراقات، مضاربات، مراقبة) |
-        | **الهدف** | أفضل الفرص بغض النظر عن النوع |
-        | **مناسب لـ** | أي متداول يبي يبدأ من هنا |
-
-        > 💡 **نصيحة:** ابدأ من هنا كل يوم، هي الخلاصة الكاملة للسوق.
-
-        ---
-
-        #### 🔭 كشاف السوق (Scanner)
-        | المعيار | التفاصيل |
-        |----------|----------|
-        | **طريقة الاختيار** | كل الأسهم اللي في `watchlist` (قائمة المراقبة) |
-        | **المؤشرات المعتمدة** | RR >= حد معين (حسب نمط التداول) + سيولة > 1.2x |
-        | **نوع الصفقات** | فرص متوسطة إلى جيدة (مش قوية جداً) |
-        | **الهدف** | عرض فرص تستحق المتابعة |
-        | **مناسب لـ** | اللي عايز يتابع فرص محتملة قبل ما تتحول لقوية |
-
-        > 💡 **نصيحة:** استخدمه للتعرف على فرص جديدة قد تتحول لاختراقات لاحقاً.
-
-        ---
-
-        #### 🚀 الاختراقات (Breakout)
-        | المعيار | التفاصيل |
-        |----------|----------|
-        | **طريقة الاختيار** | سيولة > 2.5x + اتجاه قصير صاعد + RSI < 70 |
-        | **المؤشرات المعتمدة** | السيولة (الأهم) + الاتجاه + RSI |
-        | **نوع الصفقات** | اختراق حقيقي بحجم تداول عالي |
-        | **الهدف** | فرص الصعود السريع |
-        | **مناسب لـ** | مضاربات سريعة (ساعات - أيام) |
-
-        > 💡 **نصيحة:** أفضل قسم للمضاربات السريعة، السيولة العالية تؤكد الاختراق.
-
-        ---
-
-        #### ⚡ مضاربات سريعة (Scalp)
-        | المعيار | التفاصيل |
-        |----------|----------|
-        | **طريقة الاختيار** | سيولة > 1.8x + RR >= 1.3 + RSI < 75 |
-        | **المؤشرات المعتمدة** | السيولة + RR + RSI |
-        | **نوع الصفقات** | صفقات قصيرة جداً (دقائق - ساعات) |
-        | **الهدف** | ربح سريع 1-3% |
-        | **مناسب لـ** | مضاربين خبرة (مش للمبتدئين) |
-
-        > 💡 **نصيحة:** صفقات سريعة، لازم Stop Loss قريب وتكون جاهز للخروج بسرعة.
-
-        ---
-
-        #### 💎 الفرص الذهبية (Gold)
-        | المعيار | التفاصيل |
-        |----------|----------|
-        | **طريقة الاختيار** | RR >= 2 + اتجاهين صاعدين + RSI 45-60 + سيولة > 1.5x + Smart Score >= 70 |
-        | **المؤشرات المعتمدة** | كل شيء (أصعب فرصة تتحقق) |
-        | **نوع الصفقات** | فرص نادرة وقوية جداً |
-        | **الهدف** | أفضل فرصة ممكنة |
-        | **مناسب لـ** | اللي عايز أنقى الفرص (عددها قليل جداً) |
-
-        > 💡 **نصيحة:** دي "الكريمة" في التطبيق، نادرة لكن قوية جداً. لو ظهرت، ركز عليها.
-
-        ---
-
-        #### ⚡ اختراقات وشيكة (Imminent Breakout)
-        | المعيار | التفاصيل |
-        |----------|----------|
-        | **طريقة الاختيار** | سعر قرب من R1 (أقل من 2%) + RSI 50-65 + سيولة > 1.5x + اتجاه صاعد |
-        | **المؤشرات المعتمدة** | المسافة من المقاومة + الزخم + السيولة |
-        | **نوع الصفقات** | على وشك الاختراق (لم يخترق بعد) |
-        | **الهدف** | الدخول قبل الاختراق |
-        | **مناسب لـ** | اللي عايز يسبق الاختراق الفعلي |
-
-        > 💡 **نصيحة:** القسم ده مخصص للفرص اللي قربت تخترق، ممكن تدخل بدري وتستنى الاختراق.
-
-        ---
-
-        #### 🔻 دعم وارتداد (Support & Bounce) - 3 مستويات
-        | المستوى | الوصف | التصرف |
-        |---------|-------|--------|
-        | **📏 قريبة من الدعم** | سعر قرب من الدعم (أقل من 1%) | ⚠️ مراقبة فقط - لا تشتري |
-        | **📈 مؤكد الارتداد** | ارتداد بسيط (0.15% - 5%) | ✅ مناسب للدخول |
-        | **⚡ زخم إيجابي** | مؤشرات فنية إيجابية | 🟣 استعد للدخول |
+        ### 🎯 نظام تقييم الارتداد (Bounce Score)
         
-        > ⚠️ **تحذير مهم:** إذا ارتد السهم أكثر من 5%، فهذا يعني أنك فاتتك الفرصة. لا تدخل في ارتدادات كبيرة.
-
-        > 💡 **نصيحة:** لا تشتري من تبويب "قريبة من الدعم" أبداً. انتظر التأكيد في التبويب "مؤكد الارتداد" (ارتداد بسيط فقط).
-
-        ---
-
-        ### 🎯 جدول مقارنة سريع:
-
-        | القسم | السيولة (Ratio) | RR | RSI | عدد الفرص | السرعة |
-        |-------|-----------------|-----|-----|-----------|--------|
-        | 🏆 أفضل 10 | أي | أي | أي | 10 | متنوعة |
-        | 🔭 كشاف | > 1.2 | حسب النمط | أي | 15+ | بطيئة |
-        | 🚀 اختراقات | > 2.5 | أي | < 70 | قليل | سريعة |
-        | ⚡ مضاربات | > 1.8 | >= 1.3 | < 75 | متوسط | سريعة جداً |
-        | 💎 ذهبي | > 1.5 | >= 2 | 45-60 | نادر جداً | متوسطة |
-        | ⚡ اختراقات وشيكة | > 1.5 | أي | 50-65 | قليل | بطيئة (للاستباق) |
-        | 🔻 دعم (مراقبة) | > 0.8 | أي | < 55 | قليل | بطيئة |
-        | 🔻 ارتداد (دخول) | > 0.8 | > 1.2 | < 50 | نادر | بطيئة |
-
-        ---
-
-        ### 💡 إزاي تختار القسم المناسب ليك؟
-
-        | لو عايز | استخدم |
-        |---------|--------|
-        | **تبدأ وتشوف أفضل حاجة** | 🏆 أفضل 10 فرص |
-        | **تتابع فرص محتملة** | 🔭 كشاف السوق |
-        | **مضاربات سريعة (ربح سريع)** | 🚀 اختراقات أو ⚡ مضاربات |
-        | **أقوى وأندر الفرص** | 💎 الفرص الذهبية |
-        | **تسبق السوق وتدخل بدري** | ⚡ اختراقات وشيكة |
-        | **تشتري من القاع (محافظ)** | 🔻 دعم وارتداد (تبويب مؤكد الارتداد) |
-
-        ---
-
-        ### 📌 تذكير مهم:
-        > كل الأرقام اللي في الجدول (نسبة السيولة، RR، RSI) هي اللي التطبيق بيستخدمها عشان يحدد نوع الفرصة. اعتمد عليها في اختياراتك.
+        يعتمد النظام على **5 عوامل** لتقييم قوة الارتداد:
+        
+        | العامل | الشرط | النقاط |
+        |--------|-------|--------|
+        | 1. تغير السعر | 0.1% < change < 4% | +1 |
+        | 2. تعافي RSI | RSI > 40 | +1 |
+        | 3. السيولة | ratio > 1.2 | +1 |
+        | 4. الهيكل السعري | السعر > SMA20 | +1 |
+        | 5. تعافي RSI من القاع | RSI - 30 > 10 | +1 |
+        
+        ### شروط الدخول:
+        - **3+ نقاط**: ارتداد حقيقي محتمل - مناسب للدخول
+        - **أقل من 3 نقاط**: ضعيف - مراقبة فقط
+        - **change > 4%**: ممنوع - فاتك القطار
+        
+        ### مسافات الدعم (موسعة):
+        | المسافة | التصنيف |
+        |---------|---------|
+        | 0% - 0.5% | عند الدعم |
+        | 0.5% - 1.0% | قريب جداً |
+        | 1.0% - 1.5% | قريب نسبياً |
+        | > 1.5% | بعيد (لا يعتبر) |
         """)
     
     st.info("💡 **تذكير:** هذه المؤشرات هي أدوات مساعدة، وليست قرارات نهائية. القرار النهائي يعتمد على تحليلك الشخصي وإدارة المخاطر الخاصة بك.")
