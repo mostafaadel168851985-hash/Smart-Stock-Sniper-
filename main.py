@@ -309,12 +309,12 @@ def calculate_roc(current_price, previous_price):
         return ((current_price - previous_price) / previous_price) * 100
     return 0
 
-# ================== 🆕 SUPPORT & BOUNCE DETECTION (IMPROVED) ==================
+# ================== 🆕 SUPPORT & BOUNCE DETECTION (IMPROVED v2) ==================
 def is_near_support_with_bounce(an, mode="near"):
     """
     mode: "near" = قريب من الدعم فقط
-          "bounce" = ارتداد مؤكد (change > 0.15%)
-          "momentum" = زخم إيجابي (RSI يصعد أو ROC موجب)
+          "bounce" = ارتداد بسيط مؤكد (0.15% < change < 5%)
+          "momentum" = زخم إيجابي
     """
     s1 = an.get('s1', 0)
     s2 = an.get('s2', 0)
@@ -350,10 +350,14 @@ def is_near_support_with_bounce(an, mode="near"):
     
     # فحص حسب الوضع
     if mode == "bounce":
-        if change_pct > 0.15:  # تم التخفيف من 0.3% إلى 0.15%
-            reasons.append(f"📈 ارتداد إيجابي ({change_pct:+.2f}%)")
+        # ✅ شرط جديد: ارتداد بسيط فقط (بين 0.15% و 5%)
+        if 0.15 < change_pct < 5:
+            reasons.append(f"📈 ارتداد بسيط ({change_pct:+.2f}%) - مناسب للدخول")
+        elif change_pct >= 5:
+            reasons.append(f"⚠️ ارتداد كبير ({change_pct:+.1f}%) - فاتك القطار، لا تدخل")
+            return False, ["ارتداد كبير - فاتك الفرصة"], level
         else:
-            return False, [], "عادي"
+            return False, [], level
     elif mode == "momentum":
         # زخم إيجابي بدون شرط تغير السعر
         momentum_score = 0
@@ -363,9 +367,9 @@ def is_near_support_with_bounce(an, mode="near"):
         if an.get('ratio', 0) > 1:
             momentum_score += 1
             reasons.append(f"💧 سيولة جيدة ({an['ratio']:.1f}x)")
-        if change_pct > 0:
+        if change_pct > 0 and change_pct < 5:
             momentum_score += 1
-            reasons.append(f"📊 تغير إيجابي ({change_pct:+.2f}%)")
+            reasons.append(f"📊 تغير إيجابي بسيط ({change_pct:+.2f}%)")
         if momentum_score < 2:
             return False, [], "عادي"
     
@@ -564,7 +568,7 @@ def is_imminent_breakout(an):
 
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v17.1", layout="wide")
+st.set_page_config(page_title="EGX Sniper Pro v17.2", layout="wide")
 
 st.markdown("""
     <style>
@@ -607,6 +611,7 @@ st.markdown("""
     .momentum-badge { background: linear-gradient(135deg, #9c27b0, #e040fb); color: white; padding: 5px 10px; border-radius: 10px; margin-bottom: 10px; text-align: center; font-weight: bold; }
     .warning-box { background-color: rgba(248, 81, 73, 0.15); border-right: 4px solid #f85149; padding: 10px; border-radius: 8px; margin: 10px 0; }
     .success-box { background-color: rgba(63, 185, 80, 0.15); border-right: 4px solid #3fb950; padding: 10px; border-radius: 8px; margin: 10px 0; }
+    .danger-box { background-color: rgba(248, 81, 73, 0.3); border-right: 4px solid #f85149; padding: 10px; border-radius: 8px; margin: 10px 0; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1222,7 +1227,7 @@ if st.session_state.market_data is None:
     get_fresh_data()
 
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Pro v17.1")
+    st.title("🏹 EGX Sniper Pro v17.2")
     
     render_mode_selector()
     
@@ -1314,7 +1319,7 @@ elif st.session_state.page == 'support_bounce':
     render_mode_selector()
     
     st.title("🔻 فرص الدعم والارتداد")
-    st.markdown("الأسهم القريبة من الدعم (أقل من 0.6%) مع تحليل متقدم")
+    st.markdown("الأسهم القريبة من الدعم مع تحليل متقدم - الدخول فقط عند ارتداد بسيط (أقل من 5%)")
     
     if not st.session_state.all_results:
         st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
@@ -1328,7 +1333,7 @@ elif st.session_state.page == 'support_bounce':
         st.markdown("""
         <div class='warning-box'>
         ⚠️ <b>تنبيه مهم:</b> هذه الأسهم <b>لم تثبت الارتداد بعد</b>. لا تشتري الآن، فقط راقبها.
-        <br>✅ انتظر حتى تظهر في تبويب "مؤكد الارتداد" أو "زخم إيجابي" قبل الدخول.
+        <br>✅ انتظر حتى تظهر في التبويب "مؤكد الارتداد" (ارتداد بسيط أقل من 5%) قبل الدخول.
         </div>
         """, unsafe_allow_html=True)
         
@@ -1394,11 +1399,11 @@ elif st.session_state.page == 'support_bounce':
             st.info("لا توجد أسهم قريبة من الدعم حالياً.")
     
     with tab2:
-        st.markdown("### 📈 الأسهم التي ارتدت من الدعم - صالحة للدخول")
+        st.markdown("### 📈 الأسهم التي ارتدت ارتداداً بسيطاً - صالحة للدخول")
         st.markdown("""
         <div class='success-box'>
-        ✅ <b>تأكد الارتداد</b> - السعر ارتفع بنسبة 0.15% على الأقل من الدعم.
-        <br>🎯 مناسبة للدخول مع وضع وقف خسارة أسفل الدعم مباشرة.
+        ✅ <b>تأكد الارتداد البسيط</b> - السعر ارتفع بنسبة 0.15% - 5% فقط من الدعم.
+        <br>🎯 مناسبة للدخول. <b>تجنب الأسهم التي ارتدت أكثر من 5%</b> (فاتك القطار).
         </div>
         """, unsafe_allow_html=True)
         
@@ -1409,7 +1414,7 @@ elif st.session_state.page == 'support_bounce':
                 bounce_stocks.append({'stock': an, 'reasons': reasons, 'level': level})
         
         if bounce_stocks:
-            st.markdown(f"**عدد الأسهم التي ارتدت من الدعم: {len(bounce_stocks)}**")
+            st.markdown(f"**عدد الأسهم التي ارتدت ارتداداً بسيطاً: {len(bounce_stocks)}**")
             for item in bounce_stocks:
                 an = item['stock']
                 reasons = item['reasons']
@@ -1428,7 +1433,7 @@ elif st.session_state.page == 'support_bounce':
                 <div style='background:#0d1117;border:2px solid #3fb950;border-radius:12px;padding:15px;margin-bottom:15px;'>
                     <div style='display:flex;justify-content:space-between;align-items:center;'>
                         <h3 style='color:#3fb950;margin:0'>📈 {an['name']} - {an['desc']}</h3>
-                        <span class='bounce-badge'>📈 مؤكد الارتداد</span>
+                        <span class='bounce-badge'>📈 ارتداد بسيط</span>
                     </div>
                     <div class='quality-badge {quality_class}' style='margin-top:10px;'>⭐ {quality}</div>
                     <div style='margin-top:10px;'>
@@ -1439,7 +1444,7 @@ elif st.session_state.page == 'support_bounce':
                         • RR: {an['rr']} | الهدف: {an['target']:.2f} (+{an['target_pct']:.1f}%)
                     </div>
                     <div style='margin-top:10px;'>
-                        <b>✅ مؤشرات الارتداد:</b>
+                        <b>✅ مؤشرات الارتداد البسيط:</b>
                         {"".join([f'<div style="color:#3fb950;">{r}</div>' for r in reasons])}
                     </div>
                     <div class='success-box' style='margin-top:10px;'>
@@ -1452,14 +1457,14 @@ elif st.session_state.page == 'support_bounce':
                     record_trade(an, "bounce")
                     render_stock_ui(an)
         else:
-            st.info("لا توجد أسهم مؤكد ارتدادها من الدعم حالياً. راقب تبويب 'قريبة من الدعم' أولاً.")
+            st.info("لا توجد أسهم بارتداد بسيط مناسب حالياً. راقب تبويب 'قريبة من الدعم' أولاً.")
     
     with tab3:
         st.markdown("### ⚡ زخم إيجابي عند الدعم - فرصة وشيكة")
         st.markdown("""
         <div class='success-box'>
         🟣 <b>زخم إيجابي</b> - لم يرتد السعر بشكل واضح لكن المؤشرات الفنية إيجابية.
-        <br>🎯 مناسب للمتابعة عن كثب، قد يكون على وشك الارتداد.
+        <br>🎯 مناسب للمتابعة عن كثب، قد يكون على وشك الارتداد البسيط.
         </div>
         """, unsafe_allow_html=True)
         
@@ -1706,11 +1711,13 @@ elif st.session_state.page == 'guide':
         #### 🔻 دعم وارتداد (Support & Bounce) - 3 مستويات
         | المستوى | الوصف | التصرف |
         |---------|-------|--------|
-        | **📏 قريبة من الدعم** | سعر قرب من الدعم (أقل من 0.6%) | ⚠️ مراقبة فقط - لا تشتري |
-        | **📈 مؤكد الارتداد** | ارتداد بنسبة 0.15%+ | ✅ مناسب للدخول |
+        | **📏 قريبة من الدعم** | سعر قرب من الدعم (أقل من 1%) | ⚠️ مراقبة فقط - لا تشتري |
+        | **📈 مؤكد الارتداد** | ارتداد بسيط (0.15% - 5%) | ✅ مناسب للدخول |
         | **⚡ زخم إيجابي** | مؤشرات فنية إيجابية | 🟣 استعد للدخول |
+        
+        > ⚠️ **تحذير مهم:** إذا ارتد السهم أكثر من 5%، فهذا يعني أنك فاتتك الفرصة. لا تدخل في ارتدادات كبيرة.
 
-        > 💡 **نصيحة:** لا تشتري من تبويب "قريبة من الدعم" أبداً. انتظر التأكيد في التبويبين الآخرين.
+        > 💡 **نصيحة:** لا تشتري من تبويب "قريبة من الدعم" أبداً. انتظر التأكيد في التبويب "مؤكد الارتداد" (ارتداد بسيط فقط).
 
         ---
 
