@@ -309,19 +309,29 @@ def calculate_roc(current_price, previous_price):
         return ((current_price - previous_price) / previous_price) * 100
     return 0
 
-# ================== 🆕 SUPPORT & BOUNCE DETECTION ==================
+# ================== 🆕 SUPPORT & BOUNCE DETECTION (FULL VERSION) ==================
 def is_near_support_with_bounce(an, mode="near"):
-    s1 = an.get('s1', 0)
-    s2 = an.get('s2', 0)
-    p = an.get('p', 0)
+    """
+    الكشف عن الأسهم القريبة من الدعم مع تقييم متعدد العوامل
+    
+    mode: "near" = قريب من الدعم فقط
+          "bounce" = ارتداد حقيقي محتمل (باستخدام bounce_score)
+          "momentum" = زخم إيجابي
+    """
+    # قيم افتراضية آمنة
+    s1 = an.get('s1', 0) if an.get('s1') is not None else 0
+    s2 = an.get('s2', 0) if an.get('s2') is not None else 0
+    p = an.get('p', 0) if an.get('p') is not None else 0
     change_pct = an.get('chg', 0) if an.get('chg') is not None else 0
     rsi = an.get('rsi', 50) if an.get('rsi') is not None else 50
     ratio = an.get('ratio', 0) if an.get('ratio') is not None else 0
     sma20 = an.get('sma20', p) if an.get('sma20') is not None else p
+    r1 = an.get('r1', p * 1.03) if an.get('r1') is not None else p * 1.03
     
     if s1 == 0 and s2 == 0:
         return False, [], "عادي", 0
     
+    # مسافة الدعم الموسعة لـ 1.5%
     nearest_support = s1 if s1 > 0 else s2
     distance_to_support = (p - nearest_support) / nearest_support * 100 if nearest_support > 0 else 999
     
@@ -342,24 +352,29 @@ def is_near_support_with_bounce(an, mode="near"):
         if mode == "near":
             return False, [], "عادي", 0
     
+    # كسر الدعم
     if p < nearest_support:
         reasons.append("❌ كسر الدعم - خطر")
         return False, ["كسر الدعم"], "مكسور", 0
     
+    # نظام bounce_score متعدد العوامل
     if mode == "bounce":
+        # 1. تغير السعر إيجابي معتدل (0.1% - 4%)
         if 0.1 < change_pct < 4:
             bounce_score += 1
             reasons.append(f"📈 تغير إيجابي معتدل ({change_pct:+.2f}%)")
         elif change_pct >= 4:
             reasons.append(f"⚠️ تغير كبير ({change_pct:+.1f}%) - احترس من القمة")
-            return False, ["تغير كبير"], level, bounce_score
+            return False, ["تغير كبير - قد يكون قمة"], level, bounce_score
         elif change_pct <= 0:
-            return False, ["تغير سلبي"], level, bounce_score
+            return False, ["تغير سلبي - لم يرتد"], level, bounce_score
         
+        # 2. RSI بدأ بالتعافي (فوق 40)
         if rsi > 40:
             bounce_score += 1
             reasons.append(f"📊 RSI بدأ بالتعافي ({rsi:.0f})")
         
+        # 3. سيولة جيدة
         if ratio > 1.5:
             bounce_score += 1
             reasons.append(f"💧 سيولة ممتازة ({ratio:.1f}x)")
@@ -367,49 +382,59 @@ def is_near_support_with_bounce(an, mode="near"):
             bounce_score += 1
             reasons.append(f"💧 سيولة جيدة ({ratio:.1f}x)")
         
+        # 4. السعر فوق المتوسط المتحرك 20 (بداية اتجاه)
         if p > sma20:
             bounce_score += 1
-            reasons.append(f"📈 السعر فوق SMA20")
+            reasons.append(f"📈 السعر فوق SMA20 - بداية تكون قاع")
         
+        # 5. RSI كان منخفضاً وبدأ بالصعود
         rsi_recovery = max(0, rsi - 30)
         if rsi_recovery > 10:
             bounce_score += 1
-            reasons.append(f"🔄 RSI تعافى بقوة ({rsi_recovery:.0f} نقطة)")
+            reasons.append(f"🔄 RSI تعافى بقوة من التشبع ({rsi_recovery:.0f} نقطة)")
         
+        # شرط الدخول: محتاج 3 عوامل على الأقل
         if bounce_score < 3:
-            return False, [f"نقاط ({bounce_score}/5)"], level, bounce_score
+            return False, [f"نقاط الارتداد منخفضة ({bounce_score}/5)"], level, bounce_score
     
+    # وضع الزخم الإيجابي
     elif mode == "momentum":
         momentum_score = 0
+        
         if rsi > 45 and p > sma20:
             momentum_score += 1
-            reasons.append(f"📈 زخم إيجابي")
+            reasons.append(f"📈 زخم إيجابي (RSI {rsi:.0f}، السعر فوق SMA20)")
+        
         if ratio > 1.2:
             momentum_score += 1
             reasons.append(f"💧 سيولة جيدة ({ratio:.1f}x)")
+        
         if 0 < change_pct < 4:
             momentum_score += 1
-            reasons.append(f"📊 تغير إيجابي ({change_pct:+.2f}%)")
+            reasons.append(f"📊 تغير إيجابي معتدل ({change_pct:+.2f}%)")
+        
         if rsi < 40:
             momentum_score += 1
-            reasons.append(f"🎯 RSI منخفض ({rsi:.0f})")
+            reasons.append(f"🎯 RSI منخفض ({rsi:.0f}) - احتمال انعكاس")
+        
         if momentum_score < 2:
             return False, [], "عادي", 0
     
+    # مؤشرات داعمة عامة
     if rsi < 35:
-        reasons.append(f"🟢 RSI منخفض جداً ({rsi:.0f})")
+        reasons.append(f"🟢 RSI منخفض جداً ({rsi:.0f}) - تشبع بيع ممتاز")
     elif rsi < 45:
-        reasons.append(f"📊 RSI منخفض ({rsi:.0f})")
+        reasons.append(f"📊 RSI منخفض ({rsi:.0f}) - فرصة جيدة")
     
-    r1 = an.get('r1', p * 1.03)
+    # الهدف المتوقع
     potential_gain = (r1 - p) / p * 100 if r1 > p else 0
-    
     if potential_gain > 3:
-        reasons.append(f"🎯 هدف: {r1:.2f} (+{potential_gain:.1f}%)")
+        reasons.append(f"🎯 هدف محتمل: {r1:.2f} (+{potential_gain:.1f}%)")
     
     return True, reasons, level, bounce_score
 
 def get_support_quality_rating(res, level, mode="near", bounce_score=0):
+    """تقييم جودة فرصة الدعم/الارتداد"""
     rr = res.get('rr', 0) if res.get('rr') is not None else 0
     ratio = res.get('ratio', 0) if res.get('ratio') is not None else 0
     rsi = res.get('rsi', 50) if res.get('rsi') is not None else 50
@@ -417,23 +442,23 @@ def get_support_quality_rating(res, level, mode="near", bounce_score=0):
     
     if mode == "bounce":
         if bounce_score >= 4 and level == "عند الدعم" and rr >= 1.5 and ratio > 1.2 and 40 < rsi < 55:
-            return "🔥 ممتاز - فرصة ذهبية"
+            return "🔥 ممتاز - فرصة ذهبية للشراء من القاع"
         elif bounce_score >= 3 and rr >= 1.3:
             return "✅ جيد - مناسب للدخول"
         else:
-            return "📌 للمتابعة"
+            return "📌 للمتابعة - يحتاج تأكيد إضافي"
     elif mode == "momentum":
         if rsi < 45 and ratio > 1.2 and rr >= 1.5:
-            return "🔥 ممتاز - زخم قوي"
+            return "🔥 ممتاز - زخم قوي جداً"
         elif rsi < 55 and ratio > 0.8:
             return "✅ جيد - يستحق المراقبة"
         else:
             return "📌 للمتابعة"
     else:
         if level == "عند الدعم" and rsi < 40 and ratio > 1:
-            return "🔥 ممتاز - عند الدعم مع تشبع بيع"
+            return "🔥 ممتاز - سهم عند الدعم مع تشبع بيع"
         elif level == "قريب جداً" and rsi < 45:
-            return "✅ جيد - قريب من الدعم"
+            return "✅ جيد - قريب من الدعم مع مؤشرات إيجابية"
         else:
             return "📌 للمتابعة"
 
@@ -578,7 +603,7 @@ def is_imminent_breakout(an):
 
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v17.5", layout="wide")
+st.set_page_config(page_title="EGX Sniper Pro v17.6", layout="wide")
 
 st.markdown("""
     <style>
@@ -652,38 +677,16 @@ def classify_stock(res):
     if res is None:
         return "weak"
     
-    # 🔥 إصلاح الخطأ: التحقق من وجود القيم ومنع None
-    rr = res.get('rr', 0)
-    if rr is None:
-        rr = 0
-    
-    ratio = res.get('ratio', 0)
-    if ratio is None:
-        ratio = 0
-    
-    t_short = res.get('t_short', 'هابط')
-    if t_short is None:
-        t_short = 'هابط'
-    
-    t_med = res.get('t_med', 'هابط')
-    if t_med is None:
-        t_med = 'هابط'
-    
-    rsi = res.get('rsi', 50)
-    if rsi is None:
-        rsi = 50
-    
-    smart_score = res.get('smart_score', 0)
-    if smart_score is None:
-        smart_score = 0
-    
-    change_pct = res.get('chg', 0)
-    if change_pct is None:
-        change_pct = 0
+    rr = res.get('rr', 0) if res.get('rr') is not None else 0
+    ratio = res.get('ratio', 0) if res.get('ratio') is not None else 0
+    t_short = res.get('t_short', 'هابط') if res.get('t_short') is not None else 'هابط'
+    t_med = res.get('t_med', 'هابط') if res.get('t_med') is not None else 'هابط'
+    rsi = res.get('rsi', 50) if res.get('rsi') is not None else 50
+    smart_score = res.get('smart_score', 0) if res.get('smart_score') is not None else 0
+    change_pct = res.get('chg', 0) if res.get('chg') is not None else 0
     
     mode = st.session_state.mode if hasattr(st.session_state, 'mode') else "⚖️ متوازن"
     
-    # التحقق من صحة القيم
     if change_pct > 3 and ratio < 1.5:
         return "weak"
     
@@ -879,7 +882,6 @@ def analyze_stock(d_row):
         
         name, p, rsi, v, avg_v, h, l, chg, desc, sma20, sma50, sma200 = d
         
-        # التحقق من None
         if p is None:
             return None
         
@@ -1106,7 +1108,7 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
         roc_color = "🟢" if roc > 0 else "🔴"
         st.metric("ROC (معدل التغير)", f"{roc_color} {roc:+.1f}%")
         
-        st.markdown("### 🏛️ مستويات الدعم والمقاومة (للمستثمر طويل الأجل)")
+        st.markdown("### 🏛️ مستويات الدعم والمقاومة")
         st.markdown(f"""
         | المستوى | السعر | الدلالة |
         |---------|-------|---------|
@@ -1119,7 +1121,7 @@ def render_stock_ui(res, is_top10=False, is_gold=False):
         
         st.markdown(f"""
         <div class='entry-card-new'>
-            🎯 <b>نطاق الدخول (مضاربة/سوينج):</b> {res.get('entry_range', 'N/A')}<br>
+            🎯 <b>نطاق الدخول:</b> {res.get('entry_range', 'N/A')}<br>
             🛑 <b>وقف الخسارة:</b> {res.get('stop_loss', 0):.2f} <span style='color:#f85149'>(-{res.get('risk_pct', 0):.1f}%)</span><br>
             🏁 <b>المستهدف:</b> {res.get('target', 0):.2f} <span style='color:#58a6ff'>(+{res.get('target_pct', 0):.1f}%)</span>
         </div>
@@ -1178,7 +1180,7 @@ if st.session_state.market_data is None:
     get_fresh_data()
 
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Pro v17.5")
+    st.title("🏹 EGX Sniper Pro v17.6")
     
     render_mode_selector()
     
@@ -1262,7 +1264,7 @@ if st.session_state.page == 'home':
         col2.metric("نسبة الذهب من السوق", f"{gold_percentage:.1f}%")
         col3.markdown(f"**الحالة:** {rarity_status}")
 
-# ================== باقي الصفحات ==================
+# ================== باقي الصفحات الأساسية ==================
 elif st.session_state.page == 'avg':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     st.title("🧮 حاسبة متوسط السعر")
@@ -1305,18 +1307,17 @@ elif st.session_state.page == 'imminent':
                 </div>
                 <div style='margin-top:10px;'>
                     <b>📊 المعطيات:</b><br>
-                    • السعر: {an.get('p', 0):.2f} ج | المقاومة R1: {an.get('r1', 0):.2f} ج ({((an.get('r1', 0) - an.get('p', 0)) / an.get('p', 1) * 100):.1f}% متبقي)<br>
-                    • RSI: {an.get('rsi', 0):.1f} | السيولة: {an.get('ratio', 0):.1f}x<br>
-                    • الاتجاه: {an.get('t_short', 'N/A')} | Smart Score: {an.get('smart_score', 0)}/100
+                    • السعر: {an.get('p', 0):.2f} ج | المقاومة R1: {an.get('r1', 0):.2f} ج<br>
+                    • RSI: {an.get('rsi', 0):.1f} | السيولة: {an.get('ratio', 0):.1f}x
                 </div>
                 <div style='margin-top:10px;'>
-                    <b>✅ أسباب الوشك على الاختراق:</b>
+                    <b>✅ الأسباب:</b>
                     {"".join([f'<div style="color:#ff8f00;">{r}</div>' for r in reasons])}
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
-            if st.button(f"📊 تحليل {an.get('name', 'N/A')} بالتفصيل", key=f"analyze_{an.get('name', 'N/A')}"):
+            if st.button(f"📊 تحليل {an.get('name', 'N/A')}", key=f"analyze_{an.get('name', 'N/A')}"):
                 render_stock_ui(an)
     else:
         st.info("لا توجد أسهم على وشك الاختراق حالياً.")
@@ -1328,34 +1329,28 @@ elif st.session_state.page == 'guide':
     with st.expander("📊 مؤشر القوة النسبية (RSI)"):
         st.markdown("""
         ### ما هو RSI؟
-        **RSI** هو مؤشر يقيس سرعة وتغير حركة السعر. قيمته تتراوح بين 0 و 100.
+        **RSI** هو مؤشر يقيس سرعة وتغير حركة السعر.
         
         ### دلالات RSI:
-        | القيمة | الدلالة | التصرف المتوقع |
-        |--------|---------|----------------|
-        | **فوق 70** | 🔴 **تشبع شراء** | السهم ممكن ينزل (بيع/جني أرباح) |
-        | **تحت 30** | 🟢 **تشبع بيع** | السهم ممكن يصعد (فرصة شراء) |
-        | **بين 40 و 60** | 🟡 **منطقة محايدة** | استنى تأكيد إضافي |
-        
-        ### نصيحة:
-        الأفضل للدخول في صفقة شراء عندما يكون RSI **بين 40 و 65** (زخم صحي).
+        | القيمة | الدلالة |
+        |--------|---------|
+        | **فوق 70** | 🔴 تشبع شراء |
+        | **تحت 30** | 🟢 تشبع بيع |
+        | **40-65** | 🟢 زخم صحي |
         """)
     
     with st.expander("🎯 Smart Score"):
         st.markdown("""
-        ### ما هو Smart Score؟
-        **Smart Score** هو درجة مركبة من 0 إلى 100 تقييم قوة السهم.
-        
         ### دلالات Smart Score:
-        | الدرجة | التقييم | التصرف |
-        |--------|---------|--------|
-        | **70-100** | 🔥 فرصة قوية جداً | مناسب للدخول |
-        | **50-69** | ✅ فرصة جيدة | دخول بحذر |
-        | **30-49** | ⚠️ تحت المراقبة | استنى تأكيد |
-        | **0-29** | ❄️ ضعيف | تجنب |
+        | الدرجة | التقييم |
+        |--------|---------|
+        | **70-100** | 🔥 فرصة قوية جداً |
+        | **50-69** | ✅ فرصة جيدة |
+        | **30-49** | ⚠️ تحت المراقبة |
+        | **0-29** | ❄️ ضعيف |
         """)
     
-    st.info("💡 **تذكير:** هذه المؤشرات هي أدوات مساعدة، وليست قرارات نهائية. القرار النهائي يعتمد على تحليلك الشخصي وإدارة المخاطر الخاصة بك.")
+    st.info("💡 تذكير: هذه المؤشرات أدوات مساعدة.")
 
 elif st.session_state.page == 'performance':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -1368,19 +1363,19 @@ elif st.session_state.page == 'performance':
                 if st.session_state.all_results:
                     current_prices = {res.get('name'): res.get('p', 0) for res in st.session_state.all_results if res}
                     trades = update_all_trades(current_prices)
-                    st.success("تم تحديث البيانات بنجاح!")
+                    st.success("تم تحديث البيانات!")
                     st.rerun()
                 else:
                     st.error("لا توجد بيانات محدثة")
     
     with col2:
-        if st.button("🗑️ مسح جميع بيانات التقييم", use_container_width=True):
+        if st.button("🗑️ مسح بيانات التقييم", use_container_width=True):
             if os.path.exists(TRADES_FILE):
                 os.remove(TRADES_FILE)
-                st.success("✅ تم مسح جميع بيانات التقييم! سيتم البدء من جديد")
+                st.success("✅ تم المسح!")
                 st.rerun()
             else:
-                st.info("لا توجد بيانات للمسح")
+                st.info("لا توجد بيانات")
     
     trades = load_trades()
     stats = get_performance_stats(trades)
@@ -1397,65 +1392,18 @@ elif st.session_state.page == 'performance':
     col3.metric("📊 متوسط العائد %", f"{stats['avg_return']}%")
     col4.metric("⚖️ متوسط RR", stats['avg_rr'])
     
-    col1, col2, col3 = st.columns(3)
-    col1.metric("📅 متوسط أيام الاحتفاظ", f"{stats['avg_holding_days']} يوم")
-    col2.metric("🎯 دقة الدخول", f"{stats['entry_accuracy']}%")
-    col3.metric("🏆 أفضل 10 (نسبة نجاح)", f"{stats['top10_success']}%")
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("🔥 السلسلة الحالية", stats['current_win_streak'])
-    col2.metric("🏆 أطول سلسلة", stats['max_win_streak'])
-    col3.metric("📈 متوسط MFE", f"{stats['avg_mfe']:.2f} ج")
-    
     st.markdown(f"""
-    <div style='background:#161b22;border:1px solid #30363d;border-radius:10px;padding:15px;margin:15px 0;'>
-        <b>💎 الفرص الذهبية:</b> {stats['gold_count']} صفقة | نسبة نجاح: {stats['gold_success']}% | إجمالي العائد: {stats['gold_return']}%
+    <div style='background:#161b22;border-radius:10px;padding:15px;margin:15px 0;'>
+        <b>💎 الفرص الذهبية:</b> {stats['gold_count']} صفقة | نجاح: {stats['gold_success']}%
     </div>
     """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    st.markdown("### 📋 تفاصيل الصفقات")
-    
-    filter_option = st.radio(
-        "🔍 اختر الفلتر:",
-        ["📋 كل الصفقات", "✅ الناجحة فقط (حققت الهدف)", "❌ الفاشلة فقط (كسرت الوقف)", "⏳ المفتوحة فقط"],
-        horizontal=True
-    )
-    
-    if filter_option == "✅ الناجحة فقط (حققت الهدف)":
-        filtered_trades = [t for t in trades if t.get('status') == 'hit_target']
-    elif filter_option == "❌ الفاشلة فقط (كسرت الوقف)":
-        filtered_trades = [t for t in trades if t.get('status') == 'stopped_out']
-    elif filter_option == "⏳ المفتوحة فقط":
-        filtered_trades = [t for t in trades if t.get('status') in ['pending', 'still_open']]
-    else:
-        filtered_trades = trades
-    
-    if filtered_trades:
-        st.markdown(f"**عدد الصفقات: {len(filtered_trades)}**")
-        for trade in reversed(filtered_trades[-30:]):
-            status_color = "🟢" if trade.get('status') == 'hit_target' else "🔴" if trade.get('status') == 'stopped_out' else "🟡"
-            status_text = "حققت الهدف" if trade.get('status') == 'hit_target' else "كسرت الوقف" if trade.get('status') == 'stopped_out' else "لا تزال مفتوحة"
-            entry_hit_mark = "✅" if trade.get('entry_hit', False) else "❌"
-            profit_text = f" | {'🟢' if trade.get('profit_pct', 0) > 0 else '🔴'} {trade.get('profit_pct', 0):+.1f}%" if trade.get('profit_pct') is not None else ""
-            
-            st.markdown(f"""
-            <div style='background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;margin:5px 0;'>
-                <b>{trade.get('name', 'N/A')}</b> ({trade.get('trade_type', 'N/A')}) - {status_color} {status_text}{profit_text}<br>
-                📅 التسجيل: {trade.get('date_recorded', 'N/A')} | {entry_hit_mark} دخول في النطاق<br>
-                🎯 الهدف: {trade.get('target', 0):.2f} | 🛑 الوقف: {trade.get('stop_loss', 0):.2f}<br>
-                📊 RR: {trade.get('rr', 0)} | RSI: {trade.get('rsi_at_entry', 0):.1f}
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("لا توجد صفقات تطابق الفلتر المختار.")
 
 elif st.session_state.page == 'top10':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     
     if not st.session_state.all_results:
-        st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
+        st.error("⚠️ لا توجد بيانات.")
         st.stop()
     
     top_results = get_top_ranked(st.session_state.all_results, limit=10)
@@ -1467,7 +1415,7 @@ elif st.session_state.page == 'top10':
     st.markdown("## 🏆 أقوى 10 فرص حسب Smart Score")
     for i, an in enumerate(top_results, 1):
         if an:
-            with st.expander(f"#{i} - {an.get('name', 'N/A')} | Smart: {an.get('smart_score', 0)} | RR: {an.get('rr', 0)} | ثقة: {get_confidence_score(an)}"):
+            with st.expander(f"#{i} - {an.get('name', 'N/A')} | Smart: {an.get('smart_score', 0)} | RR: {an.get('rr', 0)}"):
                 render_stock_ui(an, is_top10=True)
 
 elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
@@ -1475,7 +1423,7 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
     render_mode_selector()
     
     if not st.session_state.all_results:
-        st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
+        st.error("⚠️ لا توجد بيانات.")
         st.stop()
     
     if st.session_state.page == 'gold':
@@ -1483,14 +1431,7 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "gold":
                 record_trade(an, "gold")
-                quality = get_quality_rating(an, "gold")
-                if "ممتاز" in quality:
-                    quality_display = f'<div class="quality-badge quality-excellent">💎 {quality}</div>'
-                else:
-                    quality_display = f'<div class="quality-badge quality-good">💎 {quality}</div>'
-                
-                with st.expander(f"✨ ذهبي: {an.get('name', 'N/A')} (RR: {an.get('rr', 0)} | RSI: {an.get('rsi', 0):.1f} | ثقة: {get_confidence_score(an)}%)"): 
-                    st.markdown(quality_display, unsafe_allow_html=True)
+                with st.expander(f"✨ ذهبي: {an.get('name', 'N/A')}"):
                     render_stock_ui(an, is_gold=True)
                     found = True
         if not found: st.info("لا توجد فرص ذهبية حالياً.")
@@ -1499,47 +1440,20 @@ elif st.session_state.page in ['gold', 'scanner', 'breakout', 'scalp']:
         results = [an for an in st.session_state.all_results if an and classify_stock(an) == "watchlist"]
         results.sort(key=lambda x: (x.get('smart_score', 0), x.get('rr', 0)), reverse=True)
         for an in results[:15]:
-            quality = get_quality_rating(an, "watchlist")
-            if "واعد" in quality:
-                quality_display = f'<div class="quality-badge quality-excellent">🔥 {quality}</div>'
-            elif "جيد" in quality:
-                quality_display = f'<div class="quality-badge quality-good">✅ {quality}</div>'
-            else:
-                quality_display = f'<div class="quality-badge quality-normal">📌 {quality}</div>'
-            
-            with st.expander(f"{an.get('name', 'N/A')} | {an.get('signal', 'N/A')} | ثقة: {get_confidence_score(an)}%"):
-                st.markdown(quality_display, unsafe_allow_html=True)
+            with st.expander(f"{an.get('name', 'N/A')} | {an.get('signal', 'N/A')}"):
                 render_stock_ui(an)
     
     elif st.session_state.page == 'breakout':
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "breakout":
-                quality = get_quality_rating(an, "breakout")
-                if "ممتاز" in quality:
-                    quality_display = f'<div class="quality-badge quality-excellent">🚀 {quality}</div>'
-                elif "جيد" in quality:
-                    quality_display = f'<div class="quality-badge quality-good">🚀 {quality}</div>'
-                else:
-                    quality_display = f'<div class="quality-badge quality-normal">🚀 {quality}</div>'
-                
-                with st.expander(f"🚀 اختراق: {an.get('name', 'N/A')} (RSI: {an.get('rsi', 0):.1f} | ثقة: {get_confidence_score(an)}%)"):
-                    st.markdown(quality_display, unsafe_allow_html=True)
+                with st.expander(f"🚀 اختراق: {an.get('name', 'N/A')}"):
                     render_stock_ui(an)
     
     elif st.session_state.page == 'scalp':
         found = False
         for an in st.session_state.all_results:
             if an and classify_stock(an) == "scalp":
-                quality = get_quality_rating(an, "scalp")
-                if "ممتاز" in quality:
-                    quality_display = f'<div class="quality-badge quality-excellent">⚡ {quality}</div>'
-                elif "جيد" in quality:
-                    quality_display = f'<div class="quality-badge quality-good">⚡ {quality}</div>'
-                else:
-                    quality_display = f'<div class="quality-badge quality-normal">⚡ {quality}</div>'
-                
-                with st.expander(f"⚡ مضاربة: {an.get('name', 'N/A')} (RSI: {an.get('rsi', 0):.1f} | ثقة: {get_confidence_score(an)}%)"):
-                    st.markdown(quality_display, unsafe_allow_html=True)
+                with st.expander(f"⚡ مضاربة: {an.get('name', 'N/A')}"):
                     render_stock_ui(an)
                     found = True
         if not found: st.info("لا توجد مضاربات سريعة حالياً.")
@@ -1549,16 +1463,16 @@ elif st.session_state.page == 'analyze':
     render_mode_selector()
     
     if not st.session_state.all_results:
-        st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
+        st.error("⚠️ لا توجد بيانات.")
         st.stop()
     
     sym = st.text_input("رمز السهم").upper().strip()
     if sym:
-        with st.spinner("🔍 جاري البحث عن السهم..."):
+        with st.spinner("🔍 جاري البحث..."):
             data = fetch_single_stock(sym)
             
             if not data:
-                st.error("❌ السهم غير موجود في البيانات الحالية")
+                st.error("❌ السهم غير موجود")
                 symbols = [x.get('name', '') for x in st.session_state.all_results if x]
                 similar = [s for s in symbols if sym[:2] in s or s[:2] in sym][:5]
                 if similar:
@@ -1568,9 +1482,9 @@ elif st.session_state.page == 'analyze':
                 if res:
                     render_stock_ui(res)
                 else:
-                    st.warning("⚠️ تم جلب البيانات لكن التحليل فشل")
+                    st.warning("⚠️ فشل التحليل")
 
-# ================== صفحة دعم وارتداد (مبسطة ومستقرة) ==================
+# ================== 🆕 صفحة دعم وارتداد الكاملة (3 تبويبات مع فلاتر) ==================
 elif st.session_state.page == 'support_bounce':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
@@ -1581,41 +1495,178 @@ elif st.session_state.page == 'support_bounce':
         st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
         st.stop()
     
-    support_stocks = []
-    for an in st.session_state.all_results:
-        if an:
-            is_support, reasons, level, _ = is_near_support_with_bounce(an, mode="near")
-            if is_support:
-                support_stocks.append({'stock': an, 'reasons': reasons, 'level': level})
+    tab1, tab2, tab3 = st.tabs(["📏 قريبة من الدعم (مراقبة)", "📈 مؤكد الارتداد (دخول)", "⚡ زخم إيجابي"])
     
-    if support_stocks:
-        st.markdown(f"**عدد الأسهم القريبة من الدعم: {len(support_stocks)}**")
-        for item in support_stocks:
-            an = item['stock']
-            reasons = item['reasons']
-            level = item['level']
-            
-            if level == "عند الدعم":
-                badge_text = "📍 عند الدعم"
-            elif level == "قريب جداً":
-                badge_text = "📏 قريب جداً"
-            else:
-                badge_text = "📏 قريب نسبياً"
-            
-            st.markdown(f"""
-            <div style='background:#0d1117;border:2px solid #ff8f00;border-radius:12px;padding:15px;margin-bottom:15px;'>
-                <h3>🔻 {an.get('name', 'N/A')} - {an.get('desc', 'N/A')}</h3>
-                <div>{badge_text}</div>
-                <div>
-                    <b>📊 المعطيات:</b><br>
-                    • السعر: {an.get('p', 0):.2f} ج | الدعم S1: {an.get('s1', 0):.2f} ج<br>
-                    • RSI: {an.get('rsi', 0):.1f} | السيولة: {an.get('ratio', 0):.1f}x
+    # ================== التبويب 1 ==================
+    with tab1:
+        st.markdown("### 📏 الأسهم القريبة من الدعم - مراقبة فقط")
+        
+        support_stocks = []
+        for an in st.session_state.all_results:
+            if an:
+                is_support, reasons, level, _ = is_near_support_with_bounce(an, mode="near")
+                if is_support:
+                    quality = get_support_quality_rating(an, level, mode="near")
+                    support_stocks.append({'stock': an, 'reasons': reasons, 'level': level, 'quality': quality})
+        
+        excellent = len([s for s in support_stocks if "ممتاز" in s['quality']])
+        good = len([s for s in support_stocks if "جيد" in s['quality']])
+        normal = len([s for s in support_stocks if "للمتابعة" in s['quality']])
+        
+        colf, colex, colgo, colno = st.columns([2, 1, 1, 1])
+        with colf:
+            filter_opt = st.radio("الفلتر:", ["الكل", "🔥 ممتاز", "✅ جيد", "📌 للمتابعة"], key="f1")
+        with colex:
+            st.metric("🔥 ممتاز", excellent)
+        with colgo:
+            st.metric("✅ جيد", good)
+        with colno:
+            st.metric("📌 للمتابعة", normal)
+        
+        filtered = support_stocks
+        if filter_opt == "🔥 ممتاز":
+            filtered = [s for s in support_stocks if "ممتاز" in s['quality']]
+        elif filter_opt == "✅ جيد":
+            filtered = [s for s in support_stocks if "جيد" in s['quality']]
+        elif filter_opt == "📌 للمتابعة":
+            filtered = [s for s in support_stocks if "للمتابعة" in s['quality']]
+        
+        if filtered:
+            st.markdown(f"**النتائج: {len(filtered)}**")
+            for item in filtered:
+                an = item['stock']
+                level = item['level']
+                quality = item['quality']
+                reasons = item['reasons'][:4]
+                
+                badge = "📍 عند الدعم" if level == "عند الدعم" else "📏 قريب جداً" if level == "قريب جداً" else "📏 قريب نسبياً"
+                
+                st.markdown(f"""
+                <div style='background:#0d1117;border:2px solid #ff8f00;border-radius:12px;padding:15px;margin-bottom:15px;'>
+                    <h3>🔻 {an.get('name', 'N/A')} - {an.get('desc', 'N/A')}</h3>
+                    <div>{badge}</div>
+                    <div class='quality-badge quality-normal'>⭐ {quality}</div>
+                    <div>💰 {an.get('p', 0):.2f} ج | RSI: {an.get('rsi', 0):.1f} | سيولة: {an.get('ratio', 0):.1f}x</div>
+                    <div>📌 {', '.join(reasons)}</div>
+                    <div class='warning-box'>⚠️ مراقبة فقط</div>
                 </div>
-                <div><b>📌 التفاصيل:</b> {', '.join(reasons[:3])}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            if st.button(f"📊 تحليل {an.get('name', 'N/A')}", key=f"support_{an.get('name', 'N/A')}"):
-                render_stock_ui(an)
-    else:
-        st.info("لا توجد أسهم قريبة من الدعم حالياً.")
+                """, unsafe_allow_html=True)
+                if st.button(f"تحليل {an.get('name', 'N/A')}", key=f"s1_{an.get('name', 'N/A')}"):
+                    render_stock_ui(an)
+        else:
+            st.info("لا توجد نتائج")
+    
+    # ================== التبويب 2 ==================
+    with tab2:
+        st.markdown("### 📈 الأسهم ذات الارتداد الحقيقي - مناسبة للدخول")
+        
+        bounce_stocks = []
+        for an in st.session_state.all_results:
+            if an:
+                is_bounce, reasons, level, score = is_near_support_with_bounce(an, mode="bounce")
+                if is_bounce:
+                    quality = get_support_quality_rating(an, level, mode="bounce", bounce_score=score)
+                    bounce_stocks.append({'stock': an, 'reasons': reasons, 'level': level, 'quality': quality, 'score': score})
+        
+        excellent = len([s for s in bounce_stocks if "ممتاز" in s['quality']])
+        good = len([s for s in bounce_stocks if "جيد" in s['quality']])
+        normal = len([s for s in bounce_stocks if "للمتابعة" in s['quality']])
+        
+        colf, colex, colgo, colno = st.columns([2, 1, 1, 1])
+        with colf:
+            filter_opt = st.radio("الفلتر:", ["الكل", "🔥 ممتاز", "✅ جيد", "📌 للمتابعة"], key="f2")
+        with colex:
+            st.metric("🔥 ممتاز", excellent)
+        with colgo:
+            st.metric("✅ جيد", good)
+        with colno:
+            st.metric("📌 للمتابعة", normal)
+        
+        filtered = bounce_stocks
+        if filter_opt == "🔥 ممتاز":
+            filtered = [s for s in bounce_stocks if "ممتاز" in s['quality']]
+        elif filter_opt == "✅ جيد":
+            filtered = [s for s in bounce_stocks if "جيد" in s['quality']]
+        elif filter_opt == "📌 للمتابعة":
+            filtered = [s for s in bounce_stocks if "للمتابعة" in s['quality']]
+        
+        if filtered:
+            st.markdown(f"**النتائج: {len(filtered)}**")
+            for item in filtered:
+                an = item['stock']
+                quality = item['quality']
+                reasons = item['reasons'][:5]
+                score = item['score']
+                nearest_support = an.get('s1', 0) if an.get('s1', 0) > 0 else an.get('s2', 0)
+                
+                st.markdown(f"""
+                <div style='background:#0d1117;border:2px solid #3fb950;border-radius:12px;padding:15px;margin-bottom:15px;'>
+                    <h3>📈 {an.get('name', 'N/A')} - {an.get('desc', 'N/A')}</h3>
+                    <div class='bounce-badge'>ارتداد حقيقي ({score}/5)</div>
+                    <div class='quality-badge quality-good'>⭐ {quality}</div>
+                    <div>💰 {an.get('p', 0):.2f} ج | RSI: {an.get('rsi', 0):.1f} | سيولة: {an.get('ratio', 0):.1f}x</div>
+                    <div>✅ {', '.join(reasons)}</div>
+                    <div class='success-box'>✅ مناسب للدخول - وقف أسفل {nearest_support:.2f}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button(f"دخول {an.get('name', 'N/A')}", key=f"b_{an.get('name', 'N/A')}"):
+                    record_trade(an, "bounce")
+                    render_stock_ui(an)
+        else:
+            st.info("لا توجد نتائج")
+    
+    # ================== التبويب 3 ==================
+    with tab3:
+        st.markdown("### ⚡ زخم إيجابي عند الدعم")
+        
+        momentum_stocks = []
+        for an in st.session_state.all_results:
+            if an:
+                is_momentum, reasons, level, _ = is_near_support_with_bounce(an, mode="momentum")
+                if is_momentum:
+                    quality = get_support_quality_rating(an, level, mode="momentum")
+                    momentum_stocks.append({'stock': an, 'reasons': reasons, 'level': level, 'quality': quality})
+        
+        excellent = len([s for s in momentum_stocks if "ممتاز" in s['quality']])
+        good = len([s for s in momentum_stocks if "جيد" in s['quality']])
+        normal = len([s for s in momentum_stocks if "للمتابعة" in s['quality']])
+        
+        colf, colex, colgo, colno = st.columns([2, 1, 1, 1])
+        with colf:
+            filter_opt = st.radio("الفلتر:", ["الكل", "🔥 ممتاز", "✅ جيد", "📌 للمتابعة"], key="f3")
+        with colex:
+            st.metric("🔥 ممتاز", excellent)
+        with colgo:
+            st.metric("✅ جيد", good)
+        with colno:
+            st.metric("📌 للمتابعة", normal)
+        
+        filtered = momentum_stocks
+        if filter_opt == "🔥 ممتاز":
+            filtered = [s for s in momentum_stocks if "ممتاز" in s['quality']]
+        elif filter_opt == "✅ جيد":
+            filtered = [s for s in momentum_stocks if "جيد" in s['quality']]
+        elif filter_opt == "📌 للمتابعة":
+            filtered = [s for s in momentum_stocks if "للمتابعة" in s['quality']]
+        
+        if filtered:
+            st.markdown(f"**النتائج: {len(filtered)}**")
+            for item in filtered:
+                an = item['stock']
+                quality = item['quality']
+                reasons = item['reasons'][:4]
+                
+                st.markdown(f"""
+                <div style='background:#0d1117;border:2px solid #9c27b0;border-radius:12px;padding:15px;margin-bottom:15px;'>
+                    <h3>⚡ {an.get('name', 'N/A')} - {an.get('desc', 'N/A')}</h3>
+                    <div class='momentum-badge'>زخم إيجابي</div>
+                    <div class='quality-badge quality-good'>⭐ {quality}</div>
+                    <div>💰 {an.get('p', 0):.2f} ج | RSI: {an.get('rsi', 0):.1f} | سيولة: {an.get('ratio', 0):.1f}x</div>
+                    <div>🟣 {', '.join(reasons)}</div>
+                    <div class='info-box'>🟣 مراقبة عن كثب</div>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button(f"تحليل {an.get('name', 'N/A')}", key=f"m_{an.get('name', 'N/A')}"):
+                    render_stock_ui(an)
+        else:
+            st.info("لا توجد نتائج")
