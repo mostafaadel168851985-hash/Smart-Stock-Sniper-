@@ -138,7 +138,6 @@ def get_performance_stats(trades):
     if not trades or not isinstance(trades, list):
         trades = []
     
-    # ✅ إضافة: تصفية الـ None
     trades = [t for t in trades if t is not None]
     
     total = len(trades)
@@ -589,7 +588,7 @@ def is_imminent_breakout(an):
 
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v17.4", layout="wide")
+st.set_page_config(page_title="EGX Sniper Pro v17.5", layout="wide")
 
 st.markdown("""
     <style>
@@ -657,7 +656,7 @@ def get_rsi_signal(rsi):
     elif rsi < 75: return "⚠️ قرب تشبع شراء", "caution"
     else: return "🔴 تشبع شراء خطر", "overbought"
 
-# ================== 🛡️ CLASSIFY STOCK (آمن) ==================
+# ================== 🛡️ CLASSIFY STOCK ==================
 def classify_stock(res):
     if res is None:
         return "weak"
@@ -706,12 +705,10 @@ def classify_stock(res):
     
     return "weak"
 
-# ================== ✅ CHECK GOLD RARITY (تم إصلاحه) ==================
 def check_gold_rarity(results):
     if not results:
         return 0, 0, "لا توجد بيانات"
     
-    # ✅ إصلاح: التأكد من أن كل عنصر ليس None
     gold_count = 0
     for an in results:
         if an is not None and classify_stock(an) == "gold":
@@ -972,7 +969,6 @@ def get_top_ranked(results, limit=10):
     if not results:
         return []
     
-    # ✅ إضافة: تصفية الـ None
     valid_results = [r for r in results if r is not None]
     
     sorted_results = sorted(
@@ -1264,7 +1260,7 @@ if st.session_state.market_data is None:
     get_fresh_data()
 
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Pro v17.4")
+    st.title("🏹 EGX Sniper Pro v17.5")
     
     render_mode_selector()
     
@@ -1304,7 +1300,6 @@ if st.session_state.page == 'home':
                 st.session_state.page = 'imminent'
                 st.rerun()
         
-        # الصف الثاني من الأزرار
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             if st.button("🔻 دعم وارتداد"):
@@ -1331,7 +1326,6 @@ if st.session_state.page == 'home':
                 st.session_state.page = 'avg'
                 st.rerun()
     
-    # زر مسح البيانات
     with st.expander("⚠️ أدوات خطيرة", expanded=False):
         if st.button("🗑️ إعادة ضبط جميع بيانات التقييم", use_container_width=True):
             if os.path.exists(TRADES_FILE):
@@ -1350,17 +1344,16 @@ if st.session_state.page == 'home':
         col2.metric("نسبة الذهب من السوق", f"{gold_percentage:.1f}%")
         col3.markdown(f"**الحالة:** {rarity_status}")
 
-# ================== 🆕 صفحة دعم وارتداد كاملة ==================
+# ================== 🆕 صفحة دعم وارتداد (مُصَححة - بدون تكرار) ==================
 elif st.session_state.page == 'support_bounce':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     
-    st.title("🔻 فرص الدعم والارتداد - مع فلاتر الجودة v17.4")
+    st.title("🔻 فرص الدعم والارتداد - مع فلاتر الجودة v17.5")
     st.markdown("""
     <div class='info-box'>
-    📌 <b>ما الجديد؟</b><br>
-    • <b>فلاتر الجودة:</b> اختر "ممتاز" / "جيد" / "للمتابعة" لعرض الأسهم المناسبة فقط<br>
-    • <b>إحصائيات فورية:</b> تعرف على عدد الأسهم في كل مستوى جودة<br>
+    📌 <b>تم الإصلاح في v17.5:</b><br>
+    • <b>✓ لا تكرار:</b> الأسهم التي تظهر في "مؤكد الارتداد" لا تظهر في "قريبة من الدعم"<br>
     • <b>نظام Bounce Score:</b> 5 عوامل (مطلوب 3+ نقاط للدخول)<br>
     • <b>مسافة دعم موسعة:</b> 1.5% (3 مستويات) مناسبة للسوق المصري
     </div>
@@ -1370,23 +1363,31 @@ elif st.session_state.page == 'support_bounce':
         st.error("⚠️ لا توجد بيانات. اضغط على 'تحديث البيانات' في الصفحة الرئيسية.")
         st.stop()
     
-    # 3 تبويبات
     tab1, tab2, tab3 = st.tabs(["📏 قريبة من الدعم (مراقبة)", "📈 مؤكد الارتداد (دخول)", "⚡ زخم إيجابي عند الدعم"])
     
-    # ================== التبويب 1: قريبة من الدعم ==================
+    # ================== التبويب 1: قريبة من الدعم (بدون تكرار) ==================
     with tab1:
         st.markdown("### 📏 الأسهم القريبة من الدعم - مراقبة فقط")
         st.markdown("""
         <div class='warning-box'>
-        ⚠️ <b>تنبيه مهم:</b> هذه الأسهم <b>لم تثبت الارتداد بعد</b> (نقاط أقل من 3/5). لا تشتري الآن، فقط راقبها.
+        ⚠️ <b>تنبيه مهم:</b> هذه الأسهم <b>لم تثبت الارتداد بعد</b> (نقاط أقل من 3/5).
         <br>✅ انتظر حتى تظهر في التبويب "مؤكد الارتداد" قبل الدخول.
+        <br>📌 <b>ملاحظة:</b> الأسهم التي ظهرت في تبويب "مؤكد الارتداد" لا تظهر هنا.
         </div>
         """, unsafe_allow_html=True)
         
-        # جلب البيانات
-        support_stocks = []
+        # ✅ الخطوة 1: تحديد الأسهم التي حققت ارتداداً (لنستبعدها من التبويب 1)
+        bounce_symbols = set()
         for an in st.session_state.all_results:
             if an:
+                is_bounce, _, _, bounce_score = is_near_support_with_bounce(an, mode="bounce")
+                if is_bounce and bounce_score >= 3:
+                    bounce_symbols.add(an.get('name'))
+        
+        # ✅ الخطوة 2: جلب الأسهم القريبة من الدعم مع استبعاد أسهم الارتداد
+        support_stocks = []
+        for an in st.session_state.all_results:
+            if an and an.get('name') not in bounce_symbols:
                 is_support, reasons, level, _ = is_near_support_with_bounce(an, mode="near")
                 if is_support:
                     quality_rating = get_support_quality_rating(an, level, mode="near")
@@ -1397,12 +1398,10 @@ elif st.session_state.page == 'support_bounce':
                         'quality': quality_rating
                     })
         
-        # إحصائية سريعة
         excellent_count = len([s for s in support_stocks if "ممتاز" in s['quality']])
         good_count = len([s for s in support_stocks if "جيد" in s['quality']])
         normal_count = len([s for s in support_stocks if "عادي" in s['quality'] or "للمتابعة" in s['quality']])
         
-        # فلتر الجودة
         st.markdown("---")
         col_filter1, col_ex1, col_go1, col_no1 = st.columns([2, 1, 1, 1])
         with col_filter1:
@@ -1420,7 +1419,6 @@ elif st.session_state.page == 'support_bounce':
         
         st.markdown("---")
         
-        # تطبيق الفلتر
         filtered_stocks = support_stocks
         if filter_option == "🔥 ممتاز":
             filtered_stocks = [s for s in support_stocks if "ممتاز" in s['quality']]
@@ -1472,7 +1470,7 @@ elif st.session_state.page == 'support_bounce':
                         {"".join([f'<div style="color:#ff8f00;">{r}</div>' for r in reasons[:4]])}
                     </div>
                     <div class='warning-box' style='margin-top:10px;'>
-                        ⚠️ <b>مراقبة فقط</b> - يحتاج تأكيد ارتداد (3+ نقاط)
+                        ⚠️ <b>مراقبة فقط</b> - لم يثبت الارتداد بعد
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1480,7 +1478,7 @@ elif st.session_state.page == 'support_bounce':
                 if st.button(f"📊 تحليل {an['name']} بالتفصيل", key=f"support_{an['name']}"):
                     render_stock_ui(an)
         else:
-            st.info("لا توجد أسهم قريبة من الدعم تطابق الفلتر المختار.")
+            st.info("لا توجد أسهم قريبة من الدعم (غير المرتدة) تطابق الفلتر المختار.")
     
     # ================== التبويب 2: مؤكد الارتداد ==================
     with tab2:
@@ -1493,12 +1491,11 @@ elif st.session_state.page == 'support_bounce':
         </div>
         """, unsafe_allow_html=True)
         
-        # جلب البيانات
         bounce_stocks = []
         for an in st.session_state.all_results:
             if an:
                 is_bounce, reasons, level, bounce_score = is_near_support_with_bounce(an, mode="bounce")
-                if is_bounce:
+                if is_bounce and bounce_score >= 3:
                     quality_rating = get_support_quality_rating(an, level, mode="bounce", bounce_score=bounce_score)
                     bounce_stocks.append({
                         'stock': an, 
@@ -1508,12 +1505,10 @@ elif st.session_state.page == 'support_bounce':
                         'bounce_score': bounce_score
                     })
         
-        # إحصائية سريعة
         excellent_count = len([s for s in bounce_stocks if "ممتاز" in s['quality']])
         good_count = len([s for s in bounce_stocks if "جيد" in s['quality']])
         normal_count = len([s for s in bounce_stocks if "للمتابعة" in s['quality']])
         
-        # فلتر الجودة
         st.markdown("---")
         col_filter2, col_ex2, col_go2, col_no2 = st.columns([2, 1, 1, 1])
         with col_filter2:
@@ -1531,7 +1526,6 @@ elif st.session_state.page == 'support_bounce':
         
         st.markdown("---")
         
-        # تطبيق الفلتر
         filtered_stocks = bounce_stocks
         if filter_option == "🔥 ممتاز":
             filtered_stocks = [s for s in bounce_stocks if "ممتاز" in s['quality']]
@@ -1545,11 +1539,9 @@ elif st.session_state.page == 'support_bounce':
             for item in filtered_stocks:
                 an = item['stock']
                 reasons = item['reasons']
-                level = item['level']
                 quality = item['quality']
                 bounce_score = item['bounce_score']
                 
-                # حساب نسبة المخاطرة
                 nearest_support = an['s1'] if an['s1'] > 0 else an['s2']
                 risk_percent = (an['p'] - nearest_support) / an['p'] * 100 if nearest_support > 0 else 0
                 
@@ -1599,7 +1591,6 @@ elif st.session_state.page == 'support_bounce':
         </div>
         """, unsafe_allow_html=True)
         
-        # جلب البيانات
         momentum_stocks = []
         for an in st.session_state.all_results:
             if an:
@@ -1613,12 +1604,10 @@ elif st.session_state.page == 'support_bounce':
                         'quality': quality_rating
                     })
         
-        # إحصائية سريعة
         excellent_count = len([s for s in momentum_stocks if "ممتاز" in s['quality']])
         good_count = len([s for s in momentum_stocks if "جيد" in s['quality']])
         normal_count = len([s for s in momentum_stocks if "للمتابعة" in s['quality']])
         
-        # فلتر الجودة
         st.markdown("---")
         col_filter3, col_ex3, col_go3, col_no3 = st.columns([2, 1, 1, 1])
         with col_filter3:
@@ -1636,7 +1625,6 @@ elif st.session_state.page == 'support_bounce':
         
         st.markdown("---")
         
-        # تطبيق الفلتر
         filtered_stocks = momentum_stocks
         if filter_option == "🔥 ممتاز":
             filtered_stocks = [s for s in momentum_stocks if "ممتاز" in s['quality']]
@@ -1650,7 +1638,6 @@ elif st.session_state.page == 'support_bounce':
             for item in filtered_stocks:
                 an = item['stock']
                 reasons = item['reasons']
-                level = item['level']
                 quality = item['quality']
                 
                 if "ممتاز" in quality:
@@ -1750,14 +1737,14 @@ elif st.session_state.page == 'imminent':
 
 elif st.session_state.page == 'guide':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    st.title("📖 دليل المؤشرات الفنية - النسخة المتقدمة v17.4")
+    st.title("📖 دليل المؤشرات الفنية")
     st.markdown("""
     <div class='info-box'>
-    📌 <b>ما الجديد في v17.4؟</b><br>
-    • <b>فلاتر الجودة:</b> تصفية الأسهم حسب "ممتاز" / "جيد" / "للمتابعة"<br>
-    • <b>نظام تقييم الارتداد المتقدم (Bounce Score):</b> 5 عوامل مختلفة<br>
-    • <b>مسافة دعم موسعة:</b> 1.5% (مناسبة للسبريد العالي في السوق المصري)<br>
-    • <b>حماية من الارتدادات الكبيرة:</b> رفض الأسهم التي ارتفعت أكثر من 4%
+    📌 <b>نظام تقييم الارتداد (Bounce Score):</b><br>
+    • 5 عوامل (تغير السعر، تعافي RSI، السيولة، الهيكل السعري، تعافي RSI من القاع)<br>
+    • 3+ نقاط = ارتداد حقيقي مناسب للدخول<br>
+    • أقل من 3 نقاط = ضعيف - مراقبة فقط<br>
+    • تغير > 4% = ممنوع - فاتك القطار
     </div>
     """, unsafe_allow_html=True)
     
@@ -1772,29 +1759,10 @@ elif st.session_state.page == 'guide':
         | **فوق 70** | 🔴 **تشبع شراء** | السهم ممكن ينزل (بيع/جني أرباح) |
         | **تحت 30** | 🟢 **تشبع بيع** | السهم ممكن يصعد (فرصة شراء) |
         | **بين 40 و 60** | 🟡 **منطقة محايدة** | استنى تأكيد إضافي |
-        | **بين 30 و 40 أو 60 و 70** | ⚪ **ضعيف** | زخم السهم ضعيف |
-        
-        ### نصيحة:
-        الأفضل للدخول في صفقة شراء عندما يكون RSI **بين 40 و 65** (زخم صحي).
         """)
     
     with st.expander("🎯 Smart Score"):
         st.markdown("""
-        ### ما هو Smart Score؟
-        **Smart Score** هو ابتكارنا الخاص في هذا التطبيق! هو درجة مركبة من 0 إلى 100 تقييم قوة السهم.
-        
-        ### كيفية حسابه:
-        | العامل | الوزن |
-        |--------|-------|
-        | اتجاه قصير صاعد | +15 |
-        | اتجاه متوسط صاعد | +15 |
-        | اتجاه طويل صاعد | +5 |
-        | سيولة عالية (ratio > 2) | +20 |
-        | سيولة جيدة (ratio > 1.5) | +10 |
-        | RSI في المنطقة الصحية (50-65) | +20 |
-        | RR ممتاز (>= 2) | +20 |
-        | RR جيد (>= 1.5) | +10 |
-        
         ### دلالات Smart Score:
         | الدرجة | التقييم | التصرف |
         |--------|---------|--------|
@@ -1804,42 +1772,7 @@ elif st.session_state.page == 'guide':
         | **0-29** | ❄️ ضعيف | تجنب |
         """)
     
-    with st.expander("🔻 دليل نظام الدعم والارتداد المتقدم"):
-        st.markdown("""
-        ### 🎯 نظام تقييم الارتداد (Bounce Score)
-        
-        يعتمد النظام على **5 عوامل** لتقييم قوة الارتداد:
-        
-        | العامل | الشرط | النقاط |
-        |--------|-------|--------|
-        | 1. تغير السعر | 0.1% < change < 4% | +1 |
-        | 2. تعافي RSI | RSI > 40 | +1 |
-        | 3. السيولة | ratio > 1.2 | +1 |
-        | 4. الهيكل السعري | السعر > SMA20 | +1 |
-        | 5. تعافي RSI من القاع | RSI - 30 > 10 | +1 |
-        
-        ### شروط الدخول:
-        - **3+ نقاط**: ارتداد حقيقي محتمل - مناسب للدخول
-        - **أقل من 3 نقاط**: ضعيف - مراقبة فقط
-        - **change > 4%**: ممنوع - فاتك القطار
-        
-        ### فلاتر الجودة في التطبيق:
-        | الفلتر | المعنى |
-        |--------|--------|
-        | 🔥 ممتاز | فرصة قوية جداً (أفضل 1-3 أسهم) |
-        | ✅ جيد | فرصة مناسبة (3-7 أسهم) |
-        | 📌 للمتابعة | فرصة ضعيفة تحتاج متابعة |
-        
-        ### مسافات الدعم (موسعة):
-        | المسافة | التصنيف |
-        |---------|---------|
-        | 0% - 0.5% | عند الدعم |
-        | 0.5% - 1.0% | قريب جداً |
-        | 1.0% - 1.5% | قريب نسبياً |
-        | > 1.5% | بعيد (لا يعتبر) |
-        """)
-    
-    st.info("💡 **تذكير:** هذه المؤشرات هي أدوات مساعدة، وليست قرارات نهائية. القرار النهائي يعتمد على تحليلك الشخصي وإدارة المخاطر الخاصة بك.")
+    st.info("💡 **تذكير:** هذه المؤشرات هي أدوات مساعدة، وليست قرارات نهائية.")
 
 elif st.session_state.page == 'performance':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -1896,12 +1829,6 @@ elif st.session_state.page == 'performance':
         <b>💎 الفرص الذهبية:</b> {stats['gold_count']} صفقة | نسبة نجاح: {stats['gold_success']}% | إجمالي العائد: {stats['gold_return']}%
     </div>
     """, unsafe_allow_html=True)
-    
-    if stats['gold_count'] >= 5:
-        if stats['gold_success'] > stats['top10_success']:
-            st.success("💡 Insight: الفرص الذهبية تتفوق على أفضل 10 فرص!")
-        elif stats['top10_success'] > stats['gold_success']:
-            st.info("💡 Insight: أفضل 10 فرص تتفوق على الفرص الذهبية!")
     
     st.markdown("---")
     st.markdown("### 📋 تفاصيل الصفقات")
