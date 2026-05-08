@@ -493,70 +493,163 @@ def get_quality_rating(res, section_type):
     
     return "📌 عادي"
 
-# ================== 🆕 CORRECTION HUNTER (صائد التصحيحات) ==================
+# ================== 🆕 CORRECTION HUNTER المحسن ==================
 def is_correction_hunter(an):
-    """الكشف عن الأسهم التي تصحح ثم تستعد للانطلاق"""
+    """الكشف عن الأسهم التي تصحح ثم تستعد للانطلاق - نسخة محسنة"""
     if an is None:
-        return False, []
+        return False, [], 0
     
     p = an.get('p', 0)
     rsi = an.get('rsi', 50)
     sma200 = an.get('sma200', 0)
+    sma50 = an.get('sma50', 0)
     ratio = an.get('ratio', 0)
     change_pct = an.get('chg', 0)
     t_long = an.get('t_long', 'هابط')
+    t_short = an.get('t_short', 'هابط')
+    rr = an.get('rr', 0)
     
     reasons = []
+    score = 0
+    max_score = 10
     
-    # 1. الاتجاه العام صاعد (فوق EMA200 أو اتجاه طويل صاعد)
+    # 1. الاتجاه العام صاعد (أهم شرط) - 3 نقاط
     if t_long == "صاعد" or (sma200 and p > sma200):
-        reasons.append(f"📈 اتجاه عام صاعد (السعر فوق EMA200)")
+        score += 3
+        reasons.append(f"📈 الاتجاه العام صاعد (فوق EMA200)")
     else:
-        return False, ["الاتجاه العام هابط"]
+        return False, ["الاتجاه العام هابط - غير مناسب"], 0
     
-    # 2. RSI نزل تحت 40 (تصحيح)
-    if rsi < 40:
-        reasons.append(f"🔻 RSI منخفض ({rsi:.0f}) - السهم في منطقة تصحيح")
+    # 2. السهم في منطقة تصحيح (RSI بين 30 و 50) - 3 نقاط
+    if 30 <= rsi <= 50:
+        score += 3
+        if rsi < 35:
+            reasons.append(f"🔻 RSI منخفض جداً ({rsi:.0f}) - تشبع بيع ممتاز")
+        elif rsi < 40:
+            reasons.append(f"🔻 RSI منخفض ({rsi:.0f}) - منطقة تصحيح جيدة")
+        else:
+            reasons.append(f"📊 RSI في منطقة محايدة ({rsi:.0f}) - بداية انتعاش محتمل")
+    elif 50 < rsi <= 60:
+        score += 1
+        reasons.append(f"⚠️ RSI بدأ يصعد ({rsi:.0f}) - قد يكون متأخراً قليلاً")
     else:
-        return False, [f"RSI مرتفع ({rsi:.0f}) - ليس في منطقة تصحيح"]
+        return False, [f"RSI مرتفع ({rsi:.0f}) - فاتك التصحيح"], 0
     
-    # 3. RSI بدأ يصعد (أولى علامات الانطلاق)
-    # نستخدم change_pct كبديل لبداية الصعود
+    # 3. بداية ارتداد (تغير إيجابي) - 2 نقاط
     if change_pct > 0:
+        score += 2
         reasons.append(f"📈 تغير إيجابي ({change_pct:+.2f}%) - بداية ارتداد")
+    elif change_pct > -1:
+        score += 1
+        reasons.append(f"⚖️ تغير طفيف ({change_pct:+.2f}%) - استقرار")
     
-    # 4. سيولة جيدة
-    if ratio > 0.8:
+    # 4. سيولة جيدة (تأكد من وجود اهتمام) - 1 نقطة
+    if ratio > 1.2:
+        score += 1
+        reasons.append(f"💧 سيولة ممتازة ({ratio:.1f}x)")
+    elif ratio > 0.8:
         reasons.append(f"💧 سيولة جيدة ({ratio:.1f}x)")
     
-    # 5. السعر قرب من الدعم (اختياري)
-    s1 = an.get('s1', 0)
-    if s1 > 0:
-        distance = (p - s1) / s1 * 100
-        if 0 < distance < 3:
-            reasons.append(f"📍 قرب من الدعم ({distance:.1f}%)")
+    # 5. السعر قرب من المتوسط 50 (دعم إضافي) - 1 نقطة
+    if sma50 and abs(p - sma50) / sma50 < 0.03:
+        score += 1
+        reasons.append(f"📍 قرب من EMA50 (دعم إضافي)")
     
-    return True, reasons
+    # 6. نسبة مخاطرة/عائد جيدة - 1 نقطة
+    if rr >= 1.5:
+        score += 1
+        reasons.append(f"⚖️ RR جيد ({rr})")
+    
+    # حساب نسبة القوة
+    strength_percent = int((score / max_score) * 100)
+    
+    if score >= 6:
+        reasons.append(f"✅ فرصة قوية - درجة {score}/{max_score}")
+        return True, reasons, strength_percent
+    elif score >= 4:
+        reasons.append(f"⚠️ فرصة متوسطة - درجة {score}/{max_score} - يحتاج متابعة")
+        return True, reasons, strength_percent
+    else:
+        return False, [f"درجة منخفضة ({score}/{max_score})"], strength_percent
 
-# ================== 🆕 SECTOR FILTER ==================
+# ================== 🆕 SECTOR FILTER (محسن وواضح) ==================
 SECTOR_MAPPING = {
-    "البنوك": ["CIEB", "COMI", "AAIB", "QNBA", "BID", "CAE"],
-    "العقارات": ["TMGH", "OCDI", "PHDC", "HELI", "MNHD"],
-    "الأغذية": ["BFR", "EFID", "JUFO", "ORWE", "RAYA"],
-    "الاتصالات": ["ETEL", "OTMT", "TE"],
-    "EGX30": [],  # سيتم ملؤها من البيانات
+    "🏦 البنوك": ["CIEB", "COMI", "AAIB", "QNBA", "BID", "CAE", "NBK", "IB", "ALEXBANK"],
+    "🏗️ العقارات": ["TMGH", "OCDI", "PHDC", "HELI", "MNHD", "DSC", "TALAAT", "MUSTAFA"],
+    "🍔 الأغذية": ["BFR", "EFID", "JUFO", "ORWE", "EDFO", "BIF", "ISFP"],
+    "📡 الاتصالات": ["ETEL", "OTMT", "TE", "EGS", "NILE"],
+    "🏭 الصناعة": ["EFIC", "SKPC", "EGCH", "ABUK", "MICH", "ASCM", "IRON"],
+    "🛒 التجارة": ["RAYA", "SWDY", "ELSE", "MENA", "CAPI"],
+    "🔧 خدمات": ["EKH", "DOMT", "UPAC", "OIH", "NOIH", "EZZ"],
 }
 
 def get_stock_sector(name):
-    """تصنيف السهم حسب القطاع (من اسمه أو رمزه)"""
+    """تصنيف السهم حسب القطاع (من اسمه أو رمزه) - مع تصنيف الأسهم الصغيرة"""
     name_upper = name.upper()
+    
+    # أسهم صغيرة مميزة
+    small_caps = ["BIF", "EDFO", "ISFP", "NILE", "EGS", "CAPI", "MENA", "DOMT", "UPAC"]
+    
     for sector, symbols in SECTOR_MAPPING.items():
-        if sector == "EGX30":
-            continue
         for sym in symbols:
             if sym in name_upper or name_upper.startswith(sym):
                 return sector
-    return "أخرى"
+    
+    # الأسهم الصغيرة (محفظة الخبراء)
+    if name_upper in small_caps or any(sc in name_upper for sc in small_caps):
+        return "🔬 أسهم صغيرة (خبراء)"
+    
+    return "📌 أخرى"
+
+def render_sector_filter():
+    """عرض فلتر القطاع في الشريط الجانبي مع شرح واضح"""
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📂 فلتر القطاع")
+    st.sidebar.markdown("اختر قطاعاً معيناً لتصفية الأسهم:")
+    
+    sectors = ["🌍 الكل", "🏆 EGX30 (قيادي)", "🏦 البنوك", "🏗️ العقارات", "🍔 الأغذية", "📡 الاتصالات", "🏭 الصناعة", "🛒 التجارة", "🔧 خدمات", "🔬 أسهم صغيرة (خبراء)", "📌 أخرى"]
+    
+    selected = st.sidebar.selectbox("القطاع", sectors, index=sectors.index(st.session_state.sector_filter) if st.session_state.sector_filter in sectors else 0)
+    
+    if selected != st.session_state.sector_filter:
+        st.session_state.sector_filter = selected
+        st.rerun()
+    
+    # شرح القطاعات
+    with st.sidebar.expander("ℹ️ شرح القطاعات"):
+        st.markdown("""
+        | الرمز | القطاع |
+        |-------|--------|
+        | 🌍 الكل | كل الأسهم |
+        | 🏆 EGX30 | الأسهم القيادية فقط |
+        | 🏦 البنوك | قطاع البنوك |
+        | 🏗️ العقارات | قطاع العقارات |
+        | 🍔 الأغذية | قطاع الأغذية |
+        | 📡 الاتصالات | قطاع الاتصالات |
+        | 🏭 الصناعة | قطاع الصناعة |
+        | 🔬 أسهم صغيرة | أسهم ذات قيمة سوقية صغيرة (مخاطرة أعلى) |
+        """)
+
+def filter_by_sector(results, sector):
+    """تصفية النتائج حسب القطاع"""
+    if sector == "🌍 الكل" or not results:
+        return results
+    
+    filtered = []
+    for an in results:
+        if an:
+            stock_sector = get_stock_sector(an.get('name', ''))
+            if sector == "🏆 EGX30 (قيادي)":
+                # EGX30: الأسهم القيادية + Smart Score عالي
+                if an.get('smart_score', 0) >= 60 or an.get('ratio', 0) > 1.5:
+                    filtered.append(an)
+            elif stock_sector == sector:
+                filtered.append(an)
+            elif sector == "🔬 أسهم صغيرة (خبراء)" and stock_sector == "🔬 أسهم صغيرة (خبراء)":
+                filtered.append(an)
+            elif sector == "📌 أخرى" and stock_sector == "📌 أخرى":
+                filtered.append(an)
+    return filtered
 
 # ================== 📈 TRADINGVIEW CHART ==================
 def render_tradingview_chart(symbol, height=450, theme='dark', interval='D'):
@@ -664,10 +757,10 @@ def export_to_excel(data, filename="egx_sniper_results.xlsx"):
     for item in data:
         if isinstance(item, dict) and 'stock' in item:
             an = item['stock']
-        elif isinstance(item, dict) and 'stock' in item:
-            an = item['stock']
+            extras = item
         else:
             an = item
+            extras = {}
         
         if an:
             df_data.append({
@@ -684,11 +777,11 @@ def export_to_excel(data, filename="egx_sniper_results.xlsx"):
                 "الاتجاه قصير": an.get('t_short', 'N/A'),
                 "الاتجاه متوسط": an.get('t_med', 'N/A'),
                 "الاتجاه طويل": an.get('t_long', 'N/A'),
+                "القطاع": get_stock_sector(an.get('name', ''))
             })
     
     df = pd.DataFrame(df_data)
     
-    # تحويل إلى Excel
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name='الفرص', index=False)
@@ -697,7 +790,7 @@ def export_to_excel(data, filename="egx_sniper_results.xlsx"):
 
 
 # ================== CONFIG & STYLE ==================
-st.set_page_config(page_title="EGX Sniper Pro v17.6", layout="wide")
+st.set_page_config(page_title="EGX Sniper Pro v17.7", layout="wide")
 
 st.markdown("""
     <style>
@@ -743,6 +836,7 @@ st.markdown("""
     .success-box { background-color: rgba(63, 185, 80, 0.15); border-right: 4px solid #3fb950; padding: 10px; border-radius: 8px; margin: 10px 0; }
     .info-box { background-color: rgba(88, 166, 255, 0.15); border-right: 4px solid #58a6ff; padding: 10px; border-radius: 8px; margin: 10px 0; }
     .download-btn { background-color: #00c853; color: white; padding: 10px; border-radius: 12px; text-align: center; margin: 10px 0; }
+    .strength-bar { background-color: #e91e63; height: 8px; border-radius: 4px; margin: 5px 0; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -882,15 +976,13 @@ if "mode" not in st.session_state:
     st.session_state.mode = "⚖️ متوازن"
 if 'page' not in st.session_state: 
     st.session_state.page = 'home'
+if "sector_filter" not in st.session_state:
+    st.session_state.sector_filter = "🌍 الكل"
 
 if "market_data" not in st.session_state:
     st.session_state.market_data = None
 if "all_results" not in st.session_state:
     st.session_state.all_results = None
-
-# ================== SECTOR FILTER STATE ==================
-if "sector_filter" not in st.session_state:
-    st.session_state.sector_filter = "الكل"
 
 def render_mode_selector():
     with st.expander("🧠 اختر نوع التداول", expanded=False):
@@ -909,29 +1001,6 @@ def render_mode_selector():
         🎯 النمط الحالي: {icon} {mode}
     </div>
     """, unsafe_allow_html=True)
-
-def render_sector_filter():
-    """عرض فلتر القطاع في الشريط الجانبي"""
-    sectors = ["الكل", "EGX30", "البنوك", "العقارات", "الأغذية", "الاتصالات", "أخرى"]
-    selected = st.sidebar.selectbox("📂 فلتر القطاع", sectors, index=sectors.index(st.session_state.sector_filter))
-    if selected != st.session_state.sector_filter:
-        st.session_state.sector_filter = selected
-        st.rerun()
-
-def filter_by_sector(results, sector):
-    """تصفية النتائج حسب القطاع"""
-    if sector == "الكل" or not results:
-        return results
-    
-    filtered = []
-    for an in results:
-        if an:
-            stock_sector = get_stock_sector(an.get('name', ''))
-            if sector == stock_sector:
-                filtered.append(an)
-            elif sector == "EGX30" and an.get('smart_score', 0) > 0:  # EGX30 مؤقتاً كل الأسهم النشطة
-                filtered.append(an)
-    return filtered
 
 # ================== DATA & ANALYSIS ENGINE ==================
 @st.cache_data(ttl=300, show_spinner=False)
@@ -1084,7 +1153,7 @@ def analyze_stock(d_row):
         return {
             "name": name, "desc": desc, "p": p, "rsi": rsi_val, "chg": chg, "ratio": ratio,
             "signal": signal, "sig_cls": sig_cls, "t_short": t_short, "t_med": t_med, "t_long": t_long,
-            "s1": s1, "s2": s2, "r1": r1, "r2": r2, "pp": pp, "sma20": sma20, "sma50": sma50,
+            "s1": s1, "s2": s2, "r1": r1, "r2": r2, "pp": pp, "sma20": sma20, "sma50": sma50, "sma200": sma200,
             "entry_range": f"{entry_min:.2f} - {entry_max:.2f}", "entry_price": entry_price,
             "stop_loss": stop_loss, "target": target, "rr": rr, "risk_pct": (loss_ps/entry_price)*100, 
             "target_pct": (profit_ps/entry_price)*100, "score": int((min(ratio, 2) if ratio > 0 else 0) * 20 + (rsi_val / 2 if rsi_val else 25)),
@@ -1401,7 +1470,7 @@ if st.session_state.market_data is None:
 render_sector_filter()
 
 if st.session_state.page == 'home':
-    st.title("🏹 EGX Sniper Pro v17.6")
+    st.title("🏹 EGX Sniper Pro v17.7")
     
     # تطبيق فلتر القطاع على الإحصائيات
     filtered_stats = filter_by_sector(st.session_state.all_results, st.session_state.sector_filter)
@@ -1503,9 +1572,9 @@ elif st.session_state.page == 'correction_hunter':
     st.markdown("""
     <div class='info-box'>
     📌 <b>ما هي فرص التصحيح؟</b><br>
-    • <b>الاتجاه العام صاعد:</b> السهم في ترند صاعد قوي<br>
-    • <b>تصحيح طبيعي:</b> RSI نزل تحت 40 (السهم يرتاح بعد الصعود)<br>
-    • <b>بداية ارتداد:</b> RSI بدأ يصعد من القاع<br>
+    • <b>الاتجاه العام صاعد:</b> السهم في ترند صاعد قوي (فوق EMA200)<br>
+    • <b>تصحيح طبيعي:</b> RSI نزل بين 30 و 50 (السهم يرتاح بعد الصعود)<br>
+    • <b>بداية ارتداد:</b> RSI بدأ يصعد والتغير إيجابي<br>
     • <b>مخاطرة منخفضة:</b> الدخول في بداية الانطلاق من التصحيح
     </div>
     """, unsafe_allow_html=True)
@@ -1520,9 +1589,9 @@ elif st.session_state.page == 'correction_hunter':
     correction_stocks = []
     for an in filtered_results:
         if an:
-            is_correction, reasons = is_correction_hunter(an)
+            is_correction, reasons, strength = is_correction_hunter(an)
             if is_correction:
-                correction_stocks.append({'stock': an, 'reasons': reasons})
+                correction_stocks.append({'stock': an, 'reasons': reasons, 'strength': strength})
     
     if correction_stocks:
         st.markdown(f"**عدد فرص التصحيح: {len(correction_stocks)}**")
@@ -1538,28 +1607,47 @@ elif st.session_state.page == 'correction_hunter':
                 use_container_width=True
             )
         
+        # ترتيب حسب القوة (الأقوى أولاً)
+        correction_stocks.sort(key=lambda x: x['strength'], reverse=True)
+        
         for item in correction_stocks:
             an = item['stock']
             reasons = item['reasons']
+            strength = item['strength']
+            
+            # لون شريط القوة
+            if strength >= 70:
+                strength_color = "#4caf50"
+                strength_text = "🔥 فرصة قوية جداً"
+            elif strength >= 50:
+                strength_color = "#ff9800"
+                strength_text = "✅ فرصة جيدة"
+            else:
+                strength_color = "#f44336"
+                strength_text = "⚠️ فرصة متوسطة"
             
             st.markdown(f"""
             <div style='background:#0d1117;border:2px solid #e91e63;border-radius:12px;padding:15px;margin-bottom:15px;'>
                 <div style='display:flex;justify-content:space-between;align-items:center;'>
                     <h3 style='color:#e91e63;margin:0'>🎯 {an['name']} - {an['desc']}</h3>
-                    <span class='correction-badge'>فرصة تصحيح</span>
+                    <span class='correction-badge'>{strength_text} ({strength}%)</span>
+                </div>
+                <div style='margin-top:5px; background-color:#333; border-radius:4px;'>
+                    <div style='width:{strength}%; background-color:{strength_color}; height:8px; border-radius:4px;'></div>
                 </div>
                 <div style='margin-top:10px;'>
                     <b>📊 المعطيات:</b><br>
                     • السعر: {an['p']:.2f} ج | RSI: {an['rsi']:.1f}<br>
                     • السيولة: {an['ratio']:.1f}x | التغير: {an['chg']:+.2f}%<br>
+                    • SMA200: {an.get('sma200', 0):.2f} | فوقه: {'✅' if an.get('p', 0) > an.get('sma200', 0) else '❌'}<br>
                     • Smart Score: {an['smart_score']}/100 | RR: {an['rr']}
                 </div>
                 <div style='margin-top:10px;'>
                     <b>✅ أسباب الفرصة:</b>
-                    {"".join([f'<div style="color:#e91e63;">{r}</div>' for r in reasons])}
+                    {"".join([f'<div style="color:#e91e63;">✓ {r}</div>' for r in reasons])}
                 </div>
                 <div class='success-box' style='margin-top:10px;'>
-                    💡 <b>الاستراتيجية:</b> شراء عند أول إشارة ارتداد مع وقف خسارة أسفل القاع الأخير
+                    💡 <b>الاستراتيجية:</b> شراء عند اختراق المقاومة الأولى أو عند تأكيد الارتداد
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -1568,7 +1656,15 @@ elif st.session_state.page == 'correction_hunter':
                 record_trade(an, "correction")
                 render_stock_ui(an)
     else:
-        st.info("لا توجد فرص تصحيح حالياً. راقب الأسهم القوية التي تصحح.")
+        st.info("""
+        🧐 لا توجد فرص تصحيح حالياً.
+        
+        **لماذا؟**
+        - قد يكون السوق في ترند صاعد قوي دون تصحيح
+        - أو التصحيحات الحالية لم تصل لمنطقة الشراء بعد
+        
+        **نصيحة:** استمر في متابعة الأسهم القوية التي تصحح
+        """)
 
 # ================== باقي الصفحات (مع فلتر القطاع) ==================
 elif st.session_state.page == 'avg':
@@ -1628,12 +1724,16 @@ elif st.session_state.page == 'imminent':
                 </div>
                 <div style='margin-top:10px;'>
                     <b>📊 المعطيات:</b><br>
-                    • السعر: {an['p']:.2f} ج | المقاومة R1: {an['r1']:.2f} ج
-                    • RSI: {an['rsi']:.1f} | السيولة: {an['ratio']:.1f}x
+                    • السعر: {an['p']:.2f} ج | المقاومة R1: {an['r1']:.2f} ج ({(an['r1']-an['p'])/an['p']*100:.1f}% متبقي)<br>
+                    • RSI: {an['rsi']:.1f} | السيولة: {an['ratio']:.1f}x<br>
+                    • الاتجاه: {an['t_short']} | Smart Score: {an['smart_score']}/100
                 </div>
                 <div style='margin-top:10px;'>
-                    <b>✅ الأسباب:</b>
+                    <b>✅ أسباب الوشك على الاختراق:</b>
                     {"".join([f'<div style="color:#ff8f00;">{r}</div>' for r in reasons])}
+                </div>
+                <div class='success-box' style='margin-top:10px;'>
+                    💡 <b>الاستراتيجية:</b> الدخول عند اختراق R1 مع وقف خسارة أسفلها
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -1645,13 +1745,14 @@ elif st.session_state.page == 'imminent':
 
 elif st.session_state.page == 'guide':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    st.title("📖 دليل المؤشرات الفنية - v17.6")
+    st.title("📖 دليل المؤشرات الفنية - v17.7")
     st.markdown("""
     <div class='info-box'>
-    📌 <b>المميزات الجديدة في v17.6:</b><br>
-    • <b>🎯 صائد التصحيحات:</b> اكتشاف الأسهم القوية التي تصحح وتبدأ في الانطلاق<br>
-    • <b>📂 فلتر القطاع:</b> تصفية الأسهم حسب القطاع (بنوك، عقارات، EGX30...)<br>
-    • <b>📥 تصدير Excel:</b> حفظ نتائج التحليل لمتابعتها لاحقاً
+    📌 <b>المميزات الجديدة في v17.7:</b><br>
+    • <b>🎯 صائد التصحيحات المحسن:</b> نظام تقييم متكامل (درجة من 0-100)<br>
+    • <b>📂 فلتر القطاع المتقدم:</b> تصفية حسب 8 قطاعات مختلفة + أسهم صغيرة<br>
+    • <b>📥 تصدير Excel:</b> حفظ نتائج التحليل لمتابعتها لاحقاً<br>
+    • <b>🔻 دعم وارتداد:</b> اكتشاف الارتدادات الحقيقية من الدعم
     </div>
     """, unsafe_allow_html=True)
     
@@ -1661,40 +1762,40 @@ elif st.session_state.page == 'guide':
         
         **المنطق:** الأسهم القوية لا تنزل للأبد، بل تصحح ثم تنطلق مرة أخرى.
         
-        ### شروط الفرصة:
-        | الشرط | الدلالة |
-        |--------|---------|
-        | الاتجاه العام صاعد | السهم في ترند صاعد قوي |
-        | RSI تحت 40 | السهم في منطقة تصحيح |
-        | بداية صعود RSI | أولى علامات الانطلاق |
+        ### نظام التقييم (من 0 إلى 100):
+        | العامل | النقاط |
+        |--------|--------|
+        | الاتجاه العام صاعد | 30 نقطة |
+        | RSI في منطقة التصحيح (30-50) | 30 نقطة |
+        | بداية ارتداد (تغير إيجابي) | 20 نقطة |
+        | سيولة جيدة | 10 نقاط |
+        | قرب من EMA50 | 10 نقاط |
         
-        ### متى ندخل؟
-        عندما نرى السهم يبدأ في الارتداد من منطقة التصحيح مع سيولة جيدة.
+        ### التصنيف:
+        - **70-100%**: 🔥 فرصة قوية جداً
+        - **50-69%**: ✅ فرصة جيدة
+        - **0-49%**: ⚠️ فرصة متوسطة - تحتاج متابعة
         """)
     
-    with st.expander("📂 فلتر القطاع"):
+    with st.expander("📂 فلتر القطاع المتقدم"):
         st.markdown("""
-        ### كيفية استخدام فلتر القطاع
+        ### القطاعات المتاحة:
         
-        من الشريط الجانبي، يمكنك اختيار قطاع معين:
-        - **الكل:** كل الأسهم
-        - **EGX30:** الأسهم القيادية فقط
-        - **البنوك، العقارات، الأغذية، الاتصالات:** أسهم قطاع معين
+        | الرمز | القطاع | أمثلة |
+        |-------|--------|-------|
+        | 🏦 البنوك | CIEB, COMI, AAIB, QNBA |
+        | 🏗️ العقارات | TMGH, OCDI, PHDC, HELI |
+        | 🍔 الأغذية | BFR, EFID, JUFO, ORWE |
+        | 📡 الاتصالات | ETEL, OTMT, TE |
+        | 🏭 الصناعة | EFIC, SKPC, EGCH, ABUK |
+        | 🛒 التجارة | RAYA, SWDY, ELSE |
+        | 🔧 خدمات | EKH, DOMT, UPAC |
+        | 🔬 أسهم صغيرة | BIF, EDFO, ISFP, NILE |
         
-        هذا يساعدك على التركيز على أسهم محددة بدلاً من السوق كله.
+        > ⚠️ الأسهم الصغيرة مناسبة للخبراء فقط (مخاطرة أعلى)
         """)
     
-    with st.expander("📥 تصدير Excel"):
-        st.markdown("""
-        ### كيفية استخدام خاصية التصدير
-        
-        في كل صفحة نتائج (اختراقات وشيكة، صائد التصحيحات، إلخ)، ستجد زر:
-        - **📥 تحميل النتائج كـ Excel**
-        
-        هذا يحفظ لك جميع البيانات في ملف Excel لمراجعتها لاحقاً.
-        """)
-    
-    st.info("💡 جميع الأدوات الجديدة تعمل بدون تغيير في الكود الأساسي.")
+    st.info("💡 جميع الأدوات تعمل مع فلتر القطاع - ركز على القطاعات التي تفضلها")
 
 elif st.session_state.page == 'performance':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
@@ -1901,7 +2002,7 @@ elif st.session_state.page == 'support_bounce':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     render_mode_selector()
     
-    st.title("🔻 فرص الدعم والارتداد - مع فلاتر الجودة v17.6")
+    st.title("🔻 فرص الدعم والارتداد - مع فلاتر الجودة v17.7")
     st.markdown("""
     <div class='info-box'>
     📌 <b>ما الجديد؟</b><br>
