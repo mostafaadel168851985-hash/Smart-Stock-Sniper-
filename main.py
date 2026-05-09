@@ -84,7 +84,7 @@ def get_performance_stats(trades):
         'still_open': still_open, 'success_rate': round(success_rate, 1), 'avg_rr': round(avg_rr, 2)
     }
 
-# ================== 🔥 SMART SCORE (الدرجة الذكية) ==================
+# ================== 🔥 SMART SCORE ==================
 """
 💡 SMART SCORE - كيف يعمل؟
 
@@ -214,7 +214,7 @@ def render_confidence_card(res):
     """, unsafe_allow_html=True)
     return conf["score"]
 
-# ================== 🎯 CORRECTION HUNTER (صائد التصحيحات) ==================
+# ================== 🎯 CORRECTION HUNTER ==================
 """
 🎯 صائد التصحيحات - كيف يختار الأسهم؟
 
@@ -229,11 +229,6 @@ def render_confidence_card(res):
 │ سيولة جيدة          │ حجم التداول > المتوسط (اهتمام)                │
 │ RR جيد              │ نسبة المخاطرة/العائد >= 1.5                   │
 └─────────────────────┴────────────────────────────────────────────────┘
-
-لماذا هذا مهم؟
-- الأسهم القوية لا تنزل للأبد، بل تصحح ثم تنطلق مرة أخرى
-- الدخول في منطقة التصحيح يعطيك مخاطرة أقل وعائد أكبر
-- هذا هو نفس أسلوب "الشراء من القاع" الذي يستخدمه المحترفون
 """
 def is_correction(an):
     if an is None:
@@ -284,35 +279,7 @@ def is_correction(an):
     strength = int((score / max_score) * 100)
     return score >= 4, reasons, strength
 
-# ================== 🏆 TOP 10 (أفضل 10 فرص) ==================
-"""
-🏆 أفضل 10 فرص - كيف يتم الاختيار؟
-
-يتم ترتيب جميع الأسهم تنازلياً حسب Smart Score، ثم يتم عرض أول 10 أسهم فقط.
-
-لماذا Smart Score؟
-- يجمع 8 عوامل مختلفة (الاتجاهات، السيولة، RSI، RR)
-- يعطي نظرة شاملة لقوة السهم
-- يضمن أن أول 10 أسهم هي الأقوى في السوق كله
-"""
-def get_top_10(results):
-    valid = [r for r in results if r]
-    sorted_results = sorted(valid, key=lambda x: x.get('smart_score', 0), reverse=True)
-    return sorted_results[:10]
-
-# ================== 📂 SECTOR FILTER (فلتر القطاع) ==================
-"""
-📂 فلتر القطاع - كيف يعمل؟
-
-يصنف الأسهم إلى قطاعات بناءً على رمز السهم:
-- 🏦 البنوك: CIEB, COMI, AAIB, QNBA
-- 🏗️ العقارات: TMGH, OCDI, PHDC, HELI  
-- 🍔 الأغذية: BFR, EFID, JUFO
-- 📡 الاتصالات: ETEL, OTMT, TE
-- 📌 أخرى: كل ما تبقى
-
-الفائدة: التركيز على قطاع معين بدلاً من السوق كله
-"""
+# ================== 📂 SECTOR FILTER ==================
 SECTORS = {
     "🏦 البنوك": ["CIEB", "COMI", "AAIB", "QNBA"],
     "🏗️ العقارات": ["TMGH", "OCDI", "PHDC", "HELI"],
@@ -397,6 +364,11 @@ def analyze_stock(d_row):
 def preprocess(raw_data):
     return [analyze_stock(r) for r in raw_data if analyze_stock(r)]
 
+def get_top_10(results):
+    valid = [r for r in results if r]
+    sorted_results = sorted(valid, key=lambda x: x.get('smart_score', 0), reverse=True)
+    return sorted_results[:10]
+
 def get_fresh_data():
     with st.spinner("🔄 جاري تحميل البيانات..."):
         raw = get_all_data()
@@ -443,6 +415,7 @@ st.markdown("""
 .warning-box { background: rgba(248,81,73,0.15); border-right: 4px solid #f85149; padding: 10px; border-radius: 8px; margin: 10px 0; }
 .success-box { background: rgba(63,185,80,0.15); border-right: 4px solid #3fb950; padding: 10px; border-radius: 8px; margin: 10px 0; }
 .info-box { background: rgba(88,166,255,0.15); border-right: 4px solid #58a6ff; padding: 10px; border-radius: 8px; margin: 10px 0; }
+.entry-card { background: #0d1117; border: 1px solid #3fb950; border-radius: 10px; padding: 12px; margin: 10px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -451,31 +424,37 @@ if "mode" not in st.session_state:
     st.session_state.mode = "⚖️ متوازن"
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
-if "sector_filter" not in st.session_state:
-    st.session_state.sector_filter = "🌍 الكل"
 if "all_results" not in st.session_state:
     st.session_state.all_results = None
 
-def render_mode():
-    with st.expander("🎯 نمط التداول", expanded=False):
+def render_mode_and_sector():
+    """عرض نمط التداول وفلتر القطاع في expander واحد"""
+    with st.expander("🎯 نمط التداول وفلتر القطاع", expanded=False):
+        # نمط التداول
+        st.markdown("#### 🧠 نمط التداول")
         c1, c2, c3 = st.columns(3)
-        if c1.button("🛡️ محافظ"): st.session_state.mode = "🛡️ محافظ"
-        if c2.button("⚖️ متوازن"): st.session_state.mode = "⚖️ متوازن"
-        if c3.button("🚀 هجومي"): st.session_state.mode = "🚀 هجومي"
-    color = "#238636" if "محافظ" in st.session_state.mode else "#f85149" if "هجومي" in st.session_state.mode else "#d29922"
-    st.markdown(f"<div style='background:{color}; padding:8px; border-radius:8px; text-align:center; color:white; margin-bottom:15px;'>{st.session_state.mode}</div>", unsafe_allow_html=True)
+        if c1.button("🛡️ محافظ", use_container_width=True): 
+            st.session_state.mode = "🛡️ محافظ"
+        if c2.button("⚖️ متوازن", use_container_width=True): 
+            st.session_state.mode = "⚖️ متوازن"
+        if c3.button("🚀 هجومي", use_container_width=True): 
+            st.session_state.mode = "🚀 هجومي"
+        
+        # عرض النمط الحالي
+        color = "#238636" if "محافظ" in st.session_state.mode else "#f85149" if "هجومي" in st.session_state.mode else "#d29922"
+        st.markdown(f"<div style='background:{color}; padding:5px; border-radius:8px; text-align:center; color:white; margin:10px 0;'>{st.session_state.mode}</div>", unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # فلتر القطاع
+        st.markdown("#### 📂 فلتر القطاع")
+        sectors = ["🌍 الكل", "🏦 البنوك", "🏗️ العقارات", "🍔 الأغذية", "📡 الاتصالات", "📌 أخرى"]
+        selected = st.selectbox("اختر قطاعاً", sectors, index=0)
+        if selected != st.session_state.get('sector_filter', "🌍 الكل"):
+            st.session_state.sector_filter = selected
+            st.rerun()
 
-def render_sector_sidebar():
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📂 فلتر القطاع")
-    st.sidebar.markdown("اختر قطاعاً لتصفية الأسهم:")
-    sectors = ["🌍 الكل", "🏦 البنوك", "🏗️ العقارات", "🍔 الأغذية", "📡 الاتصالات", "📌 أخرى"]
-    selected = st.sidebar.selectbox("القطاع", sectors, index=0)
-    if selected != st.session_state.sector_filter:
-        st.session_state.sector_filter = selected
-        st.rerun()
-
-# ================== 📄 GUIDE SECTION (شرح الأقسام) ==================
+# ================== 📄 GUIDE SECTION ==================
 def render_guide():
     st.markdown("""
     <div class='info-box'>
@@ -522,7 +501,6 @@ def render_guide():
         **لماذا هذه الفرصة مربحة؟**
         - الدخول في منطقة التصحيح = مخاطرة أقل
         - السهم القوي يعود للصعود بعد التصحيح
-        - نفس استراتيجية "الشراء من القاع" التي يستخدمها المحترفون
         """)
     
     with st.expander("🏆 أفضل 10 فرص - أقوى الأسهم اليوم", expanded=True):
@@ -550,22 +528,6 @@ def render_guide():
         - 0-29: ❄️ ضعيف
         """)
     
-    with st.expander("📂 فلتر القطاع - التخصص في قطاع معين", expanded=True):
-        st.markdown("""
-        ### كيف يعمل فلتر القطاع؟
-        
-        يصنف الأسهم إلى قطاعات بناءً على رمز السهم:
-        
-        | القطاع | الرموز |
-        |--------|--------|
-        | 🏦 البنوك | CIEB, COMI, AAIB, QNBA |
-        | 🏗️ العقارات | TMGH, OCDI, PHDC, HELI |
-        | 🍔 الأغذية | BFR, EFID, JUFO |
-        | 📡 الاتصالات | ETEL, OTMT, TE |
-        
-        **الفائدة:** التركيز على قطاع معين بدلاً من تشتيت الانتباه في السوق كله
-        """)
-    
     with st.expander("⚖️ RR Ratio - نسبة المخاطرة إلى العائد", expanded=True):
         st.markdown("""
         ### ما هو RR Ratio؟
@@ -578,26 +540,55 @@ def render_guide():
         | RR = 1 | ⚠️ متوسط - المخاطرة = العائد |
         | RR = 1.5 | ✅ جيد - العائد أكبر 1.5 مرة من المخاطرة |
         | RR >= 2 | 🔥 ممتاز - العائد ضعف المخاطرة |
-        
-        **مثال:** لو دخلت بـ 100 ج، وقف الخسارة 95 ج (مخاطرة 5ج)، والهدف 110 ج (ربح 10ج)
-        - RR = 10 / 5 = 2 (ممتاز)
         """)
     
     st.info("💡 **تذكير:** كل هذه المؤشرات أدوات مساعدة. القرار النهائي يعتمد على تحليلك الشخصي وإدارة المخاطر.")
 
-# ================== UI RENDERER ==================
-def render_stock_card(res, title_extra=""):
+# ================== UI RENDERER (الكامل مع خطة الدخول) ==================
+def render_stock_card(res, is_top10=False, is_gold=False):
     if res is None:
+        st.warning("بيانات السهم غير متوفرة")
         return
+    
+    # عنوان السهم
     st.markdown(f"<div class='stock-header'>{res['name']} - {res['desc']}<span class='score-tag'>Smart: {res.get('smart_score', 0)}</span></div>", unsafe_allow_html=True)
+    
+    # كارت الثقة
     render_confidence_card(res)
     
-    col1, col2, col3, col4 = st.columns(4)
-    with col1: st.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:+.1f}%")
+    # تقييم الجودة
+    if is_top10:
+        if res.get('smart_score', 0) >= 85:
+            st.markdown('<div class="quality-excellent">🏆 الأفضل اليوم</div>', unsafe_allow_html=True)
+        elif res.get('smart_score', 0) >= 75:
+            st.markdown('<div class="quality-good">⭐ ممتاز</div>', unsafe_allow_html=True)
+        elif res.get('smart_score', 0) >= 65:
+            st.markdown('<div class="quality-good">✅ جيد</div>', unsafe_allow_html=True)
+    elif is_gold:
+        st.markdown('<div class="quality-excellent">💎 فرصة ذهبية</div>', unsafe_allow_html=True)
+    
+    # عرض السيولة (Ratio) - تم إرجاعها
+    ratio = res.get('ratio', 0)
+    if ratio > 2:
+        vol_text = f"🚀 قوية جداً ({ratio:.1f}x)"
+    elif ratio > 1.5:
+        vol_text = f"⚡ قوية ({ratio:.1f}x)"
+    elif ratio > 1:
+        vol_text = f"🙂 عادية ({ratio:.1f}x)"
+    elif ratio > 0.5:
+        vol_text = f"❄️ ضعيفة ({ratio:.1f}x)"
+    else:
+        vol_text = f"❓ غير معروف ({ratio:.1f}x)"
+    
+    # المؤشرات الأساسية
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1: st.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:+.2f}%")
     with col2: st.metric("Smart Score", f"{res['smart_score']}/100")
     with col3: st.metric("RR Ratio", f"{res['rr']}")
     with col4: st.metric("RSI", f"{res['rsi']:.0f}")
+    with col5: st.metric("السيولة", vol_text)
     
+    # التحليل الفني
     with st.expander("📊 التحليل الفني", expanded=True):
         render_chart(res['name'])
         
@@ -614,14 +605,16 @@ def render_stock_card(res, title_extra=""):
         </div>
         """, unsafe_allow_html=True)
         
+        # نطاق الدخول
         st.markdown(f"""
-        <div style='background:#0d1117;border:1px solid #3fb950;border-radius:10px;padding:12px;margin-top:10px;'>
+        <div class='entry-card'>
             🎯 <b>نطاق الدخول:</b> {res['entry_range']}<br>
             🛑 <b>وقف الخسارة:</b> {res['stop_loss']:.2f} <span style='color:#f85149'>(-{res['risk_pct']:.1f}%)</span><br>
             🏁 <b>المستهدف:</b> {res['target']:.2f} <span style='color:#58a6ff'>(+{res['target_pct']:.1f}%)</span>
         </div>
         """, unsafe_allow_html=True)
         
+        # الدعم والمقاومة
         st.markdown("### 🏛️ مستويات الدعم والمقاومة")
         st.markdown(f"""
         | المستوى | السعر | الدلالة |
@@ -633,55 +626,211 @@ def render_stock_card(res, title_extra=""):
         | 🟢 **دعم ثاني S2** | {res['s2']:.2f} | دعم قوي |
         """)
     
-    with st.expander("💰 خطة الدخول وإدارة المخاطر"):
-        deal = st.number_input("💰 ميزانية الصفقة (ج)", value=10000, step=1000, key=f"deal_{res['name']}")
-        if deal > 0 and res['entry_price'] > 0:
-            shares = int(deal / res['entry_price'])
-            actual_value = shares * res['entry_price']
-            profit_val = (res['target'] - res['entry_price']) * shares
-            loss_val = (res['entry_price'] - res['stop_loss']) * shares
+    # إدارة المخاطر وخطة الدخول الكاملة
+    with st.expander("💰 إدارة المخاطر وخطة الدخول", expanded=True):
+        deal_size = st.number_input("💰 ميزانية الصفقة (ج)", value=10000, step=1000, key=f"deal_{res['name']}")
+        entry_price = res['entry_price']
+        
+        if deal_size > 0 and entry_price > 0:
+            # حساب أساسي
+            shares_deal = int(deal_size / entry_price)
+            actual_value = shares_deal * entry_price
+            profit_val = (res['target'] - entry_price) * shares_deal
+            loss_val = (entry_price - res['stop_loss']) * shares_deal
             
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("📦 عدد الأسهم", f"{shares:,}")
+                st.metric("📦 عدد الأسهم", f"{shares_deal:,}")
                 st.metric("💰 قيمة الصفقة", f"{actual_value:,.0f} ج")
             with col2:
                 st.metric("🟢 الربح المتوقع", f"{profit_val:,.0f} ج", delta=f"+{res['target_pct']:.1f}%")
                 st.metric("🔴 الخسارة المحتملة", f"{loss_val:,.0f} ج", delta=f"-{res['risk_pct']:.1f}%")
             
-            st.info(f"📊 نسبة المخاطرة إلى العائد: 1:{res['rr']}")
+            # خطة الدخول المتكاملة (3 مستويات)
+            st.markdown("### 🏹 خطة الدخول المتكاملة")
+            
+            range_size = entry_price - res['stop_loss']
+            
+            entry_level_1 = entry_price
+            entry_level_2 = max(entry_price - (range_size * 0.5), res['stop_loss'] * 1.02)
+            entry_level_3 = entry_price + (res['target'] - entry_price) * 0.3
+            
+            # توزيع الوزن حسب RR
             if res['rr'] >= 2:
-                st.success("✅ نسبة ممتازة - العائد ضعف المخاطرة")
+                weights = [0.6, 0.25, 0.15]
             elif res['rr'] >= 1.5:
-                st.success("✅ نسبة جيدة - العائد أكبر من المخاطرة")
+                weights = [0.5, 0.3, 0.2]
             else:
-                st.warning("⚠️ نسبة منخفضة - المخاطرة أكبر من العائد")
+                weights = [0.4, 0.35, 0.25]
+            
+            amount_1 = deal_size * weights[0]
+            amount_2 = deal_size * weights[1]
+            amount_3 = deal_size * weights[2]
+            
+            shares_1 = int(amount_1 / entry_level_1) if entry_level_1 > 0 else 0
+            shares_2 = int(amount_2 / entry_level_2) if entry_level_2 > 0 else 0
+            shares_3 = int(amount_3 / entry_level_3) if entry_level_3 > 0 else 0
+            
+            st.markdown(f"""
+            <div style='background:#0d1117;border:1px solid #3fb950;border-radius:10px;padding:12px;margin:10px 0;'>
+                <b>📌 المستوى الأول - الدخول الأساسي</b><br>
+                🟢 السعر: <b>{entry_level_1:.2f}</b> ج<br>
+                📦 الكمية: <b>{shares_1:,}</b> سهم | 💰 المبلغ: <b>{amount_1:,.0f}</b> ج ({weights[0]*100:.0f}% من الميزانية)<br>
+                <small>🔹 يتم التنفيذ عند وصول السعر للنطاق</small>
+            </div>
+            
+            <div style='background:#0d1117;border:1px solid #d29922;border-radius:10px;padding:12px;margin:10px 0;'>
+                <b>📌 المستوى الثاني - تعزيز الدعم</b><br>
+                🟡 السعر: <b>{entry_level_2:.2f}</b> ج<br>
+                📦 الكمية: <b>{shares_2:,}</b> سهم | 💰 المبلغ: <b>{amount_2:,.0f}</b> ج ({weights[1]*100:.0f}% من الميزانية)<br>
+                <small>🔹 يتم التنفيذ إذا هبط السعر للدعم دون كسر الوقف</small>
+            </div>
+            
+            <div style='background:#0d1117;border:1px solid #58a6ff;border-radius:10px;padding:12px;margin:10px 0;'>
+                <b>📌 المستوى الثالث - تأكيد الاختراق</b><br>
+                🔵 السعر: <b>{entry_level_3:.2f}</b> ج<br>
+                📦 الكمية: <b>{shares_3:,}</b> سهم | 💰 المبلغ: <b>{amount_3:,.0f}</b> ج ({weights[2]*100:.0f}% من الميزانية)<br>
+                <small>🔹 يتم التنفيذ عند اختراق مقاومة أولى</small>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            total_shares = shares_1 + shares_2 + shares_3
+            total_cost = amount_1 + amount_2 + amount_3
+            if total_shares > 0:
+                avg_price = total_cost / total_shares
+                st.info(f"📊 **متوسط السعر بعد التنفيذ الكامل:** {avg_price:.2f} ج ({total_shares:,} سهم)")
+        
+        # وقف الخسارة المتحرك
+        st.markdown("---")
+        st.markdown("### 🎯 وقف الخسارة المتحرك")
+        current_price_trail = st.number_input("السعر الحالي", value=res['p'], key=f"trail_{res['name']}")
+        highest_price_trail = st.number_input("أعلى سعر تم الوصول إليه", value=res['p'], key=f"high_{res['name']}")
+        
+        # حساب الوقف المتحرك
+        entry = res['entry_price']
+        rr = res['rr']
+        if current_price_trail <= entry:
+            trailing = entry * 0.97
+        else:
+            profit_pct = (current_price_trail - entry) / entry * 100
+            if highest_price_trail > entry:
+                trailing = highest_price_trail * 0.95
+            elif profit_pct >= 5 and rr >= 1.5:
+                trailing = entry + (profit_pct / 2) / 100 * entry
+                trailing = min(trailing, current_price_trail * 0.98)
+            elif profit_pct >= 3:
+                trailing = entry
+            else:
+                trailing = entry * 0.97
+        
+        st.info(f"🛡️ **وقف الخسارة المتحرك المقترح:** {trailing:.2f} ج (الأصلي: {res['stop_loss']:.2f} ج)")
+        
+        st.warning("⚠️ **تذكير:** هذه الخطة استرشادية. القرار النهائي يعتمد على تحليلك الشخصي وظروف السوق.")
+    
+    # تحليل الوضع الحالي
+    with st.expander("🧠 تحليل الوضع الحالي", expanded=False):
+        col1, col2 = st.columns(2)
+        buy_price = col1.number_input("سعر الشراء", value=res['p'], key=f"buy_{res['name']}")
+        qty = col2.number_input("الكمية", value=100, step=100, key=f"qty_{res['name']}")
+        
+        if qty > 0 and buy_price > 0:
+            current = res['p']
+            pnl = (current - buy_price) * qty
+            pnl_pct = ((current - buy_price) / buy_price) * 100
+            
+            if pnl > 0:
+                st.success(f"🟢 كسبان: {pnl:,.0f} ج (+{pnl_pct:.2f}%)")
+                if pnl_pct >= 3:
+                    st.info(f"💡 حرك الوقف لنقطة الدخول: {buy_price:.2f}")
+            elif pnl < 0:
+                st.error(f"🔴 خسران: {pnl:,.0f} ج ({pnl_pct:.2f}%)")
+            else:
+                st.info("⚖️ على التعادل")
+            
+            if current >= res['target']:
+                st.success("🎉 تم تحقيق الهدف!")
+            elif current <= res['stop_loss']:
+                st.error("⚠️ كسر وقف الخسارة!")
+            
+            trend_score = (1 if res['t_short'] == "صاعد" else 0) + (1 if res['t_med'] == "صاعد" else 0) + (1 if res['ratio'] > 1.5 else 0)
+            if trend_score >= 2:
+                st.success(f"✅ استمر طالما السعر فوق {res['stop_loss']:.2f}")
+            else:
+                st.warning("⚠️ اتجاه ضعيف - فكر في تأمين الأرباح")
+    
+    # مؤشرات متقدمة
+    with st.expander("📈 مؤشرات متقدمة", expanded=False):
+        # Stochastic RSI
+        rsi = res['rsi']
+        if rsi <= 20:
+            stoch_signal = "🟢 تشبع بيع - فرصة انعكاس"
+        elif rsi <= 35:
+            stoch_signal = "🟡 منطقة شراء محتملة"
+        elif rsi <= 65:
+            stoch_signal = "⚪ منطقة حيادية"
+        elif rsi <= 80:
+            stoch_signal = "🟠 منطقة بيع محتملة"
+        else:
+            stoch_signal = "🔴 تشبع شراء - خطر"
+        
+        st.markdown(f"""
+        <div style='background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:12px;margin-bottom:15px;'>
+            <b>🔄 Stochastic RSI</b><br>
+            🧠 {stoch_signal}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # نسبة النجاح المتوقعة
+        success_rate = 50
+        if res['smart_score'] >= 70 and res['rr'] >= 1.5 and 45 < res['rsi'] < 65:
+            success_rate = 75
+        elif res['smart_score'] >= 50 and res['rr'] >= 1.2:
+            success_rate = 60
+        elif res['smart_score'] >= 30:
+            success_rate = 45
+        else:
+            success_rate = 30
+        
+        st.markdown(f"""
+        <div style='background:#0d1117;border:1px solid #d29922;border-radius:10px;padding:12px;margin-bottom:15px;'>
+            <b>📈 نسبة النجاح المتوقعة</b><br>
+            🎯 <b>{success_rate}%</b>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # معلومات إضافية
+        st.markdown(f"""
+        <div style='background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:12px;'>
+            🤖 <b>Smart Score:</b> {res['smart_score']}/100<br>
+            📊 <b>الثقة:</b> {get_confidence(res)['score']}/100<br>
+            🎯 {get_confidence(res)['advice']}
+        </div>
+        """, unsafe_allow_html=True)
     
     # مشاركة واتساب
-    msg = f"📊 تحليل سهم {res['name']}\n💰 السعر: {res['p']:.2f} ج\n🎯 ثقة القناص: {get_confidence(res)['score']}%\n🎯 الدخول: {res['entry_range']}\n🛑 الوقف: {res['stop_loss']:.2f}\n🏁 الهدف: {res['target']:.2f}\n⚖️ RR: {res['rr']}"
+    msg = f"📊 تحليل سهم {res['name']}\n💰 السعر: {res['p']:.2f} ج\n🎯 ثقة القناص: {get_confidence(res)['score']}%\n🎯 الدخول: {res['entry_range']}\n🛑 الوقف: {res['stop_loss']:.2f}\n🏁 الهدف: {res['target']:.2f}\n⚖️ RR: {res['rr']}\n💧 السيولة: {res['ratio']:.1f}x"
     encoded = urllib.parse.quote(msg)
     st.markdown(f"[📱 مشاركة عبر واتساب](https://wa.me/?text={encoded})")
 
-# ================== NAVIGATION & PAGES ==================
+# ================== PAGES ==================
 if st.session_state.all_results is None:
     get_fresh_data()
 
-render_sector_sidebar()
-
 if st.session_state.page == 'home':
-    st.title("🎯 قناص EGX - الإصدار الخفيف")
+    st.title("🎯 قناص EGX")
     st.markdown("""
     <div class='info-box'>
     📌 <b>مرحباً بك في قناص EGX</b><br>
     • 🎯 <b>قرار القناص:</b> تقييم متكامل لفرصة السهم (6 مؤشرات)<br>
     • 🎯 <b>صائد التصحيحات:</b> اكتشاف الأسهم القوية التي تصحح<br>
-    • 🏆 <b>أفضل 10 فرص:</b> أقوى الأسهم حسب Smart Score<br>
-    • 📂 <b>فلتر القطاع:</b> ركز على قطاع معين من الشريط الجانبي
+    • 🏆 <b>أفضل 10 فرص:</b> أقوى الأسهم حسب Smart Score
     </div>
     """, unsafe_allow_html=True)
     
-    render_mode()
+    # نمط التداول وفلتر القطاع في expander واحد
+    render_mode_and_sector()
     
+    # الأزرار الرئيسية
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🏆 أفضل 10 فرص", use_container_width=True):
@@ -692,7 +841,7 @@ if st.session_state.page == 'home':
             st.session_state.page = 'correction'
             st.rerun()
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("🔍 تحليل سهم", use_container_width=True):
             st.session_state.page = 'analyze'
@@ -701,7 +850,12 @@ if st.session_state.page == 'home':
         if st.button("📊 تقييم الأداء", use_container_width=True):
             st.session_state.page = 'performance'
             st.rerun()
+    with col3:
+        if st.button("📖 دليل الأقسام", use_container_width=True):
+            st.session_state.page = 'guide'
+            st.rerun()
     
+    # إدارة التطبيق
     with st.expander("⚙️ إدارة التطبيق", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
@@ -710,47 +864,38 @@ if st.session_state.page == 'home':
                 st.success("✅ تم تحديث البيانات!")
                 st.rerun()
         with col2:
-            if st.button("📖 دليل الأقسام", use_container_width=True):
-                st.session_state.page = 'guide'
-                st.rerun()
-        
-        if st.button("🗑️ مسح بيانات التقييم", use_container_width=True):
-            if os.path.exists(TRADES_FILE):
-                os.remove(TRADES_FILE)
-                st.success("✅ تم مسح البيانات!")
-                st.rerun()
+            if st.button("🗑️ مسح بيانات التقييم", use_container_width=True):
+                if os.path.exists(TRADES_FILE):
+                    os.remove(TRADES_FILE)
+                    st.success("✅ تم مسح البيانات!")
+                    st.rerun()
     
-    filtered = filter_by_sector(st.session_state.all_results, st.session_state.sector_filter)
+    # إحصائيات
+    sector_filter = st.session_state.get('sector_filter', "🌍 الكل")
+    filtered = filter_by_sector(st.session_state.all_results, sector_filter)
     if filtered:
         gold_count = len([r for r in filtered if r.get('smart_score', 0) >= 70])
-        good_count = len([r for r in filtered if 50 <= r.get('smart_score', 0) < 70])
         st.markdown(f"""
         <div style='background:#0d1117;border-radius:10px;padding:15px;margin-top:20px;'>
-            <b>📊 إحصائية السوق اليوم</b><br>
+            <b>📊 إحصائية السوق</b><br>
+            • القطاع: {sector_filter}<br>
             • إجمالي الأسهم: {len(filtered)}<br>
-            • 🔥 فرص قوية (Smart >= 70): {gold_count}<br>
-            • ✅ فرص جيدة (Smart 50-69): {good_count}
+            • 🔥 فرص قوية (Smart >= 70): {gold_count}
         </div>
         """, unsafe_allow_html=True)
 
 # ================== أفضل 10 فرص ==================
 elif st.session_state.page == 'top10':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    render_mode()
     
-    st.markdown("""
-    <div class='info-box'>
-    🏆 <b>أفضل 10 فرص - كيف تم الاختيار؟</b><br>
-    تم ترتيب جميع الأسهم حسب <b>Smart Score</b> (درجة مركبة من 8 عوامل)، وتم عرض أول 10 أسهم فقط.
-    </div>
-    """, unsafe_allow_html=True)
-    
-    filtered = filter_by_sector(st.session_state.all_results, st.session_state.sector_filter)
+    sector_filter = st.session_state.get('sector_filter', "🌍 الكل")
+    filtered = filter_by_sector(st.session_state.all_results, sector_filter)
     top = get_top_10(filtered)
-    st.markdown(f"## 🏆 أفضل {len(top)} فرص حسب Smart Score")
+    
+    st.markdown("## 🏆 أفضل 10 فرص")
     for i, an in enumerate(top, 1):
         with st.expander(f"#{i} - {an['name']} | Smart: {an['smart_score']} | RR: {an['rr']}"):
-            render_stock_card(an)
+            render_stock_card(an, is_top10=True)
             if st.button(f"💾 تسجيل الصفقة", key=f"rec_{an['name']}"):
                 record_trade(an, "top10")
                 st.success("تم تسجيل الصفقة!")
@@ -758,20 +903,18 @@ elif st.session_state.page == 'top10':
 # ================== صائد التصحيحات ==================
 elif st.session_state.page == 'correction':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    render_mode()
     
+    st.title("🎯 صائد التصحيحات")
     st.markdown("""
     <div class='info-box'>
-    🎯 <b>صائد التصحيحات - كيف تم الاختيار؟</b><br>
-    • <b>الاتجاه العام صاعد:</b> السهم في ترند صاعد (فوق EMA200)<br>
-    • <b>RSI في التصحيح:</b> RSI بين 30-50 (السهم يرتاح بعد الصعود)<br>
-    • <b>بداية ارتداد:</b> التغير إيجابي (بدأ يصعد من القاع)<br>
-    • <b>سيولة جيدة:</b> حجم التداول أكبر من المتوسط<br>
-    • <b>RR جيد:</b> نسبة المخاطرة/العائد >= 1.5
+    🎯 <b>كيف تم الاختيار؟</b><br>
+    • الاتجاه العام صاعد | • RSI في التصحيح (30-50) | • بداية ارتداد | • سيولة جيدة | • RR جيد
     </div>
     """, unsafe_allow_html=True)
     
-    filtered = filter_by_sector(st.session_state.all_results, st.session_state.sector_filter)
+    sector_filter = st.session_state.get('sector_filter', "🌍 الكل")
+    filtered = filter_by_sector(st.session_state.all_results, sector_filter)
+    
     corrections = []
     for an in filtered:
         is_corr, reasons, strength = is_correction(an)
@@ -789,45 +932,25 @@ elif st.session_state.page == 'correction':
             
             st.markdown(f"""
             <div style='background:#0d1117;border:2px solid #e91e63;border-radius:12px;padding:15px;margin-bottom:15px;'>
-                <div style='display:flex;justify-content:space-between;align-items:center;'>
-                    <h3 style='color:#e91e63;margin:0'>🎯 {an['name']} - {an['desc']}</h3>
-                    <span style='background:{color}; padding:4px 12px; border-radius:20px; color:white; font-weight:bold;'>{strength}%</span>
+                <div style='display:flex;justify-content:space-between;'>
+                    <h3>🎯 {an['name']} - {an['desc']}</h3>
+                    <span style='background:{color}; padding:4px 12px; border-radius:20px;'>{strength}%</span>
                 </div>
-                <div style='height:6px; background:#333; border-radius:3px; margin:10px 0;'>
-                    <div style='width:{strength}%; background:{color}; height:6px; border-radius:3px;'></div>
-                </div>
-                <div style='margin-top:10px;'>
-                    <b>📊 المعطيات:</b><br>
-                    • السعر: {an['p']:.2f} ج | RSI: {an['rsi']:.1f}<br>
-                    • السيولة: {an['ratio']:.1f}x | التغير: {an['chg']:+.2f}%<br>
-                    • Smart Score: {an['smart_score']}/100 | RR: {an['rr']}
-                </div>
-                <div style='margin-top:10px;'>
-                    <b>✅ أسباب الفرصة:</b>
-                    {"".join([f'<div style="color:#e91e63;">✓ {r}</div>' for r in reasons])}
-                </div>
+                <div style='height:6px; background:#333; margin:10px 0;'><div style='width:{strength}%; background:{color}; height:6px;'></div></div>
+                <div>💰 {an['p']:.2f} ج | RSI: {an['rsi']:.1f} | سيولة: {an['ratio']:.1f}x | تغير: {an['chg']:+.2f}%</div>
+                <div>✅ {', '.join(reasons)}</div>
             </div>
             """, unsafe_allow_html=True)
             
-            render_confidence_card(an)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button(f"📊 تحليل {an['name']}", key=f"corr_analyze_{an['name']}"):
-                    render_stock_card(an)
-            with col2:
-                if st.button(f"💾 تسجيل الصفقة", key=f"corr_rec_{an['name']}"):
-                    record_trade(an, "correction")
-                    st.success("تم تسجيل الصفقة!")
+            render_stock_card(an)
     else:
-        st.info("🧐 لا توجد فرص تصحيح حالياً. استمر في متابعة الأسهم القوية التي تصحح.")
+        st.info("لا توجد فرص تصحيح حالياً")
 
-# ================== تحليل سهم فردي ==================
+# ================== تحليل سهم ==================
 elif st.session_state.page == 'analyze':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    render_mode()
     st.title("🔍 تحليل سهم")
-    sym = st.text_input("أدخل رمز السهم").upper().strip()
+    sym = st.text_input("رمز السهم").upper().strip()
     if sym:
         data = [r for r in st.session_state.all_results if r and r.get('name') == sym]
         if data:
@@ -846,34 +969,22 @@ elif st.session_state.page == 'performance':
     stats = get_performance_stats(trades)
     
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("📊 إجمالي الصفقات", stats['total'])
-    col2.metric("✅ حققت الهدف", stats['hit_target'])
-    col3.metric("❌ كسرت الوقف", stats['stopped_out'])
-    col4.metric("⏳ لا تزال مفتوحة", stats['still_open'])
+    col1.metric("📊 إجمالي", stats['total'])
+    col2.metric("✅ هدف", stats['hit_target'])
+    col3.metric("❌ وقف", stats['stopped_out'])
+    col4.metric("⏳ مفتوح", stats['still_open'])
     
     col1, col2 = st.columns(2)
     col1.metric("📈 نسبة النجاح", f"{stats['success_rate']}%")
     col2.metric("⚖️ متوسط RR", stats['avg_rr'])
     
     if trades:
-        st.markdown("### 📋 سجل الصفقات")
-        for trade in trades[-20:][::-1]:
-            if trade.get('status') == 'hit_target':
-                status, color = "🟢 حققت الهدف", "#3fb950"
-            elif trade.get('status') == 'stopped_out':
-                status, color = "🔴 كسرت الوقف", "#f85149"
-            else:
-                status, color = "🟡 لا تزال مفتوحة", "#d29922"
-            
-            st.markdown(f"""
-            <div style='background:#0d1117;border-left:4px solid {color}; border-radius:8px; padding:10px; margin:5px 0;'>
-                <b>{trade.get('name', 'N/A')}</b> ({trade.get('trade_type', 'N/A')}) - {status}<br>
-                📅 {trade.get('date_recorded', 'N/A')} | 🎯 دخول: {trade.get('entry_price', 0):.2f} | RR: {trade.get('rr', 0)}
-            </div>
-            """, unsafe_allow_html=True)
+        st.markdown("### 📋 آخر الصفقات")
+        for trade in trades[-10:][::-1]:
+            status = "🟢 هدف" if trade.get('status') == 'hit_target' else "🔴 وقف" if trade.get('status') == 'stopped_out' else "🟡 مفتوح"
+            st.markdown(f"- {trade.get('name')} ({trade.get('trade_type')}) - {status} | دخول: {trade.get('entry_price', 0):.2f}")
 
 # ================== دليل الأقسام ==================
 elif st.session_state.page == 'guide':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
-    st.title("📚 دليل الأقسام والمؤشرات")
     render_guide()
