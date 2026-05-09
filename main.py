@@ -84,27 +84,8 @@ def get_performance_stats(trades):
         'still_open': still_open, 'success_rate': round(success_rate, 1), 'avg_rr': round(avg_rr, 2)
     }
 
+
 # ================== 🔥 SMART SCORE ==================
-"""
-💡 SMART SCORE - كيف يعمل؟
-
-الـ Smart Score هو درجة مركبة من 0 إلى 100 تقيم قوة السهم بناءً على 8 عوامل:
-
-1. الاتجاه قصير المدى (EMA20): +15 نقطة إذا كان السهم فوق EMA20
-2. الاتجاه متوسط المدى (EMA50): +15 نقطة إذا كان السهم فوق EMA50  
-3. الاتجاه طويل المدى (EMA200): +5 نقاط إذا كان السهم فوق EMA200
-4. السيولة (نشاط التداول): +20 إذا كان الحجم > ضعف المتوسط، +10 إذا كان > 1.5x
-5. RSI في المنطقة الصحية (50-65): +20 نقطة (زخم صحي غير مشبع)
-6. RSI في منطقة القوة (65-75): +10 نقاط (قوي لكن يقترب من التشبع)
-7. RSI في منطقة الضعف (40-50): +5 نقاط (ضعيف لكن قد ينعكس)
-8. نسبة المخاطرة/العائد (RR): +20 إذا كانت >= 2، +10 إذا كانت >= 1.5
-
-التصنيف النهائي:
-- 70-100: 🔥 فرصة قوية جداً
-- 50-69: ✅ فرصة جيدة
-- 30-49: ⚠️ تحت المراقبة
-- 0-29: ❄️ ضعيف
-"""
 def smart_score_pro(res):
     score = 0
     if res.get('t_short') == "صاعد": score += 15
@@ -119,29 +100,8 @@ def smart_score_pro(res):
     elif res.get('rr', 0) >= 1.5: score += 10
     return int(score)
 
+
 # ================== 🎯 ADVANCED CONFIDENCE SCORE (قرار القناص) ==================
-"""
-🎯 قرار القناص - نظام التقييم المتقدم
-
-هذا النظام يجمع 6 مؤشرات فنية مختلفة في تقييم واحد موحد:
-
-┌─────────────┬─────────────────────────────────────────────────────┐
-│  المؤشر     │  الشرط                                              │
-├─────────────┼─────────────────────────────────────────────────────┤
-│ 1. الاتجاه  │ السعر فوق EMA200 أو الاتجاه الطويل "صاعد"           │
-│ 2. الزخم    │ الاتجاهين القصير والمتوسط كلاهما "صاعد"             │
-│ 3. RSI      │ بين 45 و 65 (منطقة الانطلاق الصحية)                 │
-│ 4. السيولة  │ حجم التداول أكبر من 1.5x المتوسط (سيولة ممتازة)     │
-│ 5. الاختراق │ السعر قرب من المقاومة R1 (أقل من 2%)               │
-│ 6. الشمعة   │ الشمعة الأخيرة صاعدة (تغير السعر > 0.2%)            │
-└─────────────┴─────────────────────────────────────────────────────┘
-
-النتائج:
-- 85-100%: 🔥 دخول الآن (فرصة ذهبية) - جميع المؤشرات متوافقة
-- 65-84%:  ✅ شراء حذر / مراقبة - معظم المؤشرات إيجابية
-- 40-64%:  🟡 انتظار (تجميع) - بعض المؤشرات إيجابية
-- 0-39%:   ❌ تجنب السهم حالياً - المؤشرات سلبية
-"""
 def get_confidence(res):
     score = 0
     total = 6
@@ -174,7 +134,7 @@ def get_confidence(res):
     elif ratio > 1.2:
         score += 0.5
     
-    # 5. قرب من المقاومة (الاختراق)
+    # 5. قرب من المقاومة
     if r1 and r1 > p:
         dist = (r1 - p) / p * 100
         if dist < 2:
@@ -214,22 +174,8 @@ def render_confidence_card(res):
     """, unsafe_allow_html=True)
     return conf["score"]
 
+
 # ================== 🎯 CORRECTION HUNTER ==================
-"""
-🎯 صائد التصحيحات - كيف يختار الأسهم؟
-
-هذا القسم متخصص في اكتشاف الأسهم القوية التي تصحح ثم تستعد للانطلاق:
-
-┌─────────────────────┬────────────────────────────────────────────────┐
-│  الشرط              │  التوضيح                                       │
-├─────────────────────┼────────────────────────────────────────────────┤
-│ الاتجاه العام صاعد  │ السهم في ترند صاعد (فوق EMA200)               │
-│ RSI في التصحيح      │ RSI بين 30 و 50 (السهم يرتاح بعد الصعود)     │
-│ بداية ارتداد        │ التغير إيجابي (+0.1% فأكثر)                   │
-│ سيولة جيدة          │ حجم التداول > المتوسط (اهتمام)                │
-│ RR جيد              │ نسبة المخاطرة/العائد >= 1.5                   │
-└─────────────────────┴────────────────────────────────────────────────┘
-"""
 def is_correction(an):
     if an is None:
         return False, [], 0
@@ -279,6 +225,7 @@ def is_correction(an):
     strength = int((score / max_score) * 100)
     return score >= 4, reasons, strength
 
+
 # ================== 📂 SECTOR FILTER ==================
 SECTORS = {
     "🏦 البنوك": ["CIEB", "COMI", "AAIB", "QNBA"],
@@ -303,6 +250,7 @@ def filter_by_sector(results, sector):
         if an and get_sector(an.get('name', '')) == sector:
             filtered.append(an)
     return filtered
+
 
 # ================== 📈 DATA & ANALYSIS ENGINE ==================
 @st.cache_data(ttl=300, show_spinner=False)
@@ -377,6 +325,7 @@ def get_fresh_data():
             return True
     return False
 
+
 # ================== 📈 TRADINGVIEW CHART ==================
 def render_chart(symbol, height=400):
     full_symbol = f"EGX:{symbol}"
@@ -402,6 +351,7 @@ def render_chart(symbol, height=400):
     """
     components.html(chart_html, height=height)
 
+
 # ================== 🎨 STYLES ==================
 st.set_page_config(page_title="🎯 قناص EGX", layout="wide", page_icon="🎯")
 st.markdown("""
@@ -419,13 +369,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+
 # ================== SESSION INIT ==================
 if "mode" not in st.session_state:
     st.session_state.mode = "⚖️ متوازن"
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
+if "sector_filter" not in st.session_state:
+    st.session_state.sector_filter = "🌍 الكل"
 if "all_results" not in st.session_state:
     st.session_state.all_results = None
+
 
 def render_mode_and_sector():
     """عرض نمط التداول وفلتر القطاع في expander واحد"""
@@ -450,9 +404,10 @@ def render_mode_and_sector():
         st.markdown("#### 📂 فلتر القطاع")
         sectors = ["🌍 الكل", "🏦 البنوك", "🏗️ العقارات", "🍔 الأغذية", "📡 الاتصالات", "📌 أخرى"]
         selected = st.selectbox("اختر قطاعاً", sectors, index=0)
-        if selected != st.session_state.get('sector_filter', "🌍 الكل"):
+        if selected != st.session_state.sector_filter:
             st.session_state.sector_filter = selected
             st.rerun()
+
 
 # ================== 📄 GUIDE SECTION ==================
 def render_guide():
@@ -544,6 +499,7 @@ def render_guide():
     
     st.info("💡 **تذكير:** كل هذه المؤشرات أدوات مساعدة. القرار النهائي يعتمد على تحليلك الشخصي وإدارة المخاطر.")
 
+
 # ================== UI RENDERER (الكامل مع خطة الدخول) ==================
 def render_stock_card(res, is_top10=False, is_gold=False):
     if res is None:
@@ -567,7 +523,7 @@ def render_stock_card(res, is_top10=False, is_gold=False):
     elif is_gold:
         st.markdown('<div class="quality-excellent">💎 فرصة ذهبية</div>', unsafe_allow_html=True)
     
-    # عرض السيولة (Ratio) - تم إرجاعها
+    # عرض السيولة
     ratio = res.get('ratio', 0)
     if ratio > 2:
         vol_text = f"🚀 قوية جداً ({ratio:.1f}x)"
@@ -812,20 +768,13 @@ def render_stock_card(res, is_top10=False, is_gold=False):
     encoded = urllib.parse.quote(msg)
     st.markdown(f"[📱 مشاركة عبر واتساب](https://wa.me/?text={encoded})")
 
+
 # ================== PAGES ==================
 if st.session_state.all_results is None:
     get_fresh_data()
 
 if st.session_state.page == 'home':
     st.title("🎯 قناص EGX")
-    st.markdown("""
-    <div class='info-box'>
-    📌 <b>مرحباً بك في قناص EGX</b><br>
-    • 🎯 <b>قرار القناص:</b> تقييم متكامل لفرصة السهم (6 مؤشرات)<br>
-    • 🎯 <b>صائد التصحيحات:</b> اكتشاف الأسهم القوية التي تصحح<br>
-    • 🏆 <b>أفضل 10 فرص:</b> أقوى الأسهم حسب Smart Score
-    </div>
-    """, unsafe_allow_html=True)
     
     # نمط التداول وفلتر القطاع في expander واحد
     render_mode_and_sector()
@@ -871,7 +820,7 @@ if st.session_state.page == 'home':
                     st.rerun()
     
     # إحصائيات
-    sector_filter = st.session_state.get('sector_filter', "🌍 الكل")
+    sector_filter = st.session_state.sector_filter
     filtered = filter_by_sector(st.session_state.all_results, sector_filter)
     if filtered:
         gold_count = len([r for r in filtered if r.get('smart_score', 0) >= 70])
@@ -884,21 +833,24 @@ if st.session_state.page == 'home':
         </div>
         """, unsafe_allow_html=True)
 
+
 # ================== أفضل 10 فرص ==================
 elif st.session_state.page == 'top10':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     
-    sector_filter = st.session_state.get('sector_filter', "🌍 الكل")
+    sector_filter = st.session_state.sector_filter
     filtered = filter_by_sector(st.session_state.all_results, sector_filter)
     top = get_top_10(filtered)
     
     st.markdown("## 🏆 أفضل 10 فرص")
     for i, an in enumerate(top, 1):
-        with st.expander(f"#{i} - {an['name']} | Smart: {an['smart_score']} | RR: {an['rr']}"):
-            render_stock_card(an, is_top10=True)
-            if st.button(f"💾 تسجيل الصفقة", key=f"rec_{an['name']}"):
-                record_trade(an, "top10")
-                st.success("تم تسجيل الصفقة!")
+        if an:
+            with st.expander(f"#{i} - {an['name']} | Smart: {an['smart_score']} | RR: {an['rr']}"):
+                render_stock_card(an, is_top10=True)
+                if st.button(f"💾 تسجيل الصفقة", key=f"rec_{an['name']}"):
+                    record_trade(an, "top10")
+                    st.success("تم تسجيل الصفقة!")
+
 
 # ================== صائد التصحيحات ==================
 elif st.session_state.page == 'correction':
@@ -912,14 +864,15 @@ elif st.session_state.page == 'correction':
     </div>
     """, unsafe_allow_html=True)
     
-    sector_filter = st.session_state.get('sector_filter', "🌍 الكل")
+    sector_filter = st.session_state.sector_filter
     filtered = filter_by_sector(st.session_state.all_results, sector_filter)
     
     corrections = []
     for an in filtered:
-        is_corr, reasons, strength = is_correction(an)
-        if is_corr:
-            corrections.append({'stock': an, 'reasons': reasons, 'strength': strength})
+        if an:
+            is_corr, reasons, strength = is_correction(an)
+            if is_corr:
+                corrections.append({'stock': an, 'reasons': reasons, 'strength': strength})
     
     if corrections:
         corrections.sort(key=lambda x: x['strength'], reverse=True)
@@ -946,7 +899,8 @@ elif st.session_state.page == 'correction':
     else:
         st.info("لا توجد فرص تصحيح حالياً")
 
-# ================== تحليل سهم ==================
+
+# ================== تحليل سهم فردي ==================
 elif st.session_state.page == 'analyze':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     st.title("🔍 تحليل سهم")
@@ -958,7 +912,9 @@ elif st.session_state.page == 'analyze':
         else:
             st.error("❌ السهم غير موجود")
             symbols = [r.get('name') for r in st.session_state.all_results[:20] if r]
-            st.info(f"💡 أمثلة: {', '.join(symbols[:10])}")
+            if symbols:
+                st.info(f"💡 أمثلة: {', '.join(symbols[:10])}")
+
 
 # ================== تقييم الأداء ==================
 elif st.session_state.page == 'performance':
@@ -983,6 +939,7 @@ elif st.session_state.page == 'performance':
         for trade in trades[-10:][::-1]:
             status = "🟢 هدف" if trade.get('status') == 'hit_target' else "🔴 وقف" if trade.get('status') == 'stopped_out' else "🟡 مفتوح"
             st.markdown(f"- {trade.get('name')} ({trade.get('trade_type')}) - {status} | دخول: {trade.get('entry_price', 0):.2f}")
+
 
 # ================== دليل الأقسام ==================
 elif st.session_state.page == 'guide':
