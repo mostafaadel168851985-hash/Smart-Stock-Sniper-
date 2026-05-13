@@ -175,7 +175,7 @@ def render_confidence_card(res):
     return conf["score"]
 
 
-# ================== 🎯 CORRECTION HUNTER ==================
+# ================== 🎯 CORRECTION HUNTER (صائد التصحيحات) ==================
 def is_correction(an):
     if an is None:
         return False, [], 0
@@ -224,6 +224,110 @@ def is_correction(an):
     
     strength = int((score / max_score) * 100)
     return score >= 4, reasons, strength
+
+
+# ================== 🚀 BREAKOUT SCANNER (صائد الانفجارات) ==================
+def is_breakout_candidate(an):
+    """
+    الكشف عن الأسهم على وشك الانفجار (اختراق وشيك)
+    متوقع حركة 5%+ خلال أيام قليلة
+    """
+    if an is None:
+        return False, [], 0
+    
+    p = an.get('p', 0)
+    rsi = an.get('rsi', 50)
+    ratio = an.get('ratio', 0)
+    change = an.get('chg', 0)
+    t_short = an.get('t_short', 'هابط')
+    t_med = an.get('t_med', 'هابط')
+    sma20 = an.get('sma20', p)
+    r1 = an.get('r1', p * 1.05)
+    
+    reasons = []
+    score = 0
+    max_score = 10
+    
+    # 1. قرب من المقاومة R1 (أقل من 1.5%) - أهم شرط
+    if r1 and r1 > p:
+        dist_to_r1 = (r1 - p) / p * 100
+        if dist_to_r1 < 0.5:
+            score += 3
+            reasons.append(f"🎯 عند المقاومة ({dist_to_r1:.1f}% - اختراق وشيك)")
+        elif dist_to_r1 < 1.0:
+            score += 2
+            reasons.append(f"🎯 قريب جداً من المقاومة ({dist_to_r1:.1f}%)")
+        elif dist_to_r1 < 1.5:
+            score += 1
+            reasons.append(f"🎯 قريب من المقاومة ({dist_to_r1:.1f}%)")
+        else:
+            return False, [], 0
+    else:
+        return False, [], 0
+    
+    # 2. RSI في منطقة الانطلاق (55-75) - زخم قوي
+    if 55 <= rsi <= 75:
+        score += 2
+        if rsi < 65:
+            reasons.append(f"📈 RSI صحي ({rsi:.0f}) - زخم قوي")
+        else:
+            reasons.append(f"⚡ RSI قوي ({rsi:.0f}) - يقترب من التشبع")
+    elif 45 <= rsi < 55:
+        score += 1
+        reasons.append(f"📊 RSI متوسط ({rsi:.0f}) - يحتاج زخم أكثر")
+    else:
+        reasons.append(f"⚠️ RSI خارج المنطقة ({rsi:.0f})")
+    
+    # 3. سيولة عالية (أكبر من 1.8x)
+    if ratio > 2.5:
+        score += 2
+        reasons.append(f"💧 سيولة استثنائية ({ratio:.1f}x)")
+    elif ratio > 1.8:
+        score += 1.5
+        reasons.append(f"💧 سيولة عالية ({ratio:.1f}x)")
+    elif ratio > 1.2:
+        score += 1
+        reasons.append(f"💧 سيولة جيدة ({ratio:.1f}x)")
+    else:
+        reasons.append(f"❄️ سيولة منخفضة ({ratio:.1f}x)")
+    
+    # 4. الاتجاه صاعد (قصير ومتوسط)
+    if t_short == "صاعد" and t_med == "صاعد":
+        score += 1.5
+        reasons.append(f"📊 اتجاه صاعد في الأطر القصيرة والمتوسطة")
+    elif t_short == "صاعد":
+        score += 0.5
+        reasons.append(f"📊 اتجاه قصير صاعد فقط")
+    else:
+        reasons.append(f"📉 اتجاه هابط - غير مناسب")
+    
+    # 5. السعر فوق EMA20 (زخم إيجابي)
+    if p > sma20:
+        score += 1
+        reasons.append(f"📈 السعر فوق EMA20 (زخم إيجابي)")
+    
+    # 6. تغير إيجابي في آخر جلسة
+    if change > 0.5:
+        score += 0.5
+        reasons.append(f"🟢 تغير إيجابي قوي ({change:+.2f}%)")
+    elif change > 0:
+        score += 0.25
+        reasons.append(f"🟢 تغير إيجابي ({change:+.2f}%)")
+    
+    # حساب نسبة القوة (0-100%)
+    strength = int((score / max_score) * 100)
+    
+    # توقع نسبة الانفجار المتوقعة
+    if strength >= 80:
+        expected_breakout = "🔥🔥 8-10% متوقع خلال 2-3 جلسات"
+    elif strength >= 60:
+        expected_breakout = "🚀 5-7% متوقع خلال 3-5 جلسات"
+    elif strength >= 40:
+        expected_breakout = "📈 3-5% متوقع خلال أسبوع"
+    else:
+        expected_breakout = "⚠️ حركة محدودة متوقعة"
+    
+    return score >= 5, reasons, strength, expected_breakout
 
 
 # ================== 📂 SECTOR FILTER ==================
@@ -366,6 +470,7 @@ st.markdown("""
 .success-box { background: rgba(63,185,80,0.15); border-right: 4px solid #3fb950; padding: 10px; border-radius: 8px; margin: 10px 0; }
 .info-box { background: rgba(88,166,255,0.15); border-right: 4px solid #58a6ff; padding: 10px; border-radius: 8px; margin: 10px 0; }
 .entry-card { background: #0d1117; border: 1px solid #3fb950; border-radius: 10px; padding: 12px; margin: 10px 0; }
+.breakout-card { background: linear-gradient(135deg, #0d1117, #1a1a2e); border: 2px solid #ff6f00; border-radius: 12px; padding: 15px; margin: 15px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -458,6 +563,26 @@ def render_guide():
         - السهم القوي يعود للصعود بعد التصحيح
         """)
     
+    with st.expander("🚀 صائد الانفجارات - فرص الاختراق الوشيك", expanded=True):
+        st.markdown("""
+        ### كيف يختار "صائد الانفجارات" الأسهم؟
+        
+        هذا القسم يبحث عن **الأسهم على وشك الاختراق**:
+        
+        | الشرط | الدلالة |
+        |--------|---------|
+        | قرب من المقاومة R1 | أقل من 1.5% (على وشك الاختراق) |
+        | RSI بين 55-75 | زخم قوي غير مشبع |
+        | سيولة عالية | أكبر من 1.8x المتوسط |
+        | اتجاه صاعد | EMA20 و EMA50 صاعدين |
+        | زخم إيجابي | السعر فوق EMA20 وتغير إيجابي |
+        
+        **التوقع:**
+        - 🔥🔥 قوة 80%+: 8-10% خلال 2-3 جلسات
+        - 🚀 قوة 60%+: 5-7% خلال 3-5 جلسات
+        - 📈 قوة 40%+: 3-5% خلال أسبوع
+        """)
+    
     with st.expander("🏆 أفضل 10 فرص - أقوى الأسهم اليوم", expanded=True):
         st.markdown("""
         ### كيف يتم ترتيب أفضل 10 فرص؟
@@ -485,7 +610,7 @@ def render_guide():
     
     with st.expander("⚖️ RR Ratio - نسبة المخاطرة إلى العائد", expanded=True):
         st.markdown("""
-        ### ما هو RR Ratio؟
+        ### ما هو RR Ratio?
         
         **RR = (الهدف - سعر الدخول) / (سعر الدخول - وقف الخسارة)**
         
@@ -774,13 +899,13 @@ if st.session_state.all_results is None:
     get_fresh_data()
 
 if st.session_state.page == 'home':
-    st.title("🎯 قناص EGX")
+    st.title("🎯 قناص EGX - الإصدار المتقدم")
     
     # نمط التداول وفلتر القطاع في expander واحد
     render_mode_and_sector()
     
-    # الأزرار الرئيسية
-    col1, col2 = st.columns(2)
+    # الأزرار الرئيسية - الصف الأول
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("🏆 أفضل 10 فرص", use_container_width=True):
             st.session_state.page = 'top10'
@@ -789,7 +914,12 @@ if st.session_state.page == 'home':
         if st.button("🎯 صائد التصحيحات", use_container_width=True):
             st.session_state.page = 'correction'
             st.rerun()
+    with col3:
+        if st.button("🚀 صائد الانفجارات", use_container_width=True):
+            st.session_state.page = 'breakout'
+            st.rerun()
     
+    # الأزرار الرئيسية - الصف الثاني
     col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("🔍 تحليل سهم", use_container_width=True):
@@ -898,6 +1028,108 @@ elif st.session_state.page == 'correction':
             render_stock_card(an)
     else:
         st.info("لا توجد فرص تصحيح حالياً")
+
+
+# ================== 🚀 صائد الانفجارات (BREAKOUT SCANNER) ==================
+elif st.session_state.page == 'breakout':
+    if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
+    
+    st.title("🚀 صائد الانفجارات")
+    st.markdown("""
+    <div class='info-box'>
+    🚀 <b>كيف تم الاختيار؟</b><br>
+    • قرب من المقاومة R1 (أقل من 1.5%) | • RSI 55-75 (زخم قوي) | • سيولة عالية (>1.8x)<br>
+    • اتجاه صاعد | • زخم إيجابي<br>
+    📈 <b>متوقع:</b> حركة 5%+ خلال أيام قليلة
+    </div>
+    """, unsafe_allow_html=True)
+    
+    sector_filter = st.session_state.sector_filter
+    filtered = filter_by_sector(st.session_state.all_results, sector_filter)
+    
+    breakout_stocks = []
+    for an in filtered:
+        if an:
+            is_breakout, reasons, strength, expected = is_breakout_candidate(an)
+            if is_breakout:
+                breakout_stocks.append({
+                    'stock': an, 
+                    'reasons': reasons, 
+                    'strength': strength,
+                    'expected': expected
+                })
+    
+    if breakout_stocks:
+        breakout_stocks.sort(key=lambda x: x['strength'], reverse=True)
+        st.markdown(f"**🚀 عدد فرص الانفجار: {len(breakout_stocks)}**")
+        
+        for item in breakout_stocks:
+            an = item['stock']
+            reasons = item['reasons']
+            strength = item['strength']
+            expected = item['expected']
+            
+            # تحديد اللون حسب القوة
+            if strength >= 80:
+                color = "#ff6f00"
+                emoji = "🔥🔥"
+            elif strength >= 60:
+                color = "#ff9800"
+                emoji = "🚀"
+            elif strength >= 40:
+                color = "#ffc107"
+                emoji = "📈"
+            else:
+                color = "#ff9800"
+                emoji = "⭐"
+            
+            st.markdown(f"""
+            <div class='breakout-card'>
+                <div style='display:flex;justify-content:space-between;align-items:center;'>
+                    <h2 style='color:#ff6f00;margin:0'>{emoji} {an['name']} - {an['desc']}</h2>
+                    <span style='background:{color}; padding:8px 16px; border-radius:25px; color:white; font-weight:bold;'>{strength}%</span>
+                </div>
+                <div style='height:8px; background:#333; margin:10px 0; border-radius:4px;'>
+                    <div style='width:{strength}%; background:{color}; height:8px; border-radius:4px;'></div>
+                </div>
+                <div style='margin-top:15px;'>
+                    <b>📊 المعطيات الفنية:</b><br>
+                    • السعر: {an['p']:.2f} ج | المقاومة R1: {an['r1']:.2f} ج ({(an['r1']-an['p'])/an['p']*100:.2f}% متبقي)<br>
+                    • RSI: {an['rsi']:.1f} | السيولة: {an['ratio']:.1f}x | التغير: {an['chg']:+.2f}%<br>
+                    • Smart Score: {an['smart_score']}/100 | RR: {an['rr']}
+                </div>
+                <div style='margin-top:10px;'>
+                    <b>✅ أسباب الفرصة:</b>
+                    {"".join([f'<div style="color:#ff9800;">✓ {r}</div>' for r in reasons])}
+                </div>
+                <div class='success-box' style='margin-top:10px;'>
+                    💡 <b>التوقع:</b> {expected}<br>
+                    🎯 <b>الاستراتيجية:</b> اختراق R1 مع وقف خسارة أسفلها مباشرة
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            render_stock_card(an)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button(f"📊 تحليل {an['name']} بالتفصيل", key=f"breakout_analyze_{an['name']}"):
+                    render_stock_card(an)
+            with col2:
+                if st.button(f"💾 تسجيل الصفقة", key=f"breakout_rec_{an['name']}"):
+                    record_trade(an, "breakout")
+                    st.success("تم تسجيل الصفقة!")
+    else:
+        st.info("""
+        🧐 لا توجد فرص انفجار حالياً.
+        
+        **لماذا؟**
+        - قد تكون الأسهم بعيدة عن المقاومة
+        - أو السيولة غير كافية للاختراق
+        - أو الزخم ضعيف حالياً
+        
+        **نصيحة:** استمر في متابعة الأسهم القريبة من المقاومات القوية
+        """)
 
 
 # ================== تحليل سهم فردي ==================
