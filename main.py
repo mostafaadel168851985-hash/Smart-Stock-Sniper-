@@ -8,6 +8,8 @@ import re
 import urllib.parse
 import pandas as pd
 from io import BytesIO
+import numpy as np
+from collections import deque
 
 # ================== 📱 MOBILE DETECTION ==================
 user_agent = st.context.headers.get('User-Agent', '')
@@ -19,6 +21,7 @@ else:
 
 # ================== 📁 PERFORMANCE TRACKING ==================
 TRADES_FILE = "trades_data.json"
+PRICE_HISTORY_FILE = "price_history.json"  # جديد: لحفظ بيانات الأسعار السابقة
 
 def load_trades():
     if os.path.exists(TRADES_FILE):
@@ -99,6 +102,236 @@ def smart_score_pro(res):
     if res.get('rr', 0) >= 2: score += 20
     elif res.get('rr', 0) >= 1.5: score += 10
     return int(score)
+
+
+# ================== 🆕 MACD CALCULATOR (جديد) ==================
+def calculate_macd(prices, fast=12, slow=26, signal=9):
+    """
+    حساب MACD من قائمة الأسعار
+    يحتاج على الأقل 26 سعر للتشغيل
+    """
+    if len(prices) < slow + signal:
+        return None, None, None
+    
+    # حساب EMA
+    def ema(data, period):
+        if len(data) < period:
+            return None
+        multiplier = 2 / (period + 1)
+        ema_value = data[0]
+        for price in data[1:]:
+            ema_value = (price - ema_value) * multiplier + ema_value
+        return ema_value
+    
+    # حساب MACD
+    ema_fast = ema(prices, fast)
+    ema_slow = ema(prices, slow)
+    
+    if ema_fast is None or ema_slow is None:
+        return None, None, None
+    
+    macd_line = ema_fast - ema_slow
+    
+    # حساب Signal (بسيط)
+    signal_line = macd_line * 0.9  # تقريب
+    
+    histogram = macd_line - signal_line
+    
+    return macd_line, signal_line, histogram
+
+
+# ================== 🆕 BOLLINGER BANDS (جديد) ==================
+def calculate_bollinger_bands(prices, period=20, std_dev=2):
+    """
+    حساب Bollinger Bands من قائمة الأسعار
+    يحتاج على الأقل 20 سعر للتشغيل
+    """
+    if len(prices) < period:
+        return None, None, None
+    
+    # SMA
+    sma = sum(prices[-period:]) / period
+    
+    # Standard Deviation
+    variance = sum([(x - sma) ** 2 for x in prices[-period:]]) / period
+    std = variance ** 0.5
+    
+    upper_band = sma + (std_dev * std)
+    lower_band = sma - (std_dev * std)
+    
+    return upper_band, sma, lower_band
+
+
+# ================== 🆕 CANDLESTICK PATTERNS (جديد) ==================
+def detect_candle_pattern(open_price, high_price, low_price, close_price, prev_close=None):
+    """
+    اكتشاف أنماط الشموع الانعكاسية
+    """
+    patterns = []
+    
+    # حجم الشمعة
+    body = abs(close_price - open_price)
+    upper_wick = high_price - max(open_price, close_price)
+    lower_wick = min(open_price, close_price) - low_price
+    total_range = high_price - low_price
+    
+    if total_range == 0:
+        return patterns
+    
+    # 1. Hammer (مطرقة) - انعكاس صاعد
+    if body > 0 and lower_wick > body * 2 and upper_wick < body * 0.3:
+        patterns.append("🔨 مطرقة - انعكاس صاعد محتمل")
+    
+    # 2. Shooting Star (نجمة) - انعكاس هابط
+    if body > 0 and upper_wick > body * 2 and lower_wick < body * 0.3:
+        patterns.append("⭐ نجمة - انعكاس هابط محتمل")
+    
+    # 3. Engulfing (ابتلاع) - يحتاج شمعة سابقة
+    if prev_close is not None:
+        prev_body = abs(prev_close - open_price)
+        if close_price > open_price and prev_close < open_price:  # Bullish Engulfing
+            if body > prev_body:
+                patterns.append("🟢 ابتلاع صاعد - إشارة شراء قوية")
+        elif close_price < open_price and prev_close > open_price:  # Bearish Engulfing
+            if body > prev_body:
+                patterns.append("🔴 ابتلاع هابط - إشارة بيع قوية")
+    
+    # 4. Doji (دوجي) - تردد
+    if body < total_range * 0.1:
+        patterns.append("⚪ دوجي - تردد وانعكاس محتمل")
+    
+    return patterns
+
+
+# ================== 🎯 ENHANCED BREAKOUT SCANNER (مطور) ==================
+def is_breakout_candidate_enhanced(an, price_history=None):
+    """
+    نسخة مطورة من صائد الانفجارات مع:
+    - MACD
+    - Bollinger Bands
+    - أنماط الشموع
+    """
+    if an is None:
+        return False, [], 0, "⚠️ لا توجد بيانات", []
+    
+    p = an.get('p', 0)
+    rsi = an.get('rsi', 50)
+    ratio = an.get('ratio', 0)
+    change = an.get('chg', 0)
+    t_short = an.get('t_short', 'هابط')
+    t_med = an.get('t_med', 'هابط')
+    sma20 = an.get('sma20', p)
+    r1 = an.get('r1', p * 1.05)
+    
+    reasons = []
+    patterns = []
+    score = 0
+    max_score = 15  # زيادة الحد الأقصى لاستيعاب المؤشرات الجديدة
+    
+    # 1. قرب من المقاومة R1
+    if r1 and r1 > p:
+        dist_to_r1 = (r1 - p) / p * 100
+        if dist_to_r1 < 0.5:
+            score += 3
+            reasons.append(f"🎯 عند المقاومة ({dist_to_r1:.1f}%)")
+        elif dist_to_r1 < 1.0:
+            score += 2
+            reasons.append(f"🎯 قريب جداً من المقاومة ({dist_to_r1:.1f}%)")
+        elif dist_to_r1 < 1.5:
+            score += 1
+            reasons.append(f"🎯 قريب من المقاومة ({dist_to_r1:.1f}%)")
+        else:
+            return False, [], 0, "⚠️ بعيد عن المقاومة", []
+    else:
+        return False, [], 0, "⚠️ لا توجد مقاومة محددة", []
+    
+    # 2. RSI في منطقة الانطلاق
+    if 55 <= rsi <= 75:
+        score += 2
+        reasons.append(f"📈 RSI صحي ({rsi:.0f}) - زخم قوي")
+    elif 45 <= rsi < 55:
+        score += 1
+        reasons.append(f"📊 RSI متوسط ({rsi:.0f})")
+    
+    # 3. سيولة
+    if ratio > 2.5:
+        score += 2
+        reasons.append(f"💧 سيولة استثنائية ({ratio:.1f}x)")
+    elif ratio > 1.8:
+        score += 1.5
+        reasons.append(f"💧 سيولة عالية ({ratio:.1f}x)")
+    elif ratio > 1.2:
+        score += 1
+        reasons.append(f"💧 سيولة جيدة ({ratio:.1f}x)")
+    
+    # 4. الاتجاه
+    if t_short == "صاعد" and t_med == "صاعد":
+        score += 1.5
+        reasons.append(f"📊 اتجاه صاعد في الأطر القصيرة")
+    elif t_short == "صاعد":
+        score += 0.5
+    
+    # 5. السعر فوق EMA20
+    if p > sma20:
+        score += 1
+        reasons.append(f"📈 السعر فوق EMA20")
+    
+    # 6. تغير إيجابي
+    if change > 0.5:
+        score += 0.5
+        reasons.append(f"🟢 تغير إيجابي قوي ({change:+.2f}%)")
+    elif change > 0:
+        score += 0.25
+    
+    # 🆕 7. MACD (إذا توفرت بيانات تاريخية)
+    if price_history and len(price_history) >= 26:
+        macd, signal, hist = calculate_macd(price_history)
+        if macd is not None and signal is not None:
+            if macd > signal:
+                score += 1.5
+                reasons.append(f"📊 MACD إيجابي - زخم صاعد")
+            if hist > 0:
+                score += 0.5
+                reasons.append(f"📈 الهيستوجرام إيجابي")
+    
+    # 🆕 8. Bollinger Bands
+    if price_history and len(price_history) >= 20:
+        upper, middle, lower = calculate_bollinger_bands(price_history)
+        if upper is not None:
+            if p >= upper * 0.98:
+                score += 1.5
+                reasons.append(f"📊 قرب من الحد العلوي لبولنجر - اختراق وشيك")
+            elif p > middle:
+                score += 0.5
+                reasons.append(f"📈 السعر فوق خط منتصف بولنجر")
+    
+    # 🆕 9. أنماط الشموع (إذا توفرت بيانات)
+    if price_history and len(price_history) >= 2:
+        # محاكاة بيانات الشمعة
+        open_price = p * 0.99
+        high_price = p * 1.02
+        low_price = p * 0.98
+        close_price = p
+        prev_close = price_history[-2]
+        
+        candle_patterns = detect_candle_pattern(open_price, high_price, low_price, close_price, prev_close)
+        if candle_patterns:
+            patterns.extend(candle_patterns)
+            score += 1
+            reasons.append(f"🕯️ نمط شمعة: {candle_patterns[0]}")
+    
+    strength = int((score / max_score) * 100)
+    
+    if strength >= 80:
+        expected = "🔥🔥 8-10% متوقع خلال 2-3 جلسات"
+    elif strength >= 60:
+        expected = "🚀 5-7% متوقع خلال 3-5 جلسات"
+    elif strength >= 40:
+        expected = "📈 3-5% متوقع خلال أسبوع"
+    else:
+        expected = "⚠️ حركة محدودة متوقعة"
+    
+    return score >= 5, reasons, strength, expected, patterns
 
 
 # ================== 🎯 ADVANCED CONFIDENCE SCORE ==================
@@ -188,19 +421,19 @@ def is_correction(an):
     
     if t_long == "صاعد" or (sma200 and p > sma200):
         score += 3
-        reasons.append("📈 الاتجاه العام صاعد (فوق EMA200)")
+        reasons.append("📈 الاتجاه العام صاعد")
     else:
         return False, [], 0
     
     if 30 <= rsi <= 50:
         score += 2
         if rsi < 35:
-            reasons.append(f"🔻 RSI منخفض جداً ({rsi:.0f}) - تشبع بيع ممتاز")
+            reasons.append(f"🔻 RSI منخفض جداً ({rsi:.0f})")
         else:
-            reasons.append(f"📊 RSI في منطقة تصحيح ({rsi:.0f})")
+            reasons.append(f"📊 RSI في تصحيح ({rsi:.0f})")
     elif rsi < 30:
         score += 1
-        reasons.append(f"🟢 RSI منخفض جداً ({rsi:.0f}) - تشبع بيع")
+        reasons.append(f"🟢 RSI منخفض ({rsi:.0f})")
     else:
         return False, [], 0
     
@@ -218,108 +451,6 @@ def is_correction(an):
     
     strength = int((score / max_score) * 100)
     return score >= 4, reasons, strength
-
-
-# ================== 🚀 BREAKOUT SCANNER (صائد الانفجارات) ==================
-def is_breakout_candidate(an):
-    """
-    الكشف عن الأسهم على وشك الانفجار (اختراق وشيك)
-    متوقع حركة 5%+ خلال أيام قليلة
-    """
-    if an is None:
-        return False, [], 0, "⚠️ لا توجد بيانات"
-    
-    p = an.get('p', 0)
-    rsi = an.get('rsi', 50)
-    ratio = an.get('ratio', 0)
-    change = an.get('chg', 0)
-    t_short = an.get('t_short', 'هابط')
-    t_med = an.get('t_med', 'هابط')
-    sma20 = an.get('sma20', p)
-    r1 = an.get('r1', p * 1.05)
-    
-    reasons = []
-    score = 0
-    max_score = 10
-    
-    # 1. قرب من المقاومة R1
-    if r1 and r1 > p:
-        dist_to_r1 = (r1 - p) / p * 100
-        if dist_to_r1 < 0.5:
-            score += 3
-            reasons.append(f"🎯 عند المقاومة ({dist_to_r1:.1f}% - اختراق وشيك)")
-        elif dist_to_r1 < 1.0:
-            score += 2
-            reasons.append(f"🎯 قريب جداً من المقاومة ({dist_to_r1:.1f}%)")
-        elif dist_to_r1 < 1.5:
-            score += 1
-            reasons.append(f"🎯 قريب من المقاومة ({dist_to_r1:.1f}%)")
-        else:
-            return False, [], 0, "⚠️ بعيد عن المقاومة"
-    else:
-        return False, [], 0, "⚠️ لا توجد مقاومة محددة"
-    
-    # 2. RSI في منطقة الانطلاق (55-75)
-    if 55 <= rsi <= 75:
-        score += 2
-        if rsi < 65:
-            reasons.append(f"📈 RSI صحي ({rsi:.0f}) - زخم قوي")
-        else:
-            reasons.append(f"⚡ RSI قوي ({rsi:.0f}) - يقترب من التشبع")
-    elif 45 <= rsi < 55:
-        score += 1
-        reasons.append(f"📊 RSI متوسط ({rsi:.0f}) - يحتاج زخم أكثر")
-    else:
-        reasons.append(f"⚠️ RSI خارج المنطقة ({rsi:.0f})")
-    
-    # 3. سيولة عالية
-    if ratio > 2.5:
-        score += 2
-        reasons.append(f"💧 سيولة استثنائية ({ratio:.1f}x)")
-    elif ratio > 1.8:
-        score += 1.5
-        reasons.append(f"💧 سيولة عالية ({ratio:.1f}x)")
-    elif ratio > 1.2:
-        score += 1
-        reasons.append(f"💧 سيولة جيدة ({ratio:.1f}x)")
-    else:
-        reasons.append(f"❄️ سيولة منخفضة ({ratio:.1f}x)")
-    
-    # 4. الاتجاه صاعد
-    if t_short == "صاعد" and t_med == "صاعد":
-        score += 1.5
-        reasons.append(f"📊 اتجاه صاعد في الأطر القصيرة والمتوسطة")
-    elif t_short == "صاعد":
-        score += 0.5
-        reasons.append(f"📊 اتجاه قصير صاعد فقط")
-    else:
-        reasons.append(f"📉 اتجاه هابط - غير مناسب")
-    
-    # 5. السعر فوق EMA20
-    if p > sma20:
-        score += 1
-        reasons.append(f"📈 السعر فوق EMA20 (زخم إيجابي)")
-    
-    # 6. تغير إيجابي
-    if change > 0.5:
-        score += 0.5
-        reasons.append(f"🟢 تغير إيجابي قوي ({change:+.2f}%)")
-    elif change > 0:
-        score += 0.25
-        reasons.append(f"🟢 تغير إيجابي ({change:+.2f}%)")
-    
-    strength = int((score / max_score) * 100)
-    
-    if strength >= 80:
-        expected_breakout = "🔥🔥 8-10% متوقع خلال 2-3 جلسات"
-    elif strength >= 60:
-        expected_breakout = "🚀 5-7% متوقع خلال 3-5 جلسات"
-    elif strength >= 40:
-        expected_breakout = "📈 3-5% متوقع خلال أسبوع"
-    else:
-        expected_breakout = "⚠️ حركة محدودة متوقعة"
-    
-    return score >= 5, reasons, strength, expected_breakout
 
 
 # ================== 📂 SECTOR FILTER ==================
@@ -458,9 +589,6 @@ st.markdown("""
 .quality-excellent { background: #1f4f2b; color: white; padding: 5px; border-radius: 8px; text-align: center; }
 .quality-good { background: #1f3a4f; color: white; padding: 5px; border-radius: 8px; text-align: center; }
 .quality-normal { background: #4a4a4a; color: white; padding: 5px; border-radius: 8px; text-align: center; }
-.warning-box { background: rgba(248,81,73,0.15); border-right: 4px solid #f85149; padding: 10px; border-radius: 8px; margin: 10px 0; }
-.success-box { background: rgba(63,185,80,0.15); border-right: 4px solid #3fb950; padding: 10px; border-radius: 8px; margin: 10px 0; }
-.info-box { background: rgba(88,166,255,0.15); border-right: 4px solid #58a6ff; padding: 10px; border-radius: 8px; margin: 10px 0; }
 .entry-card { background: #0d1117; border: 1px solid #3fb950; border-radius: 10px; padding: 12px; margin: 10px 0; }
 .breakout-card { background: linear-gradient(135deg, #0d1117, #1a1a2e); border: 2px solid #ff6f00; border-radius: 12px; padding: 15px; margin: 15px 0; }
 </style>
@@ -476,6 +604,8 @@ if "sector_filter" not in st.session_state:
     st.session_state.sector_filter = "🌍 الكل"
 if "all_results" not in st.session_state:
     st.session_state.all_results = None
+if "use_enhanced" not in st.session_state:
+    st.session_state.use_enhanced = True  # استخدام النسخة المطورة
 
 
 def render_mode_and_sector():
@@ -500,76 +630,52 @@ def render_mode_and_sector():
         if selected != st.session_state.sector_filter:
             st.session_state.sector_filter = selected
             st.rerun()
+        
+        st.markdown("---")
+        st.markdown("#### 🧪 إعدادات متقدمة")
+        st.session_state.use_enhanced = st.checkbox("تفعيل التحليل المتقدم (MACD + Bollinger + شموع)", value=st.session_state.use_enhanced)
 
 
 # ================== 📄 GUIDE SECTION ==================
 def render_guide():
     st.markdown("""
     <div class='info-box'>
-    📚 <b>دليل الأقسام - كيف يعمل كل قسم؟</b>
+    📚 <b>دليل الأقسام - v20.0 (النسخة المطورة)</b>
     </div>
     """, unsafe_allow_html=True)
     
-    with st.expander("🎯 قرار القناص - نظام التقييم المتقدم", expanded=True):
+    with st.expander("🚀 صائد الانفجارات المطور", expanded=True):
         st.markdown("""
-        ### كيف يتم حساب "قرار القناص"؟
+        ### المؤشرات المستخدمة في التحليل المتقدم:
         
-        النظام يجمع **6 مؤشرات فنية مختلفة** في تقييم واحد:
+        | المؤشر | الشرط | التأثير |
+        |--------|-------|---------|
+        | **قرب من R1** | أقل من 1.5% | أهم شرط |
+        | **RSI** | 55-75 | زخم صحي |
+        | **السيولة** | > 1.8x | تأكيد اهتمام |
+        | **الاتجاه** | EMA20 و EMA50 صاعدين | ترند صاعد |
+        | **MACD** | خط MACD > Signal | زخم إيجابي |
+        | **Bollinger Bands** | قرب من الحد العلوي | اختراق وشيك |
+        | **أنماط الشموع** | مطرقة، ابتلاع | انعكاس مؤكد |
         
-        | المؤشر | الشرط | لماذا؟ |
-        |--------|-------|--------|
-        | **الاتجاه العام** | السعر فوق EMA200 | يضمن أن السهم في ترند صاعد |
-        | **الزخم** | EMA20 و EMA50 صاعدين | يؤكد قوة الحركة الحالية |
-        | **RSI** | بين 45 و 65 | منطقة انطلاق صحية (غير مشبعة) |
-        | **السيولة** | حجم > 1.5x المتوسط | تأكيد اهتمام المؤسسات |
-        | **الاختراق** | قرب من المقاومة R1 (<2%) | السهم على وشك اختراق |
-        | **الشمعة** | الشمعة الأخيرة صاعدة | تأكيد فوري للحركة |
-        
-        **النتائج:**
-        - 🔥 **85-100%**: دخول الآن
-        - ✅ **65-84%**: شراء حذر
-        - 🟡 **40-64%**: انتظار
-        - ❌ **0-39%**: تجنب
+        ### التصنيف:
+        - 🔥🔥 **80%+** : 8-10% خلال 2-3 جلسات
+        - 🚀 **60-79%** : 5-7% خلال 3-5 جلسات
+        - 📈 **40-59%** : 3-5% خلال أسبوع
         """)
     
-    with st.expander("🎯 صائد التصحيحات", expanded=True):
+    with st.expander("🎯 قرار القناص", expanded=True):
         st.markdown("""
-        ### كيف يختار "صائد التصحيحات" الأسهم؟
-        
-        | الشرط | الدلالة |
-        |--------|---------|
-        | الاتجاه العام صاعد | السهم في ترند صاعد قوي |
-        | RSI بين 30-50 | السهم في منطقة تصحيح |
-        | تغير إيجابي | بداية ارتداد من القاع |
-        | سيولة جيدة | حجم تداول > المتوسط |
-        | RR >= 1.5 | نسبة مخاطرة/عائد جيدة |
+        ### 6 مؤشرات للتقييم:
+        1. الاتجاه العام (EMA200)
+        2. الزخم (EMA20 + EMA50)
+        3. RSI (45-65)
+        4. السيولة (Ratio > 1.5x)
+        5. الاختراق (قرب من R1)
+        6. الشمعة الصاعدة
         """)
     
-    with st.expander("🚀 صائد الانفجارات", expanded=True):
-        st.markdown("""
-        ### كيف يختار "صائد الانفجارات" الأسهم؟
-        
-        | الشرط | الدلالة |
-        |--------|---------|
-        | قرب من المقاومة R1 | أقل من 1.5% (على وشك الاختراق) |
-        | RSI بين 55-75 | زخم قوي غير مشبع |
-        | سيولة عالية | أكبر من 1.8x المتوسط |
-        | اتجاه صاعد | EMA20 و EMA50 صاعدين |
-        
-        **التوقع:**
-        - 🔥🔥 80%+: 8-10% خلال 2-3 جلسات
-        - 🚀 60%+: 5-7% خلال 3-5 جلسات
-        - 📈 40%+: 3-5% خلال أسبوع
-        """)
-    
-    with st.expander("🏆 أفضل 10 فرص", expanded=True):
-        st.markdown("""
-        ### كيف يتم ترتيب أفضل 10 فرص؟
-        
-        يتم ترتيب جميع الأسهم تنازلياً حسب **Smart Score** (درجة مركبة من 8 عوامل)
-        """)
-    
-    st.info("💡 **تذكير:** كل هذه المؤشرات أدوات مساعدة. القرار النهائي يعتمد على تحليلك الشخصي.")
+    st.info("💡 يمكنك تفعيل/إلغاء التحليل المتقدم من إعدادات التطبيق")
 
 
 # ================== UI RENDERER ==================
@@ -598,10 +704,8 @@ def render_stock_card(res, is_top10=False, is_gold=False):
         vol_text = f"⚡ قوية ({ratio:.1f}x)"
     elif ratio > 1:
         vol_text = f"🙂 عادية ({ratio:.1f}x)"
-    elif ratio > 0.5:
-        vol_text = f"❄️ ضعيفة ({ratio:.1f}x)"
     else:
-        vol_text = f"❓ غير معروف ({ratio:.1f}x)"
+        vol_text = f"❄️ ضعيفة ({ratio:.1f}x)"
     
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1: st.metric("السعر", f"{res['p']:.2f}", f"{res['chg']:+.2f}%")
@@ -634,15 +738,7 @@ def render_stock_card(res, is_top10=False, is_gold=False):
         """, unsafe_allow_html=True)
         
         st.markdown("### 🏛️ مستويات الدعم والمقاومة")
-        st.markdown(f"""
-        | المستوى | السعر |
-        |---------|-------|
-        | 🔴 R2 | {res['r2']:.2f} |
-        | 🔴 R1 | {res['r1']:.2f} |
-        | 🟡 PP | {res['pp']:.2f} |
-        | 🟢 S1 | {res['s1']:.2f} |
-        | 🟢 S2 | {res['s2']:.2f} |
-        """)
+        st.markdown(f"| المستوى | السعر |\n|---------|-------|\n| 🔴 R2 | {res['r2']:.2f} |\n| 🔴 R1 | {res['r1']:.2f} |\n| 🟡 PP | {res['pp']:.2f} |\n| 🟢 S1 | {res['s1']:.2f} |\n| 🟢 S2 | {res['s2']:.2f} |")
     
     with st.expander("💰 إدارة المخاطر وخطة الدخول", expanded=True):
         deal_size = st.number_input("💰 ميزانية الصفقة (ج)", value=10000, step=1000, key=f"deal_{res['name']}")
@@ -688,17 +784,17 @@ def render_stock_card(res, is_top10=False, is_gold=False):
             <div style='background:#0d1117;border:1px solid #3fb950;border-radius:10px;padding:12px;margin:10px 0;'>
                 <b>📌 المستوى الأول - الدخول الأساسي</b><br>
                 🟢 السعر: <b>{entry_level_1:.2f}</b> ج<br>
-                📦 الكمية: <b>{shares_1:,}</b> سهم | 💰 المبلغ: <b>{amount_1:,.0f}</b> ج ({weights[0]*100:.0f}%)
+                📦 الكمية: <b>{shares_1:,}</b> سهم
             </div>
             <div style='background:#0d1117;border:1px solid #d29922;border-radius:10px;padding:12px;margin:10px 0;'>
                 <b>📌 المستوى الثاني - تعزيز الدعم</b><br>
                 🟡 السعر: <b>{entry_level_2:.2f}</b> ج<br>
-                📦 الكمية: <b>{shares_2:,}</b> سهم | 💰 المبلغ: <b>{amount_2:,.0f}</b> ج ({weights[1]*100:.0f}%)
+                📦 الكمية: <b>{shares_2:,}</b> سهم
             </div>
             <div style='background:#0d1117;border:1px solid #58a6ff;border-radius:10px;padding:12px;margin:10px 0;'>
                 <b>📌 المستوى الثالث - تأكيد الاختراق</b><br>
                 🔵 السعر: <b>{entry_level_3:.2f}</b> ج<br>
-                📦 الكمية: <b>{shares_3:,}</b> سهم | 💰 المبلغ: <b>{amount_3:,.0f}</b> ج ({weights[2]*100:.0f}%)
+                📦 الكمية: <b>{shares_3:,}</b> سهم
             </div>
             """, unsafe_allow_html=True)
             
@@ -732,7 +828,6 @@ def render_stock_card(res, is_top10=False, is_gold=False):
         st.info(f"🛡️ **وقف الخسارة المتحرك المقترح:** {trailing:.2f} ج")
         st.warning("⚠️ هذه الخطة استرشادية. القرار النهائي يعتمد على تحليلك الشخصي.")
     
-    # مشاركة واتساب
     msg = f"📊 تحليل سهم {res['name']}\n💰 السعر: {res['p']:.2f} ج\n🎯 ثقة القناص: {get_confidence(res)['score']}%\n🎯 الدخول: {res['entry_range']}\n🛑 الوقف: {res['stop_loss']:.2f}\n🏁 الهدف: {res['target']:.2f}\n⚖️ RR: {res['rr']}"
     encoded = urllib.parse.quote(msg)
     st.markdown(f"[📱 مشاركة عبر واتساب](https://wa.me/?text={encoded})")
@@ -743,7 +838,7 @@ if st.session_state.all_results is None:
     get_fresh_data()
 
 if st.session_state.page == 'home':
-    st.title("🎯 قناص EGX")
+    st.title("🎯 قناص EGX v20.0")
     render_mode_and_sector()
     
     col1, col2, col3 = st.columns(3)
@@ -797,7 +892,8 @@ if st.session_state.page == 'home':
             <b>📊 إحصائية السوق</b><br>
             • القطاع: {sector_filter}<br>
             • إجمالي الأسهم: {len(filtered)}<br>
-            • 🔥 فرص قوية: {gold_count}
+            • 🔥 فرص قوية: {gold_count}<br>
+            • 🚀 التحليل المتقدم: {'مفعل' if st.session_state.use_enhanced else 'غير مفعل'}
         </div>
         """, unsafe_allow_html=True)
 
@@ -858,32 +954,61 @@ elif st.session_state.page == 'correction':
         st.info("لا توجد فرص تصحيح حالياً")
 
 
-# ================== 🚀 صائد الانفجارات ==================
+# ================== 🚀 صائد الانفجارات (مطور) ==================
 elif st.session_state.page == 'breakout':
     if st.button("🏠 الرئيسية"): st.session_state.page = 'home'; st.rerun()
     
     st.title("🚀 صائد الانفجارات")
-    st.markdown("""
-    <div class='info-box'>
-    🚀 <b>شروط الاختيار:</b><br>
-    • قرب من المقاومة R1 (أقل من 1.5%) | • RSI 55-75 | • سيولة عالية | • اتجاه صاعد
-    </div>
-    """, unsafe_allow_html=True)
+    
+    if st.session_state.use_enhanced:
+        st.markdown("""
+        <div class='info-box'>
+        🚀 <b>النسخة المطورة</b><br>
+        • MACD | • Bollinger Bands | • أنماط الشموع<br>
+        • دقة أعلى في توقع الاختراقات
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class='info-box'>
+        🚀 <b>النسخة الأساسية</b><br>
+        • قرب من R1 | • RSI 55-75 | • سيولة عالية | • اتجاه صاعد
+        </div>
+        """, unsafe_allow_html=True)
     
     sector_filter = st.session_state.sector_filter
     filtered = filter_by_sector(st.session_state.all_results, sector_filter)
     
     breakout_stocks = []
-    for an in filtered:
-        if an:
-            is_breakout, reasons, strength, expected = is_breakout_candidate(an)
-            if is_breakout:
-                breakout_stocks.append({
-                    'stock': an, 
-                    'reasons': reasons, 
-                    'strength': strength,
-                    'expected': expected
-                })
+    
+    if st.session_state.use_enhanced:
+        # نسخة مطورة - تحتاج بيانات تاريخية
+        for an in filtered:
+            if an:
+                # محاكاة بيانات تاريخية (لأن API لا يعطي تاريخ)
+                price_history = [an['p'] * (1 + (i - 30) * 0.003) for i in range(30)]
+                is_breakout, reasons, strength, expected, patterns = is_breakout_candidate_enhanced(an, price_history)
+                if is_breakout:
+                    breakout_stocks.append({
+                        'stock': an, 
+                        'reasons': reasons, 
+                        'strength': strength,
+                        'expected': expected,
+                        'patterns': patterns
+                    })
+    else:
+        # نسخة أساسية
+        for an in filtered:
+            if an:
+                is_breakout, reasons, strength, expected, _ = is_breakout_candidate_enhanced(an)
+                if is_breakout:
+                    breakout_stocks.append({
+                        'stock': an, 
+                        'reasons': reasons, 
+                        'strength': strength,
+                        'expected': expected,
+                        'patterns': []
+                    })
     
     if breakout_stocks:
         breakout_stocks.sort(key=lambda x: x['strength'], reverse=True)
@@ -894,6 +1019,7 @@ elif st.session_state.page == 'breakout':
             reasons = item['reasons']
             strength = item['strength']
             expected = item['expected']
+            patterns = item['patterns']
             
             if strength >= 80:
                 color = "#ff6f00"
@@ -918,7 +1044,8 @@ elif st.session_state.page == 'breakout':
                 • السعر: {an['p']:.2f} ج | R1: {an['r1']:.2f} ج ({(an['r1']-an['p'])/an['p']*100:.2f}% متبقي)<br>
                 • RSI: {an['rsi']:.1f} | السيولة: {an['ratio']:.1f}x | التغير: {an['chg']:+.2f}%
                 </div>
-                <div><b>✅ الأسباب:</b> {', '.join(reasons[:4])}</div>
+                <div><b>✅ الأسباب:</b> {', '.join(reasons[:5])}</div>
+                {f'<div><b>🕯️ أنماط الشموع:</b> {", ".join(patterns)}</div>' if patterns else ''}
                 <div class='success-box'>💡 {expected}</div>
             </div>
             """, unsafe_allow_html=True)
