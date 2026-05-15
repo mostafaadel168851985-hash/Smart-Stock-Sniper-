@@ -88,8 +88,6 @@ def get_performance_stats(trades):
 # ================== 📈 EGX30 MARKET ANALYSIS ==================
 @st.cache_data(ttl=600, show_spinner=False)
 def get_egx30_status():
-    """تحليل المؤشر العام - مع إعادة محاولة"""
-    
     for attempt in range(2):
         try:
             url = "https://scanner.tradingview.com/egypt/scan"
@@ -141,7 +139,6 @@ def get_egx30_status():
             time.sleep(1)
             continue
     
-    # قيم افتراضية
     return {
         "status": "🟡 سوق متذبذب (افتراضي)",
         "color": "#FFA500",
@@ -235,9 +232,9 @@ def get_confidence(res):
     elif percent >= 65:
         advice, color, emoji = "✅ شراء حذر / مراقبة", "#ADFF2F", "✅"
     elif percent >= 40:
-        advice, color, emoji = "🟡 انتظار (تجميع)", "#FFFF00", "🟡"
+        advice, color, emoji = "🟡 انتظار (تجميع)", "#FFD700", "🟡"
     else:
-        advice, color, emoji = "❌ تجنب السهم حالياً", "#FF4B4B", "❌"
+        advice, color, emoji = "❌ تجنب السهم حالياً", "#FF6B6B", "❌"
     
     return {'score': percent, 'advice': advice, 'color': color, 'emoji': emoji}
 
@@ -246,18 +243,17 @@ def render_confidence_card(res):
     st.markdown(f"""
     <div style='background: linear-gradient(135deg, #1a1a2e, #16213e); border-radius: 12px; padding: 12px; margin: 10px 0; border-right: 4px solid {conf["color"]};'>
         <div style='display: flex; justify-content: space-between; align-items: center;'>
-            <span style='font-size: 18px; font-weight: bold;'>{conf["emoji"]} قرار القناص</span>
+            <span style='font-size: 18px; font-weight: bold; color: #e0e0e0;'>{conf["emoji"]} قرار القناص</span>
             <span style='font-size: 28px; font-weight: bold; color: {conf["color"]};'>{conf["score"]}%</span>
         </div>
         <div style='margin-top: 5px;'><span style='color: {conf["color"]};'>{conf["advice"]}</span></div>
     </div>
     """, unsafe_allow_html=True)
 
-# ================== ⚡ RAPID BREAKOUT HUNTER (مصحح) ==================
+# ================== ⚡ RAPID BREAKOUT HUNTER ==================
 def is_rapid_breakout(an):
-    """ترجع dict دائماً"""
     if an is None:
-        return {"is_breakout": False, "reasons": [], "strength": 0, "label": "", "color": "#333", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
+        return {"is_breakout": False, "reasons": [], "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
     p = an.get('p', 0)
     rsi = an.get('rsi', 50)
@@ -271,7 +267,6 @@ def is_rapid_breakout(an):
     score = 0
     max_score = 7
     
-    # شرط 1: RSI
     if 55 <= rsi <= 70:
         score += 2
         reasons.append(f"⚡ زخم قوي جداً (RSI: {rsi:.0f})")
@@ -279,9 +274,8 @@ def is_rapid_breakout(an):
         score += 1
         reasons.append(f"📈 زخم إيجابي (RSI: {rsi:.0f})")
     else:
-        return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#333", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
+        return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
-    # شرط 2: سيولة
     if ratio > 2.5:
         score += 2
         reasons.append(f"💥 سيولة استثنائية ({ratio:.1f}x)")
@@ -289,9 +283,8 @@ def is_rapid_breakout(an):
         score += 1
         reasons.append(f"🚀 سيولة قوية ({ratio:.1f}x)")
     else:
-        return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#333", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
+        return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
-    # شرط 3: قرب من المقاومة
     if p >= r1 * 0.99:
         score += 2
         reasons.append(f"🎯 على وشك اختراق R1 ({r1:.2f})")
@@ -299,14 +292,12 @@ def is_rapid_breakout(an):
         score += 1
         reasons.append(f"📍 قريب من المقاومة R1")
     else:
-        return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#333", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
+        return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
-    # شرط 4: الاتجاهات
     if t_short == "صاعد" and t_med == "صاعد":
         score += 1
         reasons.append("📊 الاتجاهات صاعدة")
     
-    # شرط 5: شمعة قوية
     if change > 1.5:
         score += 1
         reasons.append(f"🟢 شمعة قوية (+{change:.2f}%)")
@@ -318,15 +309,15 @@ def is_rapid_breakout(an):
     
     if strength >= 70:
         label = "🔥 انفجار وشيك خلال ساعات"
-        color = "#FF4444"
+        color = "#FF6666"
     elif strength >= 55:
         label = "⚡ اختراق متوقع خلال جلسة"
-        color = "#FFA500"
+        color = "#FFB347"
     elif strength >= 40:
         label = "🟡 مراقبة لاصطياد الاختراق"
         color = "#FFD700"
     else:
-        return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#333", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
+        return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
     return {
         "is_breakout": True,
@@ -339,15 +330,14 @@ def is_rapid_breakout(an):
         "stop_loss_rapid": max(an.get('s1', p * 0.98), p * 0.97)
     }
 
-# ================== 🎯 CORRECTION HUNTER (مصحح) ==================
+# ================== 🎯 CORRECTION HUNTER ==================
 def is_correction(an, market_multiplier=1.0):
-    """ترجع dict دائماً"""
     default_return = {
         "is_correction": False, 
         "reasons": [], 
         "strength": 0, 
         "label": "", 
-        "color": "#333"
+        "color": "#555"
     }
     
     if an is None:
@@ -368,14 +358,12 @@ def is_correction(an, market_multiplier=1.0):
     score = 0
     max_score = 8
     
-    # شرط 1: الاتجاه العام صاعد (إلزامي)
     if t_long == "صاعد" or (sma200 and p > sma200 * 0.98):
         score += 3
         reasons.append("📈 الاتجاه العام صاعد")
     else:
         return default_return
     
-    # شرط 2: RSI في التصحيح
     if 30 <= rsi <= 50:
         score += 2
         reasons.append(f"📊 RSI في تصحيح ({rsi:.0f})")
@@ -385,7 +373,6 @@ def is_correction(an, market_multiplier=1.0):
     else:
         return default_return
     
-    # شرط 3: بداية ارتداد
     if change > 0.2:
         score += 2
         reasons.append(f"📈 بداية ارتداد ({change:+.2f}%)")
@@ -393,7 +380,6 @@ def is_correction(an, market_multiplier=1.0):
         score += 1
         reasons.append(f"📈 بداية ارتداد ({change:+.2f}%)")
     
-    # شرط 4: سيولة
     volume_ratio = volume / avg_volume if avg_volume > 0 else 0
     if volume_ratio > 1.5:
         score += 1
@@ -404,7 +390,6 @@ def is_correction(an, market_multiplier=1.0):
     else:
         return default_return
     
-    # شرط 5: RR
     if rr >= 1.8:
         score += 1
         reasons.append(f"⚖️ RR ممتاز ({rr})")
@@ -412,7 +397,6 @@ def is_correction(an, market_multiplier=1.0):
         score += 0.5
         reasons.append(f"⚖️ RR جيد ({rr})")
     
-    # شرط 6: عند الدعم
     s1 = an.get('s1', p * 0.97)
     if p <= s1 * 1.02:
         score += 1
@@ -421,18 +405,19 @@ def is_correction(an, market_multiplier=1.0):
     adjusted_score = score * market_multiplier
     strength = int((adjusted_score / max_score) * 100)
     
+    # ألوان محسنة لصائد التصحيحات - أكثر راحة للعين
     if strength >= 65:
         label = "🔥 فرصة تصحيح ممتازة"
-        color = "#00FF00"
+        color = "#2E7D32"  # أخضر غامق (مريح للعين)
     elif strength >= 50:
         label = "✅ فرصة تصحيح جيدة"
-        color = "#ADFF2F"
+        color = "#388E3C"  # أخضر متوسط
     elif strength >= 35:
         label = "🟡 فرصة تصحيح محتملة"
-        color = "#FFA500"
+        color = "#F57C00"  # برتقالي
     else:
         label = "❌ فرصة تصحيح ضعيفة"
-        color = "#FF4444"
+        color = "#C62828"  # أحمر غامق
     
     return {
         "is_correction": score >= 3,
@@ -628,7 +613,7 @@ def render_chart(symbol, height=400):
     """
     components.html(chart_html, height=height)
 
-# ================== 🎨 STYLES ==================
+# ================== 🎨 STYLES (ألوان محسنة) ==================
 st.markdown("""
 <style>
 .stButton>button { width: 100%; border-radius: 10px; height: 45px; font-weight: bold; }
@@ -637,8 +622,10 @@ st.markdown("""
 .quality-excellent { background: #1f4f2b; color: white; padding: 5px; border-radius: 8px; text-align: center; }
 .quality-good { background: #1f3a4f; color: white; padding: 5px; border-radius: 8px; text-align: center; }
 .entry-card { background: #0d1117; border: 1px solid #3fb950; border-radius: 10px; padding: 12px; margin: 10px 0; }
-.rapid-card { background: linear-gradient(135deg, #2a0a0a, #1a0a0a); border-radius: 12px; padding: 15px; margin-bottom: 15px; border-right: 4px solid #FF4444; }
-.correction-card { background: linear-gradient(135deg, #1a1a2e, #16213e); border-radius: 12px; padding: 15px; margin-bottom: 15px; }
+.rapid-card { background: linear-gradient(135deg, #1a0a0a, #0d0a0a); border-radius: 12px; padding: 15px; margin-bottom: 15px; border-right: 4px solid #FF6666; }
+.correction-card { background: linear-gradient(135deg, #0d1f0d, #0a150a); border-radius: 12px; padding: 15px; margin-bottom: 15px; border-right: 4px solid #2E7D32; }
+.correction-card h3 { color: #81C784; }
+.correction-card div { color: #e0e0e0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -911,7 +898,7 @@ def main():
         
         st.title("⚡ قناص الاختراق السريع")
         st.markdown("""
-        <div style="background: rgba(255,68,68,0.15); border-right: 4px solid #FF4444; padding: 10px; border-radius: 8px; margin-bottom: 20px;">
+        <div style="background: rgba(255,102,102,0.15); border-right: 4px solid #FF6666; padding: 10px; border-radius: 8px; margin-bottom: 20px;">
             🚀 <b>فرص خلال جلسة أو جلستين</b><br>
             • RSI بين 55-70 | • سيولة استثنائية > 2.5x | • قرب اختراق المقاومة | • وقف خسارة ضيق
         </div>
@@ -930,32 +917,32 @@ def main():
                 st.markdown(f"""
                 <div class="rapid-card" style="border-right-color: {analysis['color']};">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <h3 style="margin: 0;">⚡ {stock['name']} - {stock['desc']}</h3>
-                        <span style="background: {analysis['color']}; padding: 5px 15px; border-radius: 20px;">
+                        <h3 style="margin: 0; color: #FF9999;">⚡ {stock['name']} - {stock['desc']}</h3>
+                        <span style="background: {analysis['color']}; padding: 5px 15px; border-radius: 20px; color: #1a1a1a; font-weight: bold;">
                             {analysis['label']} | {analysis['strength']}%
                         </span>
                     </div>
                     <div style="height: 6px; background: #333; margin: 10px 0;">
-                        <div style="width: {analysis['strength']}%; background: {analysis['color']}; height: 6px;"></div>
+                        <div style="width: {analysis['strength']}%; background: {analysis['color']}; height: 6px; border-radius: 3px;"></div>
                     </div>
-                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0;">
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0; color: #e0e0e0;">
                         <div>💰 {stock['p']:.2f} ج</div>
                         <div>📊 RSI: {stock['rsi']:.0f}</div>
                         <div>💧 سيولة: {stock['ratio']:.1f}x</div>
                         <div>📈 تغير: {stock['chg']:+.2f}%</div>
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0;">
-                        <div style="background: #1f4f2b; border-radius: 8px; padding: 8px; text-align: center;">
+                        <div style="background: #1f4f2b; border-radius: 8px; padding: 8px; text-align: center; color: white;">
                             🎯 هدف أول<br><b>{analysis['target_1']:.2f}</b>
                         </div>
-                        <div style="background: #1f3a4f; border-radius: 8px; padding: 8px; text-align: center;">
+                        <div style="background: #1f3a4f; border-radius: 8px; padding: 8px; text-align: center; color: white;">
                             🎯 هدف ثاني<br><b>{analysis['target_2']:.2f}</b>
                         </div>
-                        <div style="background: #4a1a1a; border-radius: 8px; padding: 8px; text-align: center;">
+                        <div style="background: #4a1a1a; border-radius: 8px; padding: 8px; text-align: center; color: white;">
                             🛑 وقف ضيق<br><b>{analysis['stop_loss_rapid']:.2f}</b>
                         </div>
                     </div>
-                    <div style="background: rgba(255,68,68,0.1); border-radius: 8px; padding: 8px;">
+                    <div style="background: rgba(255,102,102,0.1); border-radius: 8px; padding: 8px; color: #e0e0e0;">
                         ✅ {', '.join(analysis['reasons'])}
                     </div>
                 </div>
@@ -971,7 +958,7 @@ def main():
         else:
             st.info("ℹ️ لا توجد فرص اختراق سريع حالياً.")
     
-    # ================== 🎯 CORRECTION PAGE ==================
+    # ================== 🎯 CORRECTION PAGE (بألوان محسنة) ==================
     elif st.session_state.page == 'correction':
         if st.button("🏠 العودة للرئيسية"): 
             st.session_state.page = 'home'
@@ -979,7 +966,7 @@ def main():
         
         st.title("🎯 صائد التصحيحات")
         st.markdown("""
-        <div style="background: rgba(233,30,99,0.15); border-right: 4px solid #e91e63; padding: 10px; border-radius: 8px; margin-bottom: 20px;">
+        <div style="background: rgba(46,125,50,0.15); border-right: 4px solid #2E7D32; padding: 10px; border-radius: 8px; margin-bottom: 20px;">
             🎯 <b>الأسهم القوية التي تصحح</b><br>
             • اتجاه عام صاعد | • RSI في التصحيح (30-50) | • بداية ارتداد | • سيولة جيدة
         </div>
@@ -1004,22 +991,22 @@ def main():
                 
                 st.markdown(f"""
                 <div class="correction-card" style="border-right-color: {analysis['color']};">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <h3 style="margin: 0;">🎯 {stock['name']} - {stock['desc']}</h3>
-                        <span style="background: {analysis['color']}; padding: 5px 15px; border-radius: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                        <h3 style="margin: 0; color: #81C784;">🎯 {stock['name']} - {stock['desc']}</h3>
+                        <span style="background: {analysis['color']}; padding: 5px 15px; border-radius: 20px; color: white; font-weight: bold;">
                             {analysis['label']} | {analysis['strength']}%
                         </span>
                     </div>
-                    <div style="height: 6px; background: #333; margin: 10px 0;">
-                        <div style="width: {analysis['strength']}%; background: {analysis['color']}; height: 6px;"></div>
+                    <div style="height: 6px; background: #1a3a1a; margin: 10px 0; border-radius: 3px;">
+                        <div style="width: {analysis['strength']}%; background: {analysis['color']}; height: 6px; border-radius: 3px;"></div>
                     </div>
-                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0;">
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0; color: #d0d0d0;">
                         <div>💰 {stock['p']:.2f} ج</div>
                         <div>📊 RSI: {stock['rsi']:.0f}</div>
                         <div>💧 سيولة: {stock['ratio']:.1f}x</div>
                         <div>📈 تغير: {stock['chg']:+.2f}%</div>
                     </div>
-                    <div style="background: rgba(233,30,99,0.1); border-radius: 8px; padding: 8px;">
+                    <div style="background: rgba(46,125,50,0.15); border-radius: 8px; padding: 8px; color: #c8e6c9;">
                         ✅ {', '.join(analysis['reasons'])}
                     </div>
                 </div>
