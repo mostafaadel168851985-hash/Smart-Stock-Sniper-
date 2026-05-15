@@ -85,12 +85,11 @@ def get_performance_stats(trades):
         'still_open': still_open, 'success_rate': round(success_rate, 1), 'avg_rr': round(avg_rr, 2)
     }
 
-# ================== 📈 EGX30 MARKET ANALYSIS (مُحسّن) ==================
+# ================== 📈 EGX30 MARKET ANALYSIS ==================
 @st.cache_data(ttl=600, show_spinner=False)
 def get_egx30_status():
-    """تحليل المؤشر العام - مع إعادة محاولة وتجاوز الأخطاء"""
+    """تحليل المؤشر العام - مع إعادة محاولة"""
     
-    # محاولة 1: عبر الـ scanner العادي
     for attempt in range(2):
         try:
             url = "https://scanner.tradingview.com/egypt/scan"
@@ -142,36 +141,9 @@ def get_egx30_status():
             time.sleep(1)
             continue
     
-    # محاولة 2: EGX100 كبديل
-    try:
-        url = "https://scanner.tradingview.com/egypt/scan"
-        payload = {
-            "filter": [{"left": "symbol", "operation": "equal", "right": "EGX100"}],
-            "columns": ["close", "RSI", "change"],
-            "range": [0, 1]
-        }
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.post(url, json=payload, headers=headers, timeout=10)
-        if r.status_code == 200:
-            data = r.json().get("data", [])
-            if data and len(data) > 0:
-                d = data[0].get('d', [])
-                if len(d) >= 3:
-                    change = d[2] if d[2] else 0
-                    return {
-                        "status": "🟡 سوق متذبذب (تقديري)",
-                        "color": "#FFA500",
-                        "market_multiplier": 0.7,
-                        "rsi": 50,
-                        "change": change,
-                        "price": 10000
-                    }
-    except:
-        pass
-    
-    # القيم الافتراضية الآمنة
+    # قيم افتراضية
     return {
-        "status": "🟡 سوق متذبذب (افتراضي - تعذر التحليل)",
+        "status": "🟡 سوق متذبذب (افتراضي)",
         "color": "#FFA500",
         "market_multiplier": 0.7,
         "rsi": 50,
@@ -281,10 +253,11 @@ def render_confidence_card(res):
     </div>
     """, unsafe_allow_html=True)
 
-# ================== ⚡ RAPID BREAKOUT HUNTER ==================
+# ================== ⚡ RAPID BREAKOUT HUNTER (مصحح) ==================
 def is_rapid_breakout(an):
+    """ترجع dict دائماً"""
     if an is None:
-        return False, [], 0
+        return {"is_breakout": False, "reasons": [], "strength": 0, "label": "", "color": "#333", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
     p = an.get('p', 0)
     rsi = an.get('rsi', 50)
@@ -293,13 +266,12 @@ def is_rapid_breakout(an):
     t_short = an.get('t_short', 'هابط')
     t_med = an.get('t_med', 'هابط')
     r1 = an.get('r1', p * 1.05)
-    volume = an.get('volume', 0)
-    avg_volume = an.get('avg_volume', 1)
     
     reasons = []
     score = 0
     max_score = 7
     
+    # شرط 1: RSI
     if 55 <= rsi <= 70:
         score += 2
         reasons.append(f"⚡ زخم قوي جداً (RSI: {rsi:.0f})")
@@ -307,8 +279,9 @@ def is_rapid_breakout(an):
         score += 1
         reasons.append(f"📈 زخم إيجابي (RSI: {rsi:.0f})")
     else:
-        return False, [], 0
+        return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#333", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
+    # شرط 2: سيولة
     if ratio > 2.5:
         score += 2
         reasons.append(f"💥 سيولة استثنائية ({ratio:.1f}x)")
@@ -316,8 +289,9 @@ def is_rapid_breakout(an):
         score += 1
         reasons.append(f"🚀 سيولة قوية ({ratio:.1f}x)")
     else:
-        return False, [], 0
+        return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#333", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
+    # شرط 3: قرب من المقاومة
     if p >= r1 * 0.99:
         score += 2
         reasons.append(f"🎯 على وشك اختراق R1 ({r1:.2f})")
@@ -325,12 +299,14 @@ def is_rapid_breakout(an):
         score += 1
         reasons.append(f"📍 قريب من المقاومة R1")
     else:
-        return False, [], 0
+        return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#333", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
+    # شرط 4: الاتجاهات
     if t_short == "صاعد" and t_med == "صاعد":
         score += 1
         reasons.append("📊 الاتجاهات صاعدة")
     
+    # شرط 5: شمعة قوية
     if change > 1.5:
         score += 1
         reasons.append(f"🟢 شمعة قوية (+{change:.2f}%)")
@@ -350,7 +326,7 @@ def is_rapid_breakout(an):
         label = "🟡 مراقبة لاصطياد الاختراق"
         color = "#FFD700"
     else:
-        return False, [], 0
+        return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#333", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
     return {
         "is_breakout": True,
@@ -363,10 +339,19 @@ def is_rapid_breakout(an):
         "stop_loss_rapid": max(an.get('s1', p * 0.98), p * 0.97)
     }
 
-# ================== 🎯 CORRECTION HUNTER ==================
+# ================== 🎯 CORRECTION HUNTER (مصحح) ==================
 def is_correction(an, market_multiplier=1.0):
+    """ترجع dict دائماً"""
+    default_return = {
+        "is_correction": False, 
+        "reasons": [], 
+        "strength": 0, 
+        "label": "", 
+        "color": "#333"
+    }
+    
     if an is None:
-        return False, [], 0
+        return default_return
     
     p = an.get('p', 0)
     rsi = an.get('rsi', 50)
@@ -383,12 +368,14 @@ def is_correction(an, market_multiplier=1.0):
     score = 0
     max_score = 8
     
+    # شرط 1: الاتجاه العام صاعد (إلزامي)
     if t_long == "صاعد" or (sma200 and p > sma200 * 0.98):
         score += 3
         reasons.append("📈 الاتجاه العام صاعد")
     else:
-        return False, [], 0
+        return default_return
     
+    # شرط 2: RSI في التصحيح
     if 30 <= rsi <= 50:
         score += 2
         reasons.append(f"📊 RSI في تصحيح ({rsi:.0f})")
@@ -396,8 +383,9 @@ def is_correction(an, market_multiplier=1.0):
         score += 1
         reasons.append(f"📊 RSI بدأ يخرج من التصحيح ({rsi:.0f})")
     else:
-        return False, [], 0
+        return default_return
     
+    # شرط 3: بداية ارتداد
     if change > 0.2:
         score += 2
         reasons.append(f"📈 بداية ارتداد ({change:+.2f}%)")
@@ -405,6 +393,7 @@ def is_correction(an, market_multiplier=1.0):
         score += 1
         reasons.append(f"📈 بداية ارتداد ({change:+.2f}%)")
     
+    # شرط 4: سيولة
     volume_ratio = volume / avg_volume if avg_volume > 0 else 0
     if volume_ratio > 1.5:
         score += 1
@@ -413,8 +402,9 @@ def is_correction(an, market_multiplier=1.0):
         score += 0.5
         reasons.append(f"💧 سيولة جيدة ({volume_ratio:.1f}x)")
     else:
-        return False, [], 0
+        return default_return
     
+    # شرط 5: RR
     if rr >= 1.8:
         score += 1
         reasons.append(f"⚖️ RR ممتاز ({rr})")
@@ -422,6 +412,7 @@ def is_correction(an, market_multiplier=1.0):
         score += 0.5
         reasons.append(f"⚖️ RR جيد ({rr})")
     
+    # شرط 6: عند الدعم
     s1 = an.get('s1', p * 0.97)
     if p <= s1 * 1.02:
         score += 1
@@ -595,7 +586,7 @@ def get_rapid_breakouts(results):
     for r in results:
         if r and r.get('estimated_value', 0) >= 2000000:
             analysis = is_rapid_breakout(r)
-            if analysis and analysis.get('is_breakout'):
+            if analysis.get('is_breakout', False):
                 rapid.append({
                     'stock': r,
                     'analysis': analysis
@@ -912,6 +903,7 @@ def main():
             </div>
             """, unsafe_allow_html=True)
     
+    # ================== ⚡ RAPID BREAKOUT PAGE ==================
     elif st.session_state.page == 'rapid':
         if st.button("🏠 العودة للرئيسية"): 
             st.session_state.page = 'home'
@@ -979,12 +971,19 @@ def main():
         else:
             st.info("ℹ️ لا توجد فرص اختراق سريع حالياً.")
     
+    # ================== 🎯 CORRECTION PAGE ==================
     elif st.session_state.page == 'correction':
         if st.button("🏠 العودة للرئيسية"): 
             st.session_state.page = 'home'
             st.rerun()
         
         st.title("🎯 صائد التصحيحات")
+        st.markdown("""
+        <div style="background: rgba(233,30,99,0.15); border-right: 4px solid #e91e63; padding: 10px; border-radius: 8px; margin-bottom: 20px;">
+            🎯 <b>الأسهم القوية التي تصحح</b><br>
+            • اتجاه عام صاعد | • RSI في التصحيح (30-50) | • بداية ارتداد | • سيولة جيدة
+        </div>
+        """, unsafe_allow_html=True)
         
         sector_filter = st.session_state.sector_filter
         filtered = filter_by_sector(st.session_state.all_results, sector_filter)
@@ -993,7 +992,7 @@ def main():
         for an in filtered:
             if an and an.get('estimated_value', 0) >= 2000000:
                 corr = is_correction(an, market_status['market_multiplier'])
-                if corr.get('is_correction'):
+                if corr.get('is_correction', False):
                     corrections.append({'stock': an, 'analysis': corr})
         
         if corrections:
@@ -1036,6 +1035,7 @@ def main():
         else:
             st.info("ℹ️ لا توجد فرص تصحيح حالياً.")
     
+    # ================== 🏆 TOP 10 PAGE ==================
     elif st.session_state.page == 'top10':
         if st.button("🏠 العودة للرئيسية"): 
             st.session_state.page = 'home'
@@ -1057,6 +1057,7 @@ def main():
         else:
             st.warning("⚠️ لا توجد فرص مطابقة للمعايير حالياً.")
     
+    # ================== 🔍 ANALYZE PAGE ==================
     elif st.session_state.page == 'analyze':
         if st.button("🏠 العودة للرئيسية"): 
             st.session_state.page = 'home'
@@ -1078,6 +1079,7 @@ def main():
                 if symbols:
                     st.info(f"💡 أمثلة: {', '.join(symbols[:15])}")
     
+    # ================== 📊 PERFORMANCE PAGE ==================
     elif st.session_state.page == 'performance':
         if st.button("🏠 العودة للرئيسية"): 
             st.session_state.page = 'home'
