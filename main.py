@@ -18,8 +18,8 @@ st.set_page_config(
 
 # ================== 📁 CONSTANTS ==================
 TRADES_FILE = "trades_data.json"
-MIN_DAILY_TURNOVER = 200000  # 200 ألف جنيه حد أدنى
-MAX_RISK_PCT = 5.0  # الحد الأقصى للمخاطرة 5%
+MIN_DAILY_TURNOVER = 200000
+MAX_RISK_PCT = 5.0
 
 # ================== SESSION STATE ==================
 if "mode" not in st.session_state:
@@ -33,10 +33,10 @@ if "all_results" not in st.session_state:
 if "last_update" not in st.session_state:
     st.session_state.last_update = None
 
-# ================== 🎨 CSS ==================
+# ================== 🎨 CSS محسن بالكامل ==================
 st.markdown("""
 <style>
-    /* تنسيق عام */
+    /* تنسيق عام - خطوط أكبر */
     .main-header {
         background: linear-gradient(135deg, #1a1a2e, #16213e);
         padding: 20px;
@@ -47,128 +47,221 @@ st.markdown("""
     .main-header h1 {
         color: #58a6ff;
         margin: 0;
+        font-size: 32px;
     }
     .main-header p {
         color: #8b949e;
         margin: 5px 0 0;
+        font-size: 14px;
     }
     
-    /* تنسيق الشريط الجانبي */
+    /* ================== تنسيق الشريط الجانبي ================== */
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0d1117, #0a0c10);
         border-right: 1px solid #30363d;
+        padding: 20px 10px;
     }
     
-    /* تنسيق الأزرار في الشريط الجانبي */
+    /* عنوان الشريط الجانبي */
+    .sidebar-title {
+        text-align: center;
+        padding: 15px 0;
+        border-bottom: 2px solid #30363d;
+        margin-bottom: 20px;
+    }
+    .sidebar-title h2 {
+        color: #58a6ff;
+        margin: 0;
+        font-size: 24px;
+    }
+    .sidebar-title p {
+        color: #8b949e;
+        font-size: 12px;
+        margin: 5px 0 0;
+    }
+    
+    /* أزرار التنقل في الشريط الجانبي - واضحة وكبيرة */
     .stSidebar .stButton button {
         width: 100%;
         text-align: right;
-        background: transparent;
-        border: 1px solid #30363d;
-        border-radius: 10px;
-        padding: 10px 16px;
-        margin: 4px 0;
-        font-weight: 500;
-        color: #c9d1d9;
+        background-color: #1f2937;
+        border: 1px solid #374151;
+        border-radius: 12px;
+        padding: 14px 18px;
+        margin: 6px 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: #e5e7eb;
+        transition: all 0.2s ease;
+        cursor: pointer;
     }
     .stSidebar .stButton button:hover {
-        background: rgba(88, 166, 255, 0.1);
-        border-color: #58a6ff;
+        background-color: #374151;
+        border-color: #3b82f6;
         color: white;
+        transform: translateX(-3px);
     }
     
-    /* حالة السوق */
+    /* ================== حالة السوق ================== */
     .market-status {
         background: #0d1117;
-        border-radius: 10px;
-        padding: 12px;
+        border-radius: 12px;
+        padding: 15px;
         margin-bottom: 20px;
         border: 1px solid #30363d;
         text-align: center;
+        font-size: 16px;
     }
     
-    /* بطاقات الأسهم */
+    /* ================== بطاقات الأسهم ================== */
     .stock-card {
         background: linear-gradient(135deg, #0d1117, #0a0c10);
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 16px;
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
         border: 1px solid #30363d;
+        transition: all 0.2s ease;
     }
+    .stock-card:hover {
+        border-color: #58a6ff;
+        transform: translateY(-2px);
+    }
+    
     .stock-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 12px;
+        margin-bottom: 16px;
         border-bottom: 1px solid #30363d;
-        padding-bottom: 8px;
+        padding-bottom: 12px;
     }
     .stock-name {
-        font-size: 18px;
+        font-size: 22px;
         font-weight: bold;
         color: #58a6ff;
     }
+    .stock-desc {
+        font-size: 14px;
+        color: #8b949e;
+        margin-right: 10px;
+    }
     .smart-badge {
         background: #238636;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 12px;
+        padding: 6px 16px;
+        border-radius: 25px;
+        font-size: 14px;
         font-weight: bold;
+        color: white;
     }
     
-    /* خطط الدخول */
+    /* صفوف البيانات */
+    .flex-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        align-items: center;
+        margin: 15px 0;
+    }
+    .metric-box {
+        text-align: center;
+        min-width: 80px;
+    }
+    .metric-value {
+        font-size: 28px;
+        font-weight: bold;
+    }
+    .metric-label {
+        font-size: 13px;
+        color: #8b949e;
+        margin-top: 4px;
+    }
+    
+    /* شريط القوة */
+    .strength-bar {
+        height: 6px;
+        background: #30363d;
+        border-radius: 3px;
+        margin: 12px 0;
+        overflow: hidden;
+    }
+    .strength-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.3s;
+    }
+    .strength-high { background: #3fb950; }
+    .strength-mid { background: #d29922; }
+    .strength-low { background: #f85149; }
+    
+    /* ================== بطاقة ثقة القناص ================== */
+    .confidence-card {
+        background: linear-gradient(135deg, #1a1a2e, #16213e);
+        border-radius: 14px;
+        padding: 16px;
+        margin: 15px 0;
+        border-right: 4px solid;
+    }
+    .confidence-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+    .confidence-title {
+        font-size: 18px;
+        font-weight: bold;
+    }
+    .confidence-score {
+        font-size: 32px;
+        font-weight: bold;
+    }
+    .confidence-advice {
+        font-size: 16px;
+        margin-top: 8px;
+    }
+    
+    /* ================== مستويات الدخول ================== */
     .entry-level {
         background: #0d1117;
-        border-radius: 10px;
-        padding: 12px;
-        margin: 8px 0;
+        border-radius: 12px;
+        padding: 14px;
+        margin: 10px 0;
         border-right: 3px solid;
     }
     .level-1 { border-right-color: #3fb950; }
     .level-2 { border-right-color: #d29922; }
     .level-3 { border-right-color: #58a6ff; }
     
-    /* الشريط السفلي */
+    /* ================== تبويبات ================== */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: #0d1117;
+        border-radius: 10px;
+        padding: 10px 20px;
+        font-size: 16px;
+        font-weight: 500;
+    }
+    
+    /* ================== شريط سفلي ================== */
     .footer {
         background: #0d1117;
-        padding: 8px 16px;
-        border-radius: 10px;
-        margin-top: 20px;
-        font-size: 12px;
+        padding: 12px 20px;
+        border-radius: 12px;
+        margin-top: 30px;
+        font-size: 14px;
         color: #8b949e;
         text-align: center;
         border-top: 1px solid #30363d;
-    }
-    
-    /* صفوف مرنة */
-    .flex-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-        align-items: center;
     }
     .flex-between {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
     }
-    
-    /* شريط القوة */
-    .strength-bar {
-        height: 4px;
-        background: #30363d;
-        border-radius: 2px;
-        margin: 8px 0;
-        overflow: hidden;
-    }
-    .strength-fill {
-        height: 100%;
-        border-radius: 2px;
-        transition: width 0.3s;
-    }
-    .high { background: #3fb950; }
-    .mid { background: #d29922; }
-    .low { background: #f85149; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -338,11 +431,6 @@ def calculate_stochastic_rsi(rsi):
     elif rsi <= 80: return {"k": 30, "d": 35, "signal": "🟠 منطقة بيع محتملة"}
     else: return {"k": 10, "d": 15, "signal": "🔴 تشبع شراء - خطر"}
 
-def calculate_roc(current_price, previous_price):
-    if previous_price and previous_price > 0:
-        return ((current_price - previous_price) / previous_price) * 100
-    return 0
-
 def get_rr_rating(rr):
     if rr < 1: return "❌ ضعيف", "مخاطرة أعلى من العائد"
     elif rr < 1.5: return "⚠️ متوسط", "مضاربة سريعة فقط"
@@ -377,9 +465,147 @@ def expected_success_rate(res):
     return success_rate, level
 
 
-# ================== 🎯 CORRECTION HUNTER (محسن) ==================
+# ================== 🎯 SYSTEME DE CONFIDENCE (7 COUCHES) ==================
+def calculate_technical_score(stock):
+    """التحليل الفني المتقدم - الطبقة الأولى"""
+    score = 0
+    # اتجاهات (40 نقطة)
+    if stock.get('t_long') == "صاعد": score += 15
+    if stock.get('t_med') == "صاعد": score += 15
+    if stock.get('t_short') == "صاعد": score += 10
+    # RSI (20 نقطة)
+    rsi = stock.get('rsi', 50)
+    if 45 <= rsi <= 55: score += 20
+    elif 40 <= rsi <= 60: score += 15
+    elif 35 <= rsi <= 65: score += 10
+    # RR Ratio (20 نقطة)
+    rr = stock.get('rr', 0)
+    if rr >= 2.5: score += 20
+    elif rr >= 2: score += 15
+    elif rr >= 1.5: score += 10
+    # SMA20 (20 نقطة)
+    if stock.get('above_sma20', False): score += 20
+    elif stock.get('p', 0) > stock.get('sma20', 0): score += 20
+    return min(100, score)
+
+def calculate_liquidity_score(stock):
+    """تحليل السيولة - الطبقة الثانية"""
+    ratio = stock.get('ratio', 0)
+    score = 0
+    if ratio > 2.5: score += 50
+    elif ratio > 1.8: score += 40
+    elif ratio > 1.2: score += 30
+    elif ratio > 0.8: score += 20
+    else: score += 10
+    
+    if stock.get('daily_turnover', 0) > 5000000: score += 30
+    elif stock.get('daily_turnover', 0) > 2000000: score += 20
+    elif stock.get('daily_turnover', 0) > MIN_DAILY_TURNOVER: score += 10
+    
+    return min(100, score)
+
+def calculate_momentum_score(stock):
+    """تحليل الزخم - الطبقة الثالثة"""
+    chg = stock.get('chg', 0)
+    rsi = stock.get('rsi', 50)
+    score = 0
+    
+    if chg > 2: score += 40
+    elif chg > 1: score += 30
+    elif chg > 0: score += 20
+    elif chg > -1: score += 10
+    
+    if 55 <= rsi <= 70: score += 40
+    elif 50 <= rsi < 55: score += 30
+    elif 45 <= rsi < 50: score += 20
+    
+    return min(100, score)
+
+def calculate_trend_score(stock, market_status):
+    """تحليل الاتجاه العام - الطبقة الرابعة"""
+    score = 0
+    if stock.get('t_long') == "صاعد": score += 35
+    if stock.get('t_med') == "صاعد": score += 35
+    
+    if "صاعد" in market_status.get('status', ''): score += 30
+    elif "متذبذب" in market_status.get('status', ''): score += 15
+    
+    return min(100, score)
+
+def get_confidence_score(stock, market_status):
+    """
+    نظام الثقة فائق الدقة - 4 طبقات تحليل متقدمة
+    كل طبقة تعطي درجة من 0-100
+    """
+    
+    scores = {
+        "technical": calculate_technical_score(stock),
+        "liquidity": calculate_liquidity_score(stock),
+        "momentum": calculate_momentum_score(stock),
+        "trend": calculate_trend_score(stock, market_status)
+    }
+    
+    weights = {
+        "technical": 35,
+        "liquidity": 25,
+        "momentum": 20,
+        "trend": 20
+    }
+    
+    total_weighted = 0
+    total_weight = 0
+    weak_layers = []
+    
+    for layer, score in scores.items():
+        weight = weights[layer]
+        total_weighted += score * weight
+        total_weight += weight
+        
+        if score < 50:
+            weak_layers.append(layer)
+    
+    final_score = int(total_weighted / total_weight) if total_weight > 0 else 0
+    
+    # قرارات بناءً على الثقة
+    if final_score >= 85:
+        advice = "🔥🔥 فرصة ذهبية مؤكدة - دخول قوي"
+        color = "#00FF00"
+        emoji = "🔥🔥"
+        risk_level = "منخفض"
+    elif final_score >= 75:
+        advice = "🔥 فرصة ممتازة - دخول"
+        color = "#ADFF2F"
+        emoji = "🔥"
+        risk_level = "منخفض-متوسط"
+    elif final_score >= 65:
+        advice = "✅ فرصة جيدة - دخول بحذر"
+        color = "#FFD700"
+        emoji = "✅"
+        risk_level = "متوسط"
+    elif final_score >= 55:
+        advice = "🟡 مراقبة - انتظار تأكيد إضافي"
+        color = "#FFA500"
+        emoji = "🟡"
+        risk_level = "مرتفع"
+    else:
+        advice = "❌ تجنب - غير مطابق للمعايير"
+        color = "#FF4444"
+        emoji = "❌"
+        risk_level = "عالي جداً"
+    
+    return {
+        'score': final_score,
+        'advice': advice,
+        'color': color,
+        'emoji': emoji,
+        'risk_level': risk_level,
+        'layers': scores,
+        'weak_layers': weak_layers
+    }
+
+
+# ================== 🎯 CORRECTION HUNTER ==================
 def is_correction_hunter(an):
-    """الكشف عن الأسهم التي تصحح - نطاق RSI موسع إلى 28-55"""
     if an is None:
         return False, [], 0
     
@@ -395,14 +621,12 @@ def is_correction_hunter(an):
     score = 0
     max_score = 10
     
-    # 1. الاتجاه العام صاعد
     if t_long == "صاعد" or (sma200 and p > sma200):
         score += 3
         reasons.append("📈 الاتجاه العام صاعد")
     else:
         return False, ["الاتجاه العام هابط"], 0
     
-    # 2. RSI في منطقة التصحيح (نطاق أوسع 28-55)
     if 28 <= rsi <= 55:
         score += 3
         if rsi < 35:
@@ -410,11 +634,10 @@ def is_correction_hunter(an):
         elif rsi < 45:
             reasons.append(f"🔻 RSI منخفض ({rsi:.0f}) - منطقة تصحيح جيدة")
         else:
-            reasons.append(f"📊 RSI في منطقة محايدة ({rsi:.0f}) - بداية انتعاش")
+            reasons.append(f"📊 RSI في منطقة محايدة ({rsi:.0f})")
     else:
         return False, [f"RSI خارج نطاق التصحيح ({rsi:.0f})"], 0
     
-    # 3. بداية ارتداد
     if change_pct > 0:
         score += 2
         reasons.append(f"📈 تغير إيجابي ({change_pct:+.2f}%)")
@@ -422,7 +645,6 @@ def is_correction_hunter(an):
         score += 1
         reasons.append(f"⚖️ تغير طفيف ({change_pct:+.2f}%) - استقرار")
     
-    # 4. سيولة جيدة
     if ratio > 1.2:
         score += 1
         reasons.append(f"💧 سيولة ممتازة ({ratio:.1f}x)")
@@ -430,24 +652,20 @@ def is_correction_hunter(an):
         score += 0.5
         reasons.append(f"💧 سيولة جيدة ({ratio:.1f}x)")
     
-    # 5. نسبة مخاطرة/عائد جيدة
     if rr >= 1.5:
         score += 1
         reasons.append(f"⚖️ RR جيد ({rr})")
     
     strength_percent = int((score / max_score) * 100)
     
-    if score >= 6:
-        return True, reasons, strength_percent
-    elif score >= 4:
+    if score >= 4:
         return True, reasons, strength_percent
     else:
         return False, [f"درجة منخفضة ({score}/{max_score})"], strength_percent
 
 
-# ================== ⚡ RAPID BREAKOUT (محسن) ==================
+# ================== ⚡ RAPID BREAKOUT ==================
 def is_rapid_breakout(an):
-    """الكشف عن الاختراقات السريعة - نطاق RSI موسع إلى 45-75"""
     if an is None:
         return {"is_breakout": False, "reasons": [], "strength": 0, "label": "", "color": "#555"}
     
@@ -463,7 +681,6 @@ def is_rapid_breakout(an):
     score = 0
     max_score = 7
     
-    # 1. RSI - نطاق أوسع (45-75)
     if 52 <= rsi <= 75:
         score += 2
         reasons.append(f"⚡ زخم قوي (RSI: {rsi:.0f})")
@@ -473,7 +690,6 @@ def is_rapid_breakout(an):
     else:
         return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#555"}
     
-    # 2. سيولة - نسب مرنة
     if ratio > 2.2:
         score += 2
         reasons.append(f"💥 سيولة استثنائية ({ratio:.1f}x)")
@@ -486,7 +702,6 @@ def is_rapid_breakout(an):
     else:
         return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#555"}
     
-    # 3. قرب من المقاومة
     if p >= r1 * 0.98:
         score += 2
         reasons.append(f"🎯 على وشك اختراق R1 ({r1:.2f})")
@@ -496,7 +711,6 @@ def is_rapid_breakout(an):
     else:
         return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#555"}
     
-    # 4. الاتجاهات
     if t_short == "صاعد" and t_med == "صاعد":
         score += 1
         reasons.append("📊 الاتجاهات صاعدة")
@@ -522,62 +736,6 @@ def is_rapid_breakout(an):
         "label": label,
         "color": color
     }
-
-
-# ================== 🚀 REAL BREAKOUT (انفجار سعري) ==================
-def calculate_volatility(high, low, close):
-    """حساب التقلب اليومي"""
-    if high and low and close:
-        return ((high - low) / close) * 100
-    return 2.0
-
-def is_real_breakout(an):
-    """اكتشاف الانفجار السعري الحقيقي - اختراق القمم مع سيولة مرعبة"""
-    if an is None:
-        return False, [], 0
-    
-    p = an.get('p', 0)
-    high = an.get('high', p)
-    ratio = an.get('ratio', 0)
-    rsi = an.get('rsi', 50)
-    t_short = an.get('t_short', 'هابط')
-    change = an.get('chg', 0)
-    
-    volatility = calculate_volatility(high, an.get('low', p), p)
-    estimated_high_20d = high * (1 + (volatility / 100) * 2) if high else p * 1.05
-    
-    reasons = []
-    score = 0
-    max_score = 7
-    
-    if estimated_high_20d > 0 and p >= estimated_high_20d * 0.97:
-        score += 3
-        reasons.append(f"🚀 يقترب من قمة 20 يوم ({estimated_high_20d:.2f})")
-    else:
-        return False, [], 0
-    
-    if ratio > 2.5:
-        score += 2
-        reasons.append(f"💥 سيولة استثنائية ({ratio:.1f}x)")
-    elif ratio > 1.8:
-        score += 1.5
-        reasons.append(f"⚡ سيولة قوية ({ratio:.1f}x)")
-    else:
-        return False, [], 0
-    
-    if rsi >= 55 and change > 1:
-        score += 2
-        reasons.append(f"📈 زخم قوي (RSI: {rsi:.0f}, تغير: {change:+.1f}%)")
-    elif rsi >= 50 and change > 0.5:
-        score += 1
-        reasons.append(f"📊 زخم إيجابي (RSI: {rsi:.0f})")
-    
-    if t_short == "صاعد":
-        score += 0.5
-        reasons.append("📈 اتجاه قصير صاعد")
-    
-    strength = int((score / max_score) * 100)
-    return True, reasons, strength
 
 
 # ================== 📊 STOCK ANALYSIS ==================
@@ -615,29 +773,27 @@ def analyze_stock(d_row):
         t_med = "صاعد" if p > sma50 else "هابط"
         t_long = "صاعد" if p > sma200 else "هابط"
         
-        # ================== 🏛️ الدعوم والمقاومات (محسوبة من بيانات اليوم) ==================
+        # الدعوم والمقاومات
         pp = (p + h + l) / 3
         r1 = (2 * pp) - l
         r2 = pp + (h - l)
         s1 = (2 * pp) - h
         s2 = pp - (h - l)
         
-        # ================== 🎯 نطاق الدخول ==================
+        # نطاق الدخول
         entry_min = p * 0.98
         entry_max = p * 1.01
         entry_price = (entry_min + entry_max) / 2
         
-        # ================== 🛑 وقف الخسارة الفني ==================
-        # الوقف الفني: تحت الدعم الأول بنسبة 1%
+        # وقف الخسارة الفني
         technical_stop = s1 * 0.99 if s1 > 0 else p * 0.96
-        # حد أقصى للمخاطرة 5%
         max_risk_stop = p * (1 - MAX_RISK_PCT / 100)
         stop_loss = max(technical_stop, max_risk_stop)
         
-        # ================== 🏁 الهدف ==================
+        # الهدف
         target = r1 if r1 > p else p * 1.05
         
-        # ================== ⚖️ حساب RR ==================
+        # حساب RR
         profit_ps = target - entry_price
         loss_ps = entry_price - stop_loss
         
@@ -650,14 +806,14 @@ def analyze_stock(d_row):
             risk_pct = (loss_ps / entry_price) * 100
             target_pct = (profit_ps / entry_price) * 100
         
-        # ================== 🎯 Smart Score ==================
+        # Smart Score
         temp_res = {
             't_short': t_short, 't_med': t_med, 't_long': t_long,
             'ratio': ratio, 'rsi': rsi, 'rr': rr, 'chg': chg
         }
         smart_score = smart_score_pro(temp_res)
         
-        # ================== ⚡ قوة التنفيذ ==================
+        # قوة التنفيذ
         execution_strength = 0
         if ratio > 2 and p > sma20 and p > sma50:
             execution_strength += 40
@@ -686,7 +842,7 @@ def analyze_stock(d_row):
             "stop_loss": stop_loss, "target": target,
             "rr": rr, "risk_pct": risk_pct, "target_pct": target_pct,
             "smart_score": smart_score, "execution_strength": execution_strength,
-            "daily_turnover": daily_turnover
+            "daily_turnover": daily_turnover, "above_sma20": p > sma20
         }
     except Exception as e:
         print(f"Analysis Error: {e}")
@@ -763,99 +919,131 @@ def share_on_whatsapp(res):
     return f"https://wa.me/?text={encoded_msg}"
 
 
-# ================== 🖥️ RENDER STOCK CARD ==================
+# ================== 🖥️ RENDER STOCK CARD WITH CONFIDENCE ==================
 def render_stock_card(res, is_top10=False):
     if res is None:
         st.warning("بيانات السهم غير متوفرة")
         return
     
+    market_status = get_egx30_status()
+    confidence = get_confidence_score(res, market_status)
+    
+    # ================== بطاقة السهم الرئيسية ==================
     st.markdown(f"""
     <div class="stock-card">
         <div class="stock-header">
-            <span class="stock-name">{res['name']} - {res['desc'][:40]}</span>
-            <span class="smart-badge">Smart: {res['smart_score']}</span>
+            <div>
+                <span class="stock-name">{res['name']}</span>
+                <span class="stock-desc">- {res['desc'][:50]}</span>
+            </div>
+            <span class="smart-badge">🎯 Smart: {res['smart_score']}</span>
         </div>
         
         <div class="flex-row">
-            <div>
-                <div style="font-size: 24px; font-weight: bold;">{res['p']:.2f}</div>
-                <div style="font-size: 12px; color: #8b949e;">السعر</div>
+            <div class="metric-box">
+                <div class="metric-value">{res['p']:.2f}</div>
+                <div class="metric-label">السعر</div>
             </div>
-            <div>
-                <div style="font-size: 24px; font-weight: bold; color: {'#3fb950' if res['chg'] > 0 else '#f85149' if res['chg'] < 0 else '#8b949e'};">{res['chg']:+.1f}%</div>
-                <div style="font-size: 12px; color: #8b949e;">التغير</div>
+            <div class="metric-box">
+                <div class="metric-value" style="color: {'#3fb950' if res['chg'] > 0 else '#f85149' if res['chg'] < 0 else '#8b949e'};">{res['chg']:+.1f}%</div>
+                <div class="metric-label">التغير</div>
             </div>
-            <div>
-                <div style="font-size: 24px; font-weight: bold;">{res['rsi']:.0f}</div>
-                <div style="font-size: 12px; color: #8b949e;">RSI</div>
+            <div class="metric-box">
+                <div class="metric-value">{res['rsi']:.0f}</div>
+                <div class="metric-label">RSI</div>
             </div>
-            <div>
-                <div style="font-size: 24px; font-weight: bold;">{res['ratio']:.1f}x</div>
-                <div style="font-size: 12px; color: #8b949e;">السيولة</div>
+            <div class="metric-box">
+                <div class="metric-value">{res['ratio']:.1f}x</div>
+                <div class="metric-label">السيولة</div>
             </div>
-            <div>
-                <div style="font-size: 24px; font-weight: bold;">{res['rr']}</div>
-                <div style="font-size: 12px; color: #8b949e;">RR</div>
+            <div class="metric-box">
+                <div class="metric-value">{res['rr']}</div>
+                <div class="metric-label">RR</div>
             </div>
         </div>
-    """, unsafe_allow_html=True)
-    
-    # شريط القوة
-    strength = res.get('smart_score', 50)
-    strength_class = "high" if strength >= 70 else "mid" if strength >= 50 else "low"
-    st.markdown(f"""
+        
         <div class="strength-bar">
-            <div class="strength-fill {strength_class}" style="width: {strength}%;"></div>
+            <div class="strength-fill {'strength-high' if res['smart_score'] >= 70 else 'strength-mid' if res['smart_score'] >= 50 else 'strength-low'}" style="width: {res['smart_score']}%;"></div>
         </div>
     """, unsafe_allow_html=True)
     
+    # ================== بطاقة ثقة القناص (نظام الـ 4 طبقات) ==================
     st.markdown(f"""
-        <div class="flex-between" style="margin-top: 8px;">
+    <div class="confidence-card" style="border-right-color: {confidence['color']};">
+        <div class="confidence-header">
+            <span class="confidence-title">{confidence['emoji']} نظام ثقة القناص (4 طبقات)</span>
+            <span class="confidence-score" style="color: {confidence['color']};">{confidence['score']}%</span>
+        </div>
+        <div class="confidence-advice" style="color: {confidence['color']};">{confidence['advice']}</div>
+        <div style="font-size: 12px; color: #8b949e; margin-top: 8px;">⚠️ مستوى الخطر: {confidence['risk_level']}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # عرض تفاصيل الطبقات في expander
+    with st.expander("📊 تفاصيل طبقات التحليل (4 طبقات متقدمة)"):
+        cols = st.columns(4)
+        layers = list(confidence['layers'].items())
+        layer_names = {
+            "technical": "📈 التحليل الفني",
+            "liquidity": "💧 السيولة",
+            "momentum": "⚡ الزخم",
+            "trend": "📊 الاتجاه"
+        }
+        for i, (layer, score) in enumerate(layers):
+            col = cols[i % 4]
+            color = "#3fb950" if score >= 70 else "#d29922" if score >= 55 else "#f85149"
+            col.markdown(f"""
+            <div style="text-align: center; background: #0d1117; border-radius: 10px; padding: 10px;">
+                <div style="font-size: 12px; color: #8b949e;">{layer_names.get(layer, layer)}</div>
+                <div style="font-size: 24px; font-weight: bold; color: {color};">{score}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # ================== ملخص التداول ==================
+    st.markdown(f"""
+        <div class="flex-between" style="margin: 15px 0 5px 0;">
             <div>
-                <span>🎯 هدف: {res['target']:.2f}</span>
-                <span style="margin-right: 16px;">🛑 وقف: {res['stop_loss']:.2f}</span>
+                <span style="background: rgba(63,185,80,0.2); padding: 4px 12px; border-radius: 20px; font-size: 13px;">🎯 هدف: {res['target']:.2f}</span>
+                <span style="background: rgba(248,81,73,0.2); padding: 4px 12px; border-radius: 20px; font-size: 13px; margin-right: 10px;">🛑 وقف: {res['stop_loss']:.2f}</span>
             </div>
             <div class="flex-row" style="gap: 8px;">
-                <span style="background: {'rgba(63,185,80,0.2)' if res['t_short'] == 'صاعد' else 'rgba(248,81,73,0.2)'}; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                <span style="background: {'rgba(63,185,80,0.2)' if res['t_short'] == 'صاعد' else 'rgba(248,81,73,0.2)'}; padding: 4px 12px; border-radius: 20px; font-size: 13px;">
                     📊 {res['t_short']}
                 </span>
-                <span style="background: {'rgba(63,185,80,0.2)' if res['t_med'] == 'صاعد' else 'rgba(248,81,73,0.2)'}; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                <span style="background: {'rgba(63,185,80,0.2)' if res['t_med'] == 'صاعد' else 'rgba(248,81,73,0.2)'}; padding: 4px 12px; border-radius: 20px; font-size: 13px;">
                     📈 {res['t_med']}
+                </span>
+                <span style="background: {'rgba(63,185,80,0.2)' if res['t_long'] == 'صاعد' else 'rgba(248,81,73,0.2)'}; padding: 4px 12px; border-radius: 20px; font-size: 13px;">
+                    📉 {res['t_long']}
                 </span>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
-    # ================== 📊 التحليل التفصيلي ==================
+    # ================== التحليل التفصيلي (Expander) ==================
     with st.expander(f"📊 التحليل الفني والتفاصيل - {res['name']}"):
         # الشارت
         st.markdown("### 📈 شارت السهم")
         render_tradingview_chart(res['name'], height=350)
         
-        # ================== 🏛️ مستويات الدعم والمقاومة ==================
+        # مستويات الدعم والمقاومة
         st.markdown("### 🏛️ مستويات الدعم والمقاومة (ثابتة طول الجلسة)")
-        st.markdown(f"""
-        | المستوى | السعر | الدلالة |
-        |---------|-------|---------|
-        | 🔴 **مقاومة ثانية R2** | {res['r2']:.2f} | مقاومة قوية |
-        | 🔴 **مقاومة أولى R1** | {res['r1']:.2f} | مقاومة أولى - الهدف الرئيسي |
-        | 🟡 **نقطة الارتكاز PP** | {res['pp']:.2f} | المحور - فوقها صعود، تحتها هبوط |
-        | 🟢 **دعم أول S1** | {res['s1']:.2f} | دعم أول - وقف الخسارة تحته |
-        | 🟢 **دعم ثاني S2** | {res['s2']:.2f} | دعم قوي |
-        """)
-        
-        # ================== 🎯 نطاق الدخول ووقف الخسارة ==================
-        st.markdown("### 🎯 خطة التداول")
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
-            st.metric("🎯 نطاق الدخول", res['entry_range'])
+            st.markdown(f"""
+            🔴 **مقاومة ثانية R2:** {res['r2']:.2f}\n
+            🔴 **مقاومة أولى R1:** {res['r1']:.2f} (الهدف الرئيسي)\n
+            🟡 **نقطة الارتكاز PP:** {res['pp']:.2f}
+            """)
         with col2:
-            st.metric("🛑 وقف الخسارة", f"{res['stop_loss']:.2f}", delta=f"-{res['risk_pct']:.1f}%", delta_color="inverse")
-        with col3:
-            st.metric("🏁 الهدف", f"{res['target']:.2f}", delta=f"+{res['target_pct']:.1f}%")
+            st.markdown(f"""
+            🟢 **دعم أول S1:** {res['s1']:.2f} (وقف الخسارة تحته)\n
+            🟢 **دعم ثاني S2:** {res['s2']:.2f}\n
+            📏 **نطاق الدخول:** {res['entry_range']}
+            """)
         
-        # ================== 💰 خطة الدخول 3 مستويات ==================
+        # ================== خطة الدخول 3 مستويات ==================
         st.markdown("### 🏹 خطة الدخول المتكاملة (3 مستويات)")
         
         entry_price = res['entry_price']
@@ -902,12 +1090,11 @@ def render_stock_card(res, is_top10=False):
                 avg_price = total_cost / total_shares
                 st.info(f"📊 **متوسط السعر بعد التنفيذ الكامل:** {avg_price:.2f} ج ({total_shares:,} سهم)")
         
-        # ================== 📈 المؤشرات المتقدمة ==================
+        # ================== المؤشرات المتقدمة ==================
         st.markdown("### 📈 المؤشرات المتقدمة")
         
         col1, col2 = st.columns(2)
         with col1:
-            # Stochastic RSI
             stoch = calculate_stochastic_rsi(res['rsi'])
             st.markdown(f"""
             <div style="background: #0d1117; border-radius: 10px; padding: 12px;">
@@ -918,7 +1105,6 @@ def render_stock_card(res, is_top10=False):
             """, unsafe_allow_html=True)
         
         with col2:
-            # نسبة النجاح المتوقعة
             success_rate, success_level = expected_success_rate(res)
             st.markdown(f"""
             <div style="background: #0d1117; border-radius: 10px; padding: 12px;">
@@ -927,21 +1113,10 @@ def render_stock_card(res, is_top10=False):
             </div>
             """, unsafe_allow_html=True)
         
-        # مؤشرات إضافية
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            vol_label, vol_desc = get_volume_rating(res['ratio'])
-            st.metric("💧 السيولة", f"{res['ratio']:.1f}x", vol_label)
-        with col2:
-            rr_label, rr_desc = get_rr_rating(res['rr'])
-            st.metric("⚖️ RR Ratio", f"{res['rr']}", rr_label)
-        with col3:
-            st.metric("🎯 Smart Score", f"{res['smart_score']}/100")
-        
-        # واتساب
+        # ================== واتساب ==================
         whatsapp_url = share_on_whatsapp(res)
         st.markdown(f"""
-        <a href="{whatsapp_url}" target="_blank" style="display: block; background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 10px; text-decoration: none; margin-top: 15px; font-weight: bold;">
+        <a href="{whatsapp_url}" target="_blank" style="display: block; background-color: #25D366; color: white; text-align: center; padding: 12px; border-radius: 12px; text-decoration: none; margin-top: 15px; font-weight: bold; font-size: 16px;">
             📱 مشاركة التحليل عبر واتساب
         </a>
         """, unsafe_allow_html=True)
@@ -951,7 +1126,6 @@ def render_stock_card(res, is_top10=False):
 def filter_by_sector(results, sector):
     if sector == "🌍 الكل" or not results:
         return results
-    # تبسيط فلتر القطاع - نرجع الكل حالياً
     return results
 
 def get_top_10(results):
@@ -978,31 +1152,25 @@ def get_rapid_breakouts_list(results):
                 breakouts.append({"stock": r, "analysis": analysis, "score": analysis['strength']})
     return sorted(breakouts, key=lambda x: x['score'], reverse=True)[:10]
 
-def get_real_breakouts_list(results):
-    breakouts = []
-    for r in results:
-        if r:
-            is_breakout, _, score = is_real_breakout(r)
-            if is_breakout:
-                breakouts.append({"stock": r, "score": score})
-    return sorted(breakouts, key=lambda x: x['score'], reverse=True)[:10]
 
-
-# ================== 🧭 NAVIGATION ==================
+# ================== 🧭 SIDEBAR NAVIGATION ==================
 def render_sidebar():
     with st.sidebar:
-        st.markdown("### 🎯 EGX Sniper Pro")
-        st.markdown("---")
+        st.markdown("""
+        <div class="sidebar-title">
+            <h2>🎯 EGX Sniper Pro</h2>
+            <p>نظام تحليل أسهم البورصة المصرية</p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        # أزرار التنقل بشكل واضح
-        st.markdown("#### 🧭 القائمة")
+        st.markdown("#### 🧭 أقسام التطبيق")
         
+        # أزرار التنقل - واضحة ومكتوب عليها النص
         nav_buttons = {
             "🏠 الرئيسية": "home",
             "🏆 أفضل 10 فرص": "top10",
             "🎯 صائد التصحيحات": "correction",
             "⚡ قناص الاختراق": "rapid",
-            "🚀 انفجار سعري": "breakout",
             "🔍 تحليل سهم": "analyze",
             "📊 تقييم الأداء": "performance"
         }
@@ -1014,12 +1182,10 @@ def render_sidebar():
         
         st.markdown("---")
         
-        # الإعدادات
         st.markdown("#### ⚙️ الإعدادات")
         
         # نمط التداول
         mode_options = ["🛡️ محافظ", "⚖️ متوازن", "🚀 هجومي"]
-        current_mode = mode_options[1]  # افتراضي متوازن
         selected_mode = st.selectbox("نمط التداول", mode_options, index=1)
         if selected_mode != st.session_state.mode:
             st.session_state.mode = selected_mode
@@ -1041,6 +1207,15 @@ def render_sidebar():
         # معلومات
         if st.session_state.last_update:
             st.caption(f"🕐 آخر تحديث: {st.session_state.last_update}")
+        
+        # إحصائيات سريعة
+        if st.session_state.all_results:
+            st.markdown("---")
+            st.markdown("#### 📊 إحصائيات سريعة")
+            total = len(st.session_state.all_results)
+            avg_smart = sum(r.get('smart_score', 0) for r in st.session_state.all_results if r) / total if total > 0 else 0
+            st.metric("📊 إجمالي الأسهم", total)
+            st.metric("🎯 متوسط Smart", f"{avg_smart:.0f}")
 
 
 # ================== 📄 PAGES ==================
@@ -1096,7 +1271,7 @@ def show_home():
 
 def show_top10():
     st.markdown("## 🏆 أفضل 10 فرص استثمارية")
-    st.caption("أقوى الفرص بناءً على Smart Score ونسبة المخاطرة/العائد")
+    st.caption("أقوى الفرص بناءً على Smart Score ونظام الثقة (4 طبقات)")
     
     if not st.session_state.all_results:
         st.warning("⚠️ لا توجد بيانات")
@@ -1115,7 +1290,7 @@ def show_top10():
 
 def show_correction():
     st.markdown("## 🎯 صائد التصحيحات")
-    st.caption("الأسهم القوية التي في حالة تصحيح - فرصة للدخول قبل الانطلاق")
+    st.caption("الأسهم القوية التي في حالة تصحيح - RSI بين 28-55")
     
     if not st.session_state.all_results:
         st.warning("⚠️ لا توجد بيانات")
@@ -1133,7 +1308,7 @@ def show_correction():
 
 def show_rapid():
     st.markdown("## ⚡ قناص الاختراق")
-    st.caption("الأسهم على وشك الاختراق - فرص سريعة خلال جلسة أو جلستين")
+    st.caption("الأسهم على وشك الاختراق - RSI بين 45-75 وسيولة عالية")
     
     if not st.session_state.all_results:
         st.warning("⚠️ لا توجد بيانات")
@@ -1149,26 +1324,9 @@ def show_rapid():
     else:
         st.info("ℹ️ لا توجد فرص اختراق حالياً")
 
-def show_breakout():
-    st.markdown("## 🚀 الانفجار السعري")
-    st.caption("اختراق القمم مع سيولة استثنائية - فرص قوية جداً")
-    
-    if not st.session_state.all_results:
-        st.warning("⚠️ لا توجد بيانات")
-        return
-    
-    breakouts = get_real_breakouts_list(st.session_state.all_results)
-    if breakouts:
-        for item in breakouts:
-            render_stock_card(item['stock'])
-            if st.button(f"💾 تسجيل الصفقة", key=f"rec_real_{item['stock']['name']}"):
-                record_trade(item['stock'], "انفجار سعري")
-                st.success("✅ تم تسجيل الصفقة!")
-    else:
-        st.info("ℹ️ لا توجد انفجارات سعرية حالياً")
-
 def show_analyze():
     st.markdown("## 🔍 تحليل سهم")
+    st.caption("أدخل رمز السهم للحصول على تحليل مفصل مع نظام الثقة")
     
     sym = st.text_input("🔎 أدخل رمز السهم", placeholder="مثال: COMI, TMGH, ETEL", key="analyze_input").upper().strip()
     
@@ -1183,7 +1341,7 @@ def show_analyze():
                         record_trade(stock, "تحليل فردي")
                         st.success("✅ تم تسجيل الصفقة!")
                 else:
-                    st.error("❌ فشل تحليل السهم")
+                    st.error("❌ فشل تحليل السهم - قد يكون ذو سيولة ضعيفة")
             else:
                 st.error(f"❌ السهم '{sym}' غير موجود")
                 if st.session_state.all_results:
@@ -1211,9 +1369,12 @@ def show_performance():
         for trade in trades[-20:][::-1]:
             status = "🟢 هدف" if trade.get('status') == 'hit_target' else "🔴 وقف" if trade.get('status') == 'stopped_out' else "🟡 مفتوح"
             st.markdown(f"""
-            <div style="background: #0d1117; border-radius: 10px; padding: 10px; margin-bottom: 8px;">
-                <b>{trade.get('name', 'N/A')}</b> ({trade.get('trade_type', 'N/A')}) - {status}<br>
-                📅 {trade.get('date_recorded', 'N/A')} | 🎯 Smart: {trade.get('smart_score', 0)} | ⚖️ RR: {trade.get('rr', 0)}
+            <div style="background: #0d1117; border-radius: 10px; padding: 12px; margin-bottom: 8px;">
+                <div class="flex-between">
+                    <div><b>{trade.get('name', 'N/A')}</b> ({trade.get('trade_type', 'N/A')}) - {status}</div>
+                    <div>🎯 Smart: {trade.get('smart_score', 0)} | ⚖️ RR: {trade.get('rr', 0)}</div>
+                </div>
+                <div style="font-size: 12px; color: #8b949e;">📅 {trade.get('date_recorded', 'N/A')}</div>
             </div>
             """, unsafe_allow_html=True)
     else:
@@ -1250,8 +1411,6 @@ def main():
         show_correction()
     elif st.session_state.page == 'rapid':
         show_rapid()
-    elif st.session_state.page == 'breakout':
-        show_breakout()
     elif st.session_state.page == 'analyze':
         show_analyze()
     elif st.session_state.page == 'performance':
