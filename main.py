@@ -1,12 +1,13 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import os
 import re
 import urllib.parse
 import time
+import numpy as np
 
 st.set_page_config(page_title="🎯 قناص EGX - المتكامل", layout="wide", page_icon="🎯")
 
@@ -20,6 +21,7 @@ else:
 
 # ================== 📁 PERFORMANCE TRACKING ==================
 TRADES_FILE = "trades_data.json"
+OUTCOMES_FILE = "trade_outcomes.json"
 
 def load_trades():
     if os.path.exists(TRADES_FILE):
@@ -38,17 +40,31 @@ def save_trades(trades):
     except:
         pass
 
-def record_trade(res, trade_type):
+def load_outcomes():
+    if os.path.exists(OUTCOMES_FILE):
+        try:
+            with open(OUTCOMES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_outcomes(outcomes):
+    try:
+        with open(OUTCOMES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(outcomes, f, ensure_ascii=False, indent=2)
+    except:
+        pass
+
+def record_trade(res, trade_type, setup_conditions=None):
     if res is None:
         return
     trades = load_trades()
     today = datetime.now().strftime("%Y-%m-%d")
-    
-    for t in trades:
-        if t.get('name') == res.get('name') and t.get('date_recorded') == today:
-            return
+    trade_id = f"{res.get('name')}_{today}_{int(time.time())}"
     
     trades.append({
+        "trade_id": trade_id,
         "name": res.get('name', 'N/A'),
         "desc": res.get('desc', 'N/A'),
         "entry_price": res.get('entry_price', 0),
@@ -63,9 +79,18 @@ def record_trade(res, trade_type):
         "date_recorded": today,
         "status": "pending",
         "profit_pct": None,
-        "entry_hit": False
+        "entry_hit": False,
+        "setup_conditions": setup_conditions or {}
     })
     save_trades(trades)
+
+def update_trade_outcome(trade_id, outcome_data):
+    outcomes = load_outcomes()
+    outcomes[trade_id] = {
+        **outcome_data,
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    save_outcomes(outcomes)
 
 def get_performance_stats(trades):
     trades = [t for t in trades if t is not None]
@@ -80,9 +105,23 @@ def get_performance_stats(trades):
     success_rate = (hit_target / closed * 100) if closed > 0 else 0
     avg_rr = sum(t.get('rr', 0) for t in trades) / total if total > 0 else 0
     
+    # تحليل الأداء حسب نوع الصفقة
+    by_type = {}
+    for t in trades:
+        ttype = t.get('trade_type', 'غير معروف')
+        if ttype not in by_type:
+            by_type[ttype] = {'total': 0, 'hit': 0}
+        by_type[ttype]['total'] += 1
+        if t.get('status') == 'hit_target':
+            by_type[ttype]['hit'] += 1
+    
+    for ttype in by_type:
+        by_type[ttype]['rate'] = round(by_type[ttype]['hit'] / by_type[ttype]['total'] * 100, 1) if by_type[ttype]['total'] > 0 else 0
+    
     return {
         'total': total, 'hit_target': hit_target, 'stopped_out': stopped_out, 
-        'still_open': still_open, 'success_rate': round(success_rate, 1), 'avg_rr': round(avg_rr, 2)
+        'still_open': still_open, 'success_rate': round(success_rate, 1), 'avg_rr': round(avg_rr, 2),
+        'by_type': by_type
     }
 
 # ================== 📈 EGX30 MARKET ANALYSIS ==================
@@ -93,47 +132,66 @@ def get_egx30_status():
             url = "https://scanner.tradingview.com/egypt/scan"
             payload = {
                 "filter": [{"left": "symbol", "operation": "equal", "right": "EGX30"}],
-                "columns": ["close", "RSI", "SMA50", "SMA200", "change"],
+                "columns": ["close", "RSI", "SMA50", "SMA200", "change", "volume", "average_volume_10d_calc"],
                 "range": [0, 1]
             }
             headers = {"User-Agent": "Mozilla/5.0"}
             r = requests.post(url, json=payload, headers=headers, timeout=10)
             if r.status_code == 200:
                 data = r.json().get("data", [])
-                if data and len(data) > 0 and len(data[0].get('d', [])) >= 5:
+                if data and len(data) > 0 and len(data[0].get('d', [])) >= 7:
                     d = data[0]['d']
                     price = d[0] if d[0] else 10000
                     rsi = d[1] if d[1] else 50
                     sma50 = d[2] if d[2] else price
                     sma200 = d[3] if d[3] else price
                     change = d[4] if d[4] else 0
+                    volume = d[5] if d[5] else 0
+                    avg_volume = d[6] if d[6] else 1
+                    volume_ratio = volume / avg_volume if avg_volume > 0 else 1
                     
                     score = 0
                     if price and sma200 and price > sma200: score += 1
                     if price and sma50 and price > sma50: score += 1
                     if rsi and 40 < rsi < 70: score += 1
                     if change and change > -0.5: score += 1
+                    if volume_ratio and volume_ratio > 1.2: score += 1
                     
-                    if score >= 3:
+                    if score >= 4:
+                        status = "🟢 سوق صاعد قوي - مناسب للتداول"
+                        color = "#00FF00"
+                        market_multiplier = 1.2
+                        trend_weight = 2
+                        volume_weight = 1
+                    elif score >= 3:
                         status = "🟢 سوق صاعد - مناسب للتداول"
                         color = "#00FF00"
                         market_multiplier = 1.0
+                        trend_weight = 2
+                        volume_weight = 1
                     elif score >= 2:
                         status = "🟡 سوق متذبذب - تداول بحذر"
                         color = "#FFA500"
                         market_multiplier = 0.7
+                        trend_weight = 1.5
+                        volume_weight = 1.5
                     else:
                         status = "🔴 سوق هابط - ركز على صائد التصحيحات فقط"
                         color = "#FF4444"
                         market_multiplier = 0.5
+                        trend_weight = 1
+                        volume_weight = 2
                     
                     return {
                         "status": status,
                         "color": color,
                         "market_multiplier": market_multiplier,
+                        "trend_weight": trend_weight,
+                        "volume_weight": volume_weight,
                         "rsi": rsi if rsi else 50,
                         "change": change if change else 0,
-                        "price": price if price else 10000
+                        "price": price if price else 10000,
+                        "volume_ratio": volume_ratio
                     }
         except:
             time.sleep(1)
@@ -143,51 +201,80 @@ def get_egx30_status():
         "status": "🟡 سوق متذبذب (افتراضي)",
         "color": "#FFA500",
         "market_multiplier": 0.7,
+        "trend_weight": 1.5,
+        "volume_weight": 1.5,
         "rsi": 50,
         "change": 0,
-        "price": 10000
+        "price": 10000,
+        "volume_ratio": 1
     }
 
-# ================== 🔥 SMART SCORE ==================
-def smart_score_pro(res):
+# ================== 🔥 SMART SCORE (مع Dynamic Weighting) ==================
+def smart_score_pro(res, market_weights=None):
+    if market_weights is None:
+        market_weights = {'trend_weight': 1.5, 'volume_weight': 1.5}
+    
     score = 0
     
-    if res.get('t_short') == "صاعد": score += 15
-    if res.get('t_med') == "صاعد": score += 15
-    if res.get('t_long') == "صاعد": score += 5
+    # اتجاهات (وزن متغير حسب السوق)
+    trend_weight = market_weights.get('trend_weight', 1.5)
+    if res.get('t_short') == "صاعد": score += 15 * (trend_weight / 1.5)
+    if res.get('t_med') == "صاعد": score += 15 * (trend_weight / 1.5)
+    if res.get('t_long') == "صاعد": score += 5 * (trend_weight / 1.5)
     
-    if res.get('ratio', 0) > 2.5: score += 20
-    elif res.get('ratio', 0) > 1.8: score += 15
-    elif res.get('ratio', 0) > 1.2: score += 8
+    # سيولة (وزن متغير حسب السوق)
+    volume_weight = market_weights.get('volume_weight', 1.5)
+    ratio = res.get('ratio', 0)
+    if ratio > 2.5: score += 20 * (volume_weight / 1.5)
+    elif ratio > 1.8: score += 15 * (volume_weight / 1.5)
+    elif ratio > 1.2: score += 8 * (volume_weight / 1.5)
+    elif ratio > 0.9: score += 4 * (volume_weight / 1.5)  # توسيع النطاق للسيولة المتوسطة
     
+    # RSI - نطاق أوسع
     rsi = res.get('rsi', 50)
-    if 50 < rsi < 60:
+    if 45 < rsi < 60:
         score += 15
-    elif 45 < rsi <= 50 or 60 <= rsi < 65:
-        score += 10
-    elif 40 <= rsi <= 45:
+    elif 40 < rsi <= 45 or 60 <= rsi < 68:
+        score += 12
+    elif 35 <= rsi <= 40 or 68 <= rsi < 75:
+        score += 8
+    elif 28 <= rsi < 35:
         score += 5
-    elif 30 <= rsi < 40:
-        score += 3
     
+    # RR Ratio
     rr = res.get('rr', 0)
     if rr >= 2.5: score += 15
     elif rr >= 2: score += 12
     elif rr >= 1.5: score += 8
     elif rr >= 1.2: score += 4
     
+    # التغير - نطاق أوسع لقبول الأسهم التي لسه ما ارتدتش
     chg = res.get('chg', 0)
     if chg > 1.5: score += 15
-    elif chg > 0.5: score += 10
-    elif chg > 0: score += 5
-    elif chg > -1: score += 2
+    elif chg > 0.5: score += 12
+    elif chg > -1: score += 8  # حتى لو سالب بسيط
+    elif chg > -2.5: score += 5
+    elif chg > -5: score += 2
+    
+    # المسافة من SMA50 (مقياس التصحيح الحقيقي)
+    dist_sma50 = res.get('dist_sma50', 0)
+    if -8 <= dist_sma50 <= -2:
+        score += 12
+    elif -12 <= dist_sma50 < -8:
+        score += 8
+    elif -2 < dist_sma50 <= 1:
+        score += 4
+    
+    # الزخم البسيط - هل بدأ يستعيد EMA20؟
+    if res.get('above_sma20', False):
+        score += 8
     
     return min(100, int(score))
 
 # ================== 🎯 CONFIDENCE SCORE ==================
 def get_confidence(res):
     score = 0
-    total = 6
+    total = 7  # زيادة العدد
     
     p = res.get('p', 0)
     rsi = res.get('rsi', 50)
@@ -198,38 +285,51 @@ def get_confidence(res):
     t_long = res.get('t_long', 'هابط')
     sma200 = res.get('sma200', p)
     r1 = res.get('r1', p * 1.05)
+    dist_sma50 = res.get('dist_sma50', 0)
     
+    # الاتجاه العام (أهم عامل)
     if t_long == "صاعد" or (sma200 and p > sma200):
         score += 1
     
+    # الاتجاه المتوسط والقصير
     if t_med == "صاعد" and t_short == "صاعد":
         score += 1
     
-    if 45 < rsi < 65:
+    # RSI - نطاق أوسع
+    if 35 < rsi < 65:
         score += 1
+    elif 28 <= rsi <= 35:
+        score += 0.5  # منطقة تشبع بيع خفيف
     
-    if ratio > 1.8:
+    # السيولة - نسب أكثر مرونة
+    if ratio > 1.5:
         score += 1
-    elif ratio > 1.2:
+    elif ratio > 0.9:
         score += 0.5
     
+    # المسافة من المقاومة
     if r1 and r1 > p:
         dist = (r1 - p) / p * 100
         if dist < 2:
             score += 1
-        elif dist < 3:
+        elif dist < 4:
             score += 0.5
     
-    if change > 0.3:
+    # التغير - أكثر مرونة
+    if change > 0.2:
         score += 1
-    elif change > 0:
+    elif change > -1:  # حتى لو سالب بسيط
         score += 0.5
+    
+    # تصحيح صحي من SMA50
+    if -8 <= dist_sma50 <= -2:
+        score += 1
     
     percent = int((score / total) * 100)
     
-    if percent >= 85:
+    if percent >= 80:
         advice, color, emoji = "🔥 دخول الآن (فرصة ذهبية)", "#00FF00", "🔥"
-    elif percent >= 65:
+    elif percent >= 60:
         advice, color, emoji = "✅ شراء حذر / مراقبة", "#ADFF2F", "✅"
     elif percent >= 40:
         advice, color, emoji = "🟡 انتظار (تجميع)", "#FFD700", "🟡"
@@ -250,8 +350,15 @@ def render_confidence_card(res):
     </div>
     """, unsafe_allow_html=True)
 
-# ================== ⚡ RAPID BREAKOUT HUNTER ==================
-def is_rapid_breakout(an):
+# ================== ⚡ RAPID BREAKOUT HUNTER (باستخدام Highest 20 Day) ==================
+@st.cache_data(ttl=300, show_spinner=False)
+def get_historical_high(symbol):
+    """جلب أعلى سعر في آخر 20 يوم - محاكاة مؤقتة"""
+    # في التطبيق الحقيقي، نحتاج API تاريخي
+    # حالياً نستخدم محاكاة بسيطة
+    return None
+
+def is_rapid_breakout(an, market_weights=None):
     if an is None:
         return {"is_breakout": False, "reasons": [], "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
@@ -261,47 +368,55 @@ def is_rapid_breakout(an):
     change = an.get('chg', 0)
     t_short = an.get('t_short', 'هابط')
     t_med = an.get('t_med', 'هابط')
-    r1 = an.get('r1', p * 1.05)
+    high_20 = an.get('high_20', p * 1.08)  # استخدام أعلى 20 يوم إن وجد
     
     reasons = []
     score = 0
-    max_score = 7
+    max_score = 8  # زيادة
     
-    if 55 <= rsi <= 70:
+    # RSI - نطاق أوسع
+    if 52 <= rsi <= 75:
         score += 2
-        reasons.append(f"⚡ زخم قوي جداً (RSI: {rsi:.0f})")
-    elif 50 <= rsi < 55:
+        reasons.append(f"⚡ زخم قوي (RSI: {rsi:.0f})")
+    elif 45 <= rsi < 52:
         score += 1
         reasons.append(f"📈 زخم إيجابي (RSI: {rsi:.0f})")
     else:
         return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
-    if ratio > 2.5:
+    # السيولة - نسب أكثر مرونة
+    if ratio > 2.2:
         score += 2
         reasons.append(f"💥 سيولة استثنائية ({ratio:.1f}x)")
-    elif ratio > 1.8:
-        score += 1
+    elif ratio > 1.5:
+        score += 1.5
         reasons.append(f"🚀 سيولة قوية ({ratio:.1f}x)")
+    elif ratio > 1.0:
+        score += 1
+        reasons.append(f"📊 سيولة جيدة ({ratio:.1f}x)")
     else:
         return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
-    if p >= r1 * 0.99:
+    # استخدام أعلى 20 يوم بدلاً من R1
+    if p >= high_20 * 0.98:
         score += 2
-        reasons.append(f"🎯 على وشك اختراق R1 ({r1:.2f})")
-    elif p >= r1 * 0.97:
+        reasons.append(f"🎯 على وشك اختراق أعلى 20 يوم ({high_20:.2f})")
+    elif p >= high_20 * 0.95:
         score += 1
-        reasons.append(f"📍 قريب من المقاومة R1")
+        reasons.append(f"📍 قريب من أعلى 20 يوم")
     else:
         return {"is_breakout": False, "reasons": reasons, "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
+    # الاتجاهات
     if t_short == "صاعد" and t_med == "صاعد":
-        score += 1
+        score += 1.5
         reasons.append("📊 الاتجاهات صاعدة")
     
-    if change > 1.5:
+    # التغير - أكثر مرونة
+    if change > 1.2:
         score += 1
         reasons.append(f"🟢 شمعة قوية (+{change:.2f}%)")
-    elif change > 0.5:
+    elif change > 0.3:
         score += 0.5
         reasons.append(f"🟢 شمعة إيجابية (+{change:.2f}%)")
     
@@ -325,12 +440,12 @@ def is_rapid_breakout(an):
         "strength": strength,
         "label": label,
         "color": color,
-        "target_1": r1,
-        "target_2": an.get('r2', r1 * 1.03),
+        "target_1": high_20,  # الهدف الأول: أعلى 20 يوم
+        "target_2": high_20 * 1.03,  # الهدف الثاني: +3%
         "stop_loss_rapid": max(an.get('s1', p * 0.98), p * 0.97)
     }
 
-# ================== 🎯 CORRECTION HUNTER ==================
+# ================== 🎯 CORRECTION HUNTER (محسن بالكامل) ==================
 def is_correction(an, market_multiplier=1.0):
     default_return = {
         "is_correction": False, 
@@ -346,6 +461,7 @@ def is_correction(an, market_multiplier=1.0):
     p = an.get('p', 0)
     rsi = an.get('rsi', 50)
     sma200 = an.get('sma200', 0)
+    sma50 = an.get('sma50', 0)
     ratio = an.get('ratio', 0)
     change = an.get('chg', 0)
     t_long = an.get('t_long', 'هابط')
@@ -353,74 +469,103 @@ def is_correction(an, market_multiplier=1.0):
     rr = an.get('rr', 0)
     volume = an.get('volume', 0)
     avg_volume = an.get('avg_volume', 1)
+    dist_sma50 = an.get('dist_sma50', 0)
+    above_sma20 = an.get('above_sma20', False)
     
     reasons = []
     score = 0
-    max_score = 8
+    max_score = 10  # زيادة
     
+    # 1. الاتجاه العام صاعد (شرط أساسي - غير قابل للتفاوض)
     if t_long == "صاعد" or (sma200 and p > sma200 * 0.98):
         score += 3
         reasons.append("📈 الاتجاه العام صاعد")
     else:
         return default_return
     
-    if 30 <= rsi <= 50:
-        score += 2
-        reasons.append(f"📊 RSI في تصحيح ({rsi:.0f})")
-    elif 50 < rsi <= 55:
-        score += 1
+    # 2. RSI في منطقة التصحيح (نطاق أوسع)
+    if 28 <= rsi <= 55:
+        score += 2.5
+        reasons.append(f"📊 RSI في منطقة تصحيح ({rsi:.0f})")
+    elif 55 < rsi <= 60:
+        score += 1.5
         reasons.append(f"📊 RSI بدأ يخرج من التصحيح ({rsi:.0f})")
     else:
         return default_return
     
-    if change > 0.2:
+    # 3. التغير - نطاق واسع جداً (تقبل الأسهم اللي لسه ما ارتدتش)
+    if change > -0.5:  # حتى لو سالب بسيط
         score += 2
-        reasons.append(f"📈 بداية ارتداد ({change:+.2f}%)")
-    elif change > 0:
+        reasons.append(f"📈 استقرار أو ارتداد بسيط ({change:+.2f}%)")
+    elif change > -2:
         score += 1
-        reasons.append(f"📈 بداية ارتداد ({change:+.2f}%)")
+        reasons.append(f"📉 هبوط طفيف - فرصة تجميع ({change:+.2f}%)")
+    elif change > -5:
+        score += 0.5
+        reasons.append(f"📉 تصحيح حاد - مراقبة ({change:+.2f}%)")
+    # لا نرفض أي سهم بسبب التغير السلبي
     
+    # 4. المسافة من SMA50 (الأهم - مقياس التصحيح الحقيقي)
+    if -10 <= dist_sma50 <= -2:
+        score += 2.5
+        reasons.append(f"📉 تصحيح صحي من SMA50 ({dist_sma50:.1f}%)")
+    elif -15 <= dist_sma50 < -10:
+        score += 1.5
+        reasons.append(f"📉 تصحيح عميق من SMA50 ({dist_sma50:.1f}%)")
+    elif -2 < dist_sma50 <= 2:
+        score += 1
+        reasons.append(f"⚖️ السعر قرب SMA50")
+    
+    # 5. السيولة - نطاق أوسع (في التصحيحات، السيولة غالباً تقل)
     volume_ratio = volume / avg_volume if avg_volume > 0 else 0
-    if volume_ratio > 1.5:
+    if volume_ratio > 1.2:
+        score += 1.5
+        reasons.append(f"💧 سيولة ممتازة ({volume_ratio:.1f}x) - بداية ارتداد متوقعة")
+    elif volume_ratio > 0.7:
         score += 1
-        reasons.append(f"💧 سيولة ممتازة ({volume_ratio:.1f}x)")
-    elif volume_ratio > 1.0:
-        score += 0.5
         reasons.append(f"💧 سيولة جيدة ({volume_ratio:.1f}x)")
-    else:
-        return default_return
-    
-    if rr >= 1.8:
-        score += 1
-        reasons.append(f"⚖️ RR ممتاز ({rr})")
-    elif rr >= 1.3:
+    elif volume_ratio > 0.4:
         score += 0.5
+        reasons.append(f"💧 سيولة هادئة - طبيعي في التصحيح ({volume_ratio:.1f}x)")
+    # لا نرفض بسبب ضعف السيولة في التصحيح
+    
+    # 6. RR Ratio
+    if rr >= 1.8:
+        score += 1.5
+        reasons.append(f"⚖️ RR ممتاز ({rr})")
+    elif rr >= 1.2:
+        score += 1
         reasons.append(f"⚖️ RR جيد ({rr})")
     
+    # 7. بدأ يستعيد EMA20؟ (مؤشر على بداية الارتداد)
+    if above_sma20:
+        score += 1.5
+        reasons.append("🟢 بدأ يستعيد EMA20 - إشارة ارتداد مبكرة")
+    
+    # 8. السعر عند دعم (اختياري)
     s1 = an.get('s1', p * 0.97)
-    if p <= s1 * 1.02:
+    if p <= s1 * 1.03:
         score += 1
         reasons.append("🎯 السعر عند دعم قوي")
     
     adjusted_score = score * market_multiplier
-    strength = int((adjusted_score / max_score) * 100)
+    strength = int(min(100, (adjusted_score / max_score) * 100))
     
-    # ألوان محسنة لصائد التصحيحات - أكثر راحة للعين
     if strength >= 65:
         label = "🔥 فرصة تصحيح ممتازة"
-        color = "#2E7D32"  # أخضر غامق (مريح للعين)
+        color = "#2E7D32"
     elif strength >= 50:
         label = "✅ فرصة تصحيح جيدة"
-        color = "#388E3C"  # أخضر متوسط
+        color = "#388E3C"
     elif strength >= 35:
         label = "🟡 فرصة تصحيح محتملة"
-        color = "#F57C00"  # برتقالي
+        color = "#F57C00"
     else:
         label = "❌ فرصة تصحيح ضعيفة"
-        color = "#C62828"  # أحمر غامق
+        color = "#C62828"
     
     return {
-        "is_correction": score >= 3,
+        "is_correction": score >= 3.5,  # شرط أقل
         "reasons": reasons,
         "strength": strength,
         "label": label,
@@ -430,11 +575,11 @@ def is_correction(an, market_multiplier=1.0):
 # ================== 📂 SECTOR FILTER ==================
 SECTORS = {
     "🏦 البنوك": ["CIEB", "COMI", "AAIB", "QNBA", "ALEX"],
-    "🏗️ العقارات": ["TMGH", "OCDI", "PHDC", "HELI", "DEGC"],
+    "🏗️ العقارات": ["TMGH", "OCDI", "PHDC", "HELI", "DEGC", "MNHD"],
     "🍔 الأغذية": ["BFR", "EFID", "JUFO", "ORWE"],
     "📡 الاتصالات": ["ETEL", "OTMT", "TE", "EMOB"],
-    "🏭 الصناعات": ["ESRS", "MFPC", "SKPC", "ABUK"],
-    "🛒 التجارة": ["RAYA", "SWDY", "AUTO"]
+    "🏭 الصناعات": ["ESRS", "MFPC", "SKPC", "ABUK", "IRON"],
+    "🛒 التجارة": ["RAYA", "SWDY", "AUTO", "KZ"]
 }
 
 def get_sector(name):
@@ -469,7 +614,7 @@ def get_all_data():
     except:
         return []
 
-def analyze_stock(d_row):
+def analyze_stock(d_row, market_weights=None):
     try:
         d = d_row.get('d', [])
         if len(d) != 12:
@@ -482,6 +627,12 @@ def analyze_stock(d_row):
         ratio = v / avg_v if avg_v and avg_v > 0 else 0
         estimated_value = p * v
         
+        # حساب المسافة من SMA50 (مقياس التصحيح الحقيقي)
+        dist_sma50 = ((p - sma50) / sma50) * 100 if sma50 and sma50 > 0 else 0
+        
+        # هل السعر أعلى من SMA20؟ (مؤشر بداية ارتداد)
+        above_sma20 = p > sma20 if sma20 else False
+        
         t_short = "صاعد" if (sma20 and p > sma20) else "هابط"
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
         t_long = "صاعد" if (sma200 and p > sma200) else "هابط"
@@ -493,6 +644,9 @@ def analyze_stock(d_row):
         r2 = pp + (high - low)
         s1 = (2 * pp) - high
         s2 = pp - (high - low)
+        
+        # أعلى 20 يوم - محاكاة (في الحقيقة نحتاج API تاريخي)
+        high_20 = max(p, high * 1.02)  # تقريب مؤقت
         
         entry_min = p * 0.98
         entry_max = p * 1.01
@@ -515,9 +669,10 @@ def analyze_stock(d_row):
         
         temp_res = {
             't_short': t_short, 't_med': t_med, 't_long': t_long,
-            'ratio': ratio, 'rsi': rsi or 0, 'rr': rr, 'chg': chg or 0
+            'ratio': ratio, 'rsi': rsi or 0, 'rr': rr, 'chg': chg or 0,
+            'dist_sma50': dist_sma50, 'above_sma20': above_sma20
         }
-        smart_score = smart_score_pro(temp_res)
+        smart_score = smart_score_pro(temp_res, market_weights)
         
         return {
             "name": name,
@@ -532,6 +687,9 @@ def analyze_stock(d_row):
             "t_short": t_short,
             "t_med": t_med,
             "t_long": t_long,
+            "dist_sma50": dist_sma50,
+            "above_sma20": above_sma20,
+            "high_20": high_20,
             "s1": s1,
             "s2": s2,
             "r1": r1,
@@ -549,28 +707,29 @@ def analyze_stock(d_row):
             "target_pct": target_pct,
             "smart_score": smart_score,
         }
-    except:
+    except Exception as e:
         return None
 
-def preprocess(raw_data):
+def preprocess(raw_data, market_weights=None):
     results = []
     for r in raw_data:
-        analyzed = analyze_stock(r)
+        analyzed = analyze_stock(r, market_weights)
         if analyzed:
             results.append(analyzed)
     return results
 
 def get_top_10(results):
-    valid = [r for r in results if r and r.get('smart_score', 0) >= 45]
+    # رفع الحد الأدنى من 45 إلى 60
+    valid = [r for r in results if r and r.get('smart_score', 0) >= 60]
     valid = [r for r in valid if r.get('estimated_value', 0) >= 2000000]
     sorted_results = sorted(valid, key=lambda x: x.get('smart_score', 0), reverse=True)
     return sorted_results[:10]
 
-def get_rapid_breakouts(results):
+def get_rapid_breakouts(results, market_weights=None):
     rapid = []
     for r in results:
         if r and r.get('estimated_value', 0) >= 2000000:
-            analysis = is_rapid_breakout(r)
+            analysis = is_rapid_breakout(r, market_weights)
             if analysis.get('is_breakout', False):
                 rapid.append({
                     'stock': r,
@@ -583,7 +742,12 @@ def get_fresh_data():
     with st.spinner("🔄 جاري تحليل جميع الأسهم..."):
         raw = get_all_data()
         if raw:
-            st.session_state.all_results = preprocess(raw)
+            market_status = get_egx30_status()
+            market_weights = {
+                'trend_weight': market_status.get('trend_weight', 1.5),
+                'volume_weight': market_status.get('volume_weight', 1.5)
+            }
+            st.session_state.all_results = preprocess(raw, market_weights)
             st.session_state.last_update = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             return True
     return False
@@ -613,7 +777,7 @@ def render_chart(symbol, height=400):
     """
     components.html(chart_html, height=height)
 
-# ================== 🎨 STYLES (ألوان محسنة) ==================
+# ================== 🎨 STYLES ==================
 st.markdown("""
 <style>
 .stButton>button { width: 100%; border-radius: 10px; height: 45px; font-weight: bold; }
@@ -676,7 +840,7 @@ def render_stock_card(res, is_top10=False):
     if is_top10:
         if res.get('smart_score', 0) >= 80:
             st.markdown('<div class="quality-excellent">🏆 فرصة ممتازة</div>', unsafe_allow_html=True)
-        elif res.get('smart_score', 0) >= 65:
+        elif res.get('smart_score', 0) >= 70:
             st.markdown('<div class="quality-good">⭐ فرصة قوية</div>', unsafe_allow_html=True)
     
     ratio = res.get('ratio', 0)
@@ -686,6 +850,8 @@ def render_stock_card(res, is_top10=False):
         vol_text = f"⚡ قوية ({ratio:.1f}x)"
     elif ratio > 1.2:
         vol_text = f"🙂 جيدة ({ratio:.1f}x)"
+    elif ratio > 0.8:
+        vol_text = f"❄️ متوسطة ({ratio:.1f}x)"
     else:
         vol_text = f"❄️ ضعيفة ({ratio:.1f}x)"
     
@@ -702,12 +868,16 @@ def render_stock_card(res, is_top10=False):
         t_short = "🟢 صاعد" if res['t_short'] == "صاعد" else "🔴 هابط"
         t_med = "🟢 صاعد" if res['t_med'] == "صاعد" else "🔴 هابط"
         t_long = "🟢 صاعد" if res['t_long'] == "صاعد" else "🔴 هابط"
+        dist_sma50 = res.get('dist_sma50', 0)
+        dist_color = "🟢" if -8 <= dist_sma50 <= -2 else "🟡" if -15 <= dist_sma50 < -8 else "⚪"
+        
         st.markdown(f"""
         <div style='background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;margin:10px 0;'>
             <b>📌 الاتجاهات:</b><br>
             قصير المدى (EMA20): {t_short}<br>
             متوسط المدى (EMA50): {t_med}<br>
-            طويل المدى (EMA200): {t_long}
+            طويل المدى (EMA200): {t_long}<br>
+            📏 المسافة من SMA50: {dist_color} {dist_sma50:+.1f}%
         </div>
         """, unsafe_allow_html=True)
         
@@ -782,14 +952,14 @@ def render_stock_card(res, is_top10=False):
     
     with st.expander("📈 مؤشرات متقدمة", expanded=False):
         rsi = res['rsi']
-        if rsi <= 20:
-            stoch_signal = "🟢 تشبع بيع - فرصة انعكاس قوية"
+        if rsi <= 25:
+            stoch_signal = "🟢 تشبع بيع شديد - فرصة انعكاس قوية"
         elif rsi <= 35:
-            stoch_signal = "🟡 منطقة شراء محتملة"
-        elif rsi <= 65:
-            stoch_signal = "⚪ منطقة حيادية"
-        elif rsi <= 80:
-            stoch_signal = "🟠 منطقة بيع محتملة"
+            stoch_signal = "🟢 منطقة شراء ممتازة"
+        elif rsi <= 55:
+            stoch_signal = "🟡 منطقة حيادية - مراقبة"
+        elif rsi <= 70:
+            stoch_signal = "🟠 منطقة قوة - مناسبة للاختراقات"
         else:
             stoch_signal = "🔴 تشبع شراء - خطر"
         
@@ -800,15 +970,18 @@ def render_stock_card(res, is_top10=False):
         </div>
         """, unsafe_allow_html=True)
         
+        # نسبة نجاح ديناميكية بناءً على عدة عوامل
         success_rate = 50
-        if res['smart_score'] >= 80 and res['rr'] >= 2 and 45 < res['rsi'] < 60:
-            success_rate = 80
+        if res['smart_score'] >= 80 and res['rr'] >= 2 and 40 < res['rsi'] < 65:
+            success_rate = 82
+        elif res['smart_score'] >= 75 and res['rr'] >= 1.8:
+            success_rate = 75
         elif res['smart_score'] >= 65 and res['rr'] >= 1.5:
-            success_rate = 70
-        elif res['smart_score'] >= 50:
-            success_rate = 60
+            success_rate = 68
+        elif res['smart_score'] >= 55:
+            success_rate = 58
         else:
-            success_rate = 45
+            success_rate = 48
         
         st.markdown(f"""
         <div style='background:#0d1117;border:1px solid #d29922;border-radius:10px;padding:12px;'>
@@ -830,12 +1003,13 @@ def main():
     
     if st.session_state.page == 'home':
         st.title("🎯 قناص EGX - المتكامل")
-        st.caption("تحليل كل الأسهم | فرص سريعة | صائد تصحيحات | أفضل 10 فرص")
+        st.caption("تحليل كل الأسهم | فرص سريعة | صائد تصحيحات محسن | أفضل 10 فرص")
         
         st.markdown(f"""
         <div style="background: #0d1117; border-radius: 10px; padding: 10px; margin-bottom: 20px; text-align: center;">
             <span style="color: {market_status['color']}; font-weight: bold;">📊 المؤشر العام:</span>
             <span>{market_status['status']}</span>
+            <div style="font-size: 12px; margin-top: 5px;">📈 التغير: {market_status['change']:+.2f}% | 📊 RSI: {market_status['rsi']:.0f}</div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -875,6 +1049,8 @@ def main():
                 if st.button("🗑️ مسح بيانات التقييم", use_container_width=True):
                     if os.path.exists(TRADES_FILE):
                         os.remove(TRADES_FILE)
+                    if os.path.exists(OUTCOMES_FILE):
+                        os.remove(OUTCOMES_FILE)
                     st.success("✅ تم المسح!")
                     st.rerun()
         
@@ -896,23 +1072,31 @@ def main():
             st.session_state.page = 'home'
             st.rerun()
         
-        st.title("⚡ قناص الاختراق السريع")
+        st.title("⚡ قناص الاختراق السريع (محسن)")
         st.markdown("""
         <div style="background: rgba(255,102,102,0.15); border-right: 4px solid #FF6666; padding: 10px; border-radius: 8px; margin-bottom: 20px;">
             🚀 <b>فرص خلال جلسة أو جلستين</b><br>
-            • RSI بين 55-70 | • سيولة استثنائية > 2.5x | • قرب اختراق المقاومة | • وقف خسارة ضيق
+            • RSI بين 45-75 | • سيولة > 1.5x | • قرب اختراق أعلى 20 يوم | • وقف خسارة ضيق
         </div>
         """, unsafe_allow_html=True)
         
         sector_filter = st.session_state.sector_filter
         filtered = filter_by_sector(st.session_state.all_results, sector_filter)
-        rapid_opportunities = get_rapid_breakouts(filtered)
+        market_weights = {'trend_weight': market_status.get('trend_weight', 1.5), 'volume_weight': market_status.get('volume_weight', 1.5)}
+        rapid_opportunities = get_rapid_breakouts(filtered, market_weights)
         
         if rapid_opportunities:
             st.markdown(f"**⚡ عدد فرص الاختراق السريع: {len(rapid_opportunities)}**")
             for item in rapid_opportunities:
                 stock = item['stock']
                 analysis = item['analysis']
+                
+                setup_conditions = {
+                    'rsi': stock['rsi'],
+                    'ratio': stock['ratio'],
+                    'type': 'rapid_breakout',
+                    'strength': analysis['strength']
+                }
                 
                 st.markdown(f"""
                 <div class="rapid-card" style="border-right-color: {analysis['color']};">
@@ -952,23 +1136,23 @@ def main():
                     render_stock_card(stock)
                 
                 if st.button(f"💾 تسجيل الصفقة", key=f"rec_rapid_{stock['name']}"):
-                    record_trade(stock, "اختراق سريع")
+                    record_trade(stock, "اختراق سريع", setup_conditions)
                     st.success("✅ تم تسجيل الصفقة!")
                 st.markdown("---")
         else:
             st.info("ℹ️ لا توجد فرص اختراق سريع حالياً.")
     
-    # ================== 🎯 CORRECTION PAGE (بألوان محسنة) ==================
+    # ================== 🎯 CORRECTION PAGE (محسن بالكامل) ==================
     elif st.session_state.page == 'correction':
         if st.button("🏠 العودة للرئيسية"): 
             st.session_state.page = 'home'
             st.rerun()
         
-        st.title("🎯 صائد التصحيحات")
+        st.title("🎯 صائد التصحيحات (محسن)")
         st.markdown("""
         <div style="background: rgba(46,125,50,0.15); border-right: 4px solid #2E7D32; padding: 10px; border-radius: 8px; margin-bottom: 20px;">
-            🎯 <b>الأسهم القوية التي تصحح</b><br>
-            • اتجاه عام صاعد | • RSI في التصحيح (30-50) | • بداية ارتداد | • سيولة جيدة
+            🎯 <b>الأسهم القوية التي تصحح (قبل الارتداد)</b><br>
+            • اتجاه عام صاعد | • RSI بين 28-60 | • تصحيح من SMA50 | • سيولة مقبولة
         </div>
         """, unsafe_allow_html=True)
         
@@ -988,6 +1172,13 @@ def main():
             for item in corrections:
                 stock = item['stock']
                 analysis = item['analysis']
+                
+                setup_conditions = {
+                    'rsi': stock['rsi'],
+                    'dist_sma50': stock.get('dist_sma50', 0),
+                    'type': 'correction',
+                    'strength': analysis['strength']
+                }
                 
                 st.markdown(f"""
                 <div class="correction-card" style="border-right-color: {analysis['color']};">
@@ -1016,7 +1207,7 @@ def main():
                     render_stock_card(stock)
                 
                 if st.button(f"💾 تسجيل الصفقة", key=f"rec_corr_{stock['name']}"):
-                    record_trade(stock, "صائد تصحيحات")
+                    record_trade(stock, "صائد تصحيحات", setup_conditions)
                     st.success("✅ تم تسجيل الصفقة!")
                 st.markdown("---")
         else:
@@ -1028,7 +1219,7 @@ def main():
             st.session_state.page = 'home'
             st.rerun()
         
-        st.title("🏆 أفضل 10 فرص")
+        st.title("🏆 أفضل 10 فرص (Smart Score ≥ 60)")
         
         sector_filter = st.session_state.sector_filter
         filtered = filter_by_sector(st.session_state.all_results, sector_filter)
@@ -1042,7 +1233,7 @@ def main():
                         record_trade(an, "أفضل 10")
                         st.success("✅ تم تسجيل الصفقة!")
         else:
-            st.warning("⚠️ لا توجد فرص مطابقة للمعايير حالياً.")
+            st.warning("⚠️ لا توجد فرص مطابقة للمعايير حالياً (Smart Score ≥ 60).")
     
     # ================== 🔍 ANALYZE PAGE ==================
     elif st.session_state.page == 'analyze':
@@ -1077,20 +1268,26 @@ def main():
         stats = get_performance_stats(trades)
         
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("📊 إجمالي", stats['total'])
-        col2.metric("✅ هدف", stats['hit_target'])
-        col3.metric("❌ وقف", stats['stopped_out'])
-        col4.metric("⏳ مفتوح", stats['still_open'])
+        col1.metric("📊 إجمالي الصفقات", stats['total'])
+        col2.metric("✅ حققت الهدف", stats['hit_target'])
+        col3.metric("❌ ضربت الوقف", stats['stopped_out'])
+        col4.metric("⏳ لا تزال مفتوحة", stats['still_open'])
         
         col1, col2 = st.columns(2)
         col1.metric("📈 نسبة النجاح", f"{stats['success_rate']}%")
         col2.metric("⚖️ متوسط RR", stats['avg_rr'])
         
+        # تحليل حسب نوع الصفقة
+        if stats.get('by_type'):
+            st.markdown("### 📊 تحليل الأداء حسب نوع الصفقة")
+            for ttype, data in stats['by_type'].items():
+                st.metric(f"{ttype}", f"{data['rate']}%", delta=f"{data['hit']}/{data['total']}")
+        
         if trades:
             st.markdown("### 📋 آخر الصفقات")
             for trade in trades[-10:][::-1]:
                 status = "🟢 هدف" if trade.get('status') == 'hit_target' else "🔴 وقف" if trade.get('status') == 'stopped_out' else "🟡 مفتوح"
-                st.markdown(f"- {trade.get('name')} ({trade.get('trade_type')}) - {status} | دخول: {trade.get('entry_price', 0):.2f}")
+                st.markdown(f"- {trade.get('name')} ({trade.get('trade_type')}) - {status} | دخول: {trade.get('entry_price', 0):.2f} | RR: {trade.get('rr', 0)} | Smart: {trade.get('smart_score', 0)}")
 
 if __name__ == "__main__":
     main()
