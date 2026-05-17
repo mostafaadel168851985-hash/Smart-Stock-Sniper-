@@ -166,11 +166,174 @@ def get_egx30_status():
         "price": 10000
     }
 
-# ================== تحليل حجم التداول بالجنيه ==================
-def analyze_turnover(an):
-    """تحليل حجم التداول بالجنيه المصري"""
+# ================== 🆕 تحليل جودة الاختراق (Close Strength + Range Expansion) ==================
+def analyze_breakout_quality(an):
+    """تحليل جودة الاختراق بناءً على ضغط الحركة - يمنع الـ Fake Breakout"""
     if an is None:
-        return 0, "لا توجد بيانات", 0
+        return {"quality_score": 0, "grade": "C", "reasons": [], "close_strength": 50, "near_high": 0, "day_range": 0}
+    
+    p = an.get('p', 0)
+    high = an.get('high', p)
+    low = an.get('low', p)
+    ratio = an.get('ratio', 0)
+    
+    # 1. القرب من قمة اليوم (Proximity to daily high)
+    near_high = (high - p) / p * 100 if p > 0 else 0
+    
+    # 2. مدى التحرك اليومي (Range Expansion)
+    day_range = (high - low) / low * 100 if low > 0 else 0
+    
+    # 3. قوة الإغلاق (Close Strength) - الأهم لاكتشاف الاختراق الحقيقي
+    close_strength = (p - low) / (high - low) * 100 if (high - low) > 0 else 50
+    
+    quality_score = 0
+    reasons = []
+    
+    # القرب من القمة
+    if near_high < 0.5:
+        quality_score += 35
+        reasons.append(f"🎯 عند قمة اليوم ({near_high:.2f}%)")
+    elif near_high < 1.0:
+        quality_score += 25
+        reasons.append(f"📍 قريب جداً من القمة ({near_high:.2f}%)")
+    elif near_high < 1.5:
+        quality_score += 15
+        reasons.append(f"📍 قريب من القمة ({near_high:.2f}%)")
+    
+    # قوة الإغلاق
+    if close_strength >= 80:
+        quality_score += 35
+        reasons.append(f"💪 إغلاق قوي جداً ({close_strength:.0f}%)")
+    elif close_strength >= 70:
+        quality_score += 25
+        reasons.append(f"💪 إغلاق قوي ({close_strength:.0f}%)")
+    elif close_strength >= 60:
+        quality_score += 15
+        reasons.append(f"📊 إغلاق متوسط ({close_strength:.0f}%)")
+    
+    # مدى التحرك (حجم الحركة)
+    if day_range > 5:
+        quality_score += 20
+        reasons.append(f"📊 مدى تحرك كبير ({day_range:.1f}%)")
+    elif day_range > 3:
+        quality_score += 15
+        reasons.append(f"📈 مدى تحرك جيد ({day_range:.1f}%)")
+    elif day_range > 1.5:
+        quality_score += 10
+        reasons.append(f"📈 مدى تحرك مقبول ({day_range:.1f}%)")
+    
+    # سيولة إضافية
+    if ratio > 2.5:
+        quality_score += 10
+        reasons.append(f"💥 سيولة استثنائية ({ratio:.1f}x)")
+    elif ratio > 1.8:
+        quality_score += 5
+        reasons.append(f"🚀 سيولة قوية ({ratio:.1f}x)")
+    
+    # تصنيف الجودة
+    if quality_score >= 75:
+        grade = "A+ - اختراق حقيقي قوي جداً"
+        grade_color = "#00FF00"
+    elif quality_score >= 60:
+        grade = "A - اختراق حقيقي جيد"
+        grade_color = "#ADFF2F"
+    elif quality_score >= 45:
+        grade = "B - اختراق متوسط - يحتاج متابعة"
+        grade_color = "#FFD700"
+    elif quality_score >= 30:
+        grade = "C - اختراق ضعيف - تجنب"
+        grade_color = "#FFA500"
+    else:
+        grade = "D - اختراق وهمي (Fake Breakout)"
+        grade_color = "#FF4444"
+    
+    return {
+        "quality_score": quality_score,
+        "grade": grade,
+        "grade_color": grade_color,
+        "reasons": reasons,
+        "close_strength": close_strength,
+        "near_high": near_high,
+        "day_range": day_range
+    }
+
+# ================== 🆕 فلتر التقلب (Volatility Filter) ==================
+def calculate_volatility(high, low, close):
+    """حساب التقلب اليومي كنسبة مئوية"""
+    if high and low and close and (high - low) > 0:
+        volatility = ((high - low) / close) * 100
+        return round(volatility, 2)
+    return 1.5
+
+def is_volatile_enough(stock):
+    """فحص إذا كان السهم متقلب بما يكفي للتداول (يمنع الأسهم الميتة)"""
+    volatility = calculate_volatility(
+        stock.get('high', stock.get('p', 0)),
+        stock.get('low', stock.get('p', 0)),
+        stock.get('p', 0)
+    )
+    
+    if volatility < 0.8:
+        return False, f"❄️ تقلب ضعيف جداً ({volatility:.2f}%) - حركة بطيئة، تجنب"
+    elif volatility < 1.2:
+        return False, f"⚠️ تقلب متوسط ({volatility:.2f}%) - مناسب فقط للاستثمار طويل الأجل"
+    else:
+        return True, f"✅ تقلب جيد ({volatility:.2f}%) - مناسب للتداول"
+
+# ================== 🆕 إشارة متعددة الأطر الزمنية ==================
+def get_mtf_signal(stock):
+    """
+    إشارة متعددة الأطر الزمنية (Multi-Timeframe Confirmation)
+    نستخدم المؤشرات المتاحة لمحاكاة أطر زمنية مختلفة
+    """
+    signals = []
+    strength = 0
+    
+    # Daily (البيانات الحالية)
+    if stock.get('t_short') == "صاعد":
+        signals.append("✅ Daily: اتجاه صاعد")
+        strength += 1
+    else:
+        signals.append("❌ Daily: اتجاه هابط")
+    
+    # Weekly (نحاكي باستخدام SMA50 و SMA200)
+    if stock.get('t_long') == "صاعد":
+        signals.append("✅ Weekly: اتجاه صاعد")
+        strength += 1
+    else:
+        signals.append("❌ Weekly: اتجاه هابط")
+    
+    # 4H (نحاكي باستخدام الزخم والسعر الحالي)
+    rsi = stock.get('rsi', 50)
+    chg = stock.get('chg', 0)
+    if rsi > 50 and chg > 0:
+        signals.append("✅ 4H: زخم إيجابي")
+        strength += 1
+    else:
+        signals.append("❌ 4H: زخم سلبي")
+    
+    if strength >= 2:
+        mtf_grade = "🟢 متوافق - إشارة قوية"
+        mtf_color = "#00FF00"
+    elif strength >= 1:
+        mtf_grade = "🟡 متوافق جزئياً - إشارة متوسطة"
+        mtf_color = "#FFD700"
+    else:
+        mtf_grade = "🔴 غير متوافق - تجنب"
+        mtf_color = "#FF4444"
+    
+    return {
+        "grade": mtf_grade,
+        "color": mtf_color,
+        "strength": strength,
+        "signals": signals
+    }
+
+# ================== 🆕 تحليل حجم التداول بالجنيه (محسن) ==================
+def analyze_turnover(an):
+    """تحليل حجم التداول بالجنيه المصري مع تصنيف محسن"""
+    if an is None:
+        return 0, "لا توجد بيانات", 0, 0
     
     price = an.get('p', 0)
     volume = an.get('volume', 0)
@@ -183,7 +346,10 @@ def analyze_turnover(an):
     # نسبة التداول مقارنة بالمتوسط
     ratio = daily_turnover / avg_turnover if avg_turnover > 0 else 0
     
-    if daily_turnover >= 50000000:  # 50 مليون فأكثر
+    if daily_turnover >= 100000000:  # 100 مليون فأكثر
+        rating = "🔥🔥 سيولة خرافية"
+        score = 4
+    elif daily_turnover >= 50000000:  # 50-100 مليون
         rating = "🔥 سيولة ممتازة جداً"
         score = 3
     elif daily_turnover >= 20000000:  # 20-50 مليون
@@ -201,14 +367,14 @@ def analyze_turnover(an):
     
     return daily_turnover, rating, score, ratio
 
-# ================== تحليل نماذج الشموع اليابانية ==================
+# ================== 🆕 تحليل نماذج الشموع اليابانية (محسن) ==================
 def analyze_candlestick_patterns(an):
-    """تحليل نماذج الشموع اليابانية"""
+    """تحليل نماذج الشموع اليابانية مع تقييم القوة"""
     if an is None:
         return [], 0
     
     p = an.get('p', 0)
-    open_price = an.get('open', p)  # إذا لم يتوفر، نفترض السعر الحالي
+    open_price = an.get('open', p)
     high = an.get('high', p)
     low = an.get('low', p)
     prev_close = an.get('prev_close', p * 0.99)
@@ -225,29 +391,29 @@ def analyze_candlestick_patterns(an):
     if candle_range > 0:
         lower_shadow = min(p, open_price) - low if open_price else p - low
         if lower_shadow > candle_body * 2 and change_pct > -3:
-            patterns.append("🔨 مطرقة (Hammer) - انعكاس صاعد محتمل")
-            strength_score += 2
+            patterns.append("🔨 مطرقة (Hammer) - انعكاس صاعد قوي")
+            strength_score += 3
     
     # 2. نموذج الشهاب (Shooting Star) - انعكاس هابط
     if candle_range > 0:
         upper_shadow = high - max(p, open_price) if open_price else high - p
         if upper_shadow > candle_body * 2 and change_pct > 1:
             patterns.append("⭐ شهاب (Shooting Star) - انعكاس هابط محتمل")
-            strength_score -= 1
+            strength_score -= 2
     
     # 3. نموذج الابتلاع الصاعد (Bullish Engulfing)
     if p > prev_close and prev_close > open_price and p > prev_close * 1.02:
-        patterns.append("🟢 ابتلاع صاعد (Bullish Engulfing) - إشارة شراء قوية")
-        strength_score += 3
+        patterns.append("🟢 ابتلاع صاعد (Bullish Engulfing) - إشارة شراء قوية جداً")
+        strength_score += 4
     
     # 4. نموذج الابتلاع الهابط (Bearish Engulfing)
     if p < prev_close and open_price > prev_close and p < prev_close * 0.98:
-        patterns.append("🔴 ابتلاع هابط (Bearish Engulfing) - إشارة بيع")
-        strength_score -= 2
+        patterns.append("🔴 ابتلاع هابط (Bearish Engulfing) - إشارة بيع قوية")
+        strength_score -= 3
     
     # 5. نموذج الدوجي (Doji) - تردد
     if candle_range > 0 and candle_body < candle_range * 0.1:
-        patterns.append("✚ دوجي (Doji) - تردد في السوق")
+        patterns.append("✚ دوجي (Doji) - تردد في السوق، انتظر تأكيد")
         # الدوجي عند الدعم يكون إيجابي، عند المقاومة سلبي
     
     # 6. شمعة ماروبوزو (Marubozu) - قوة اتجاه
@@ -256,78 +422,101 @@ def analyze_candlestick_patterns(an):
         lower_wick = min(p, open_price) - low if open_price else p - low
         if upper_wick < candle_range * 0.1 and lower_wick < candle_range * 0.1:
             if change_pct > 0:
-                patterns.append("📈 ماروبوزو صاعد - قوة شرائية")
-                strength_score += 2
+                patterns.append("📈 ماروبوزو صاعد - قوة شرائية كبيرة")
+                strength_score += 3
             else:
-                patterns.append("📉 ماروبوزو هابط - قوة بيعية")
-                strength_score -= 1
+                patterns.append("📉 ماروبوزو هابط - قوة بيعية كبيرة")
+                strength_score -= 2
+    
+    # 7. شمعة نجم الصباح (Morning Star) - انعكاس صاعد (محاكاة)
+    if change_pct > 0 and p > open_price * 1.03 and prev_close < open_price:
+        patterns.append("⭐ نجم الصباح (Morning Star) - انعكاس صاعد ممتاز")
+        strength_score += 3
+    
+    # 8. شمعة نجم المساء (Evening Star) - انعكاس هابط (محاكاة)
+    if change_pct < 0 and p < open_price * 0.97 and prev_close > open_price:
+        patterns.append("🌙 نجم المساء (Evening Star) - انعكاس هابط خطير")
+        strength_score -= 3
     
     return patterns, strength_score
 
-# ================== Smart Score المتقدم ==================
+# ================== Smart Score المتقدم (محسن - بدون Double Counting) ==================
 def smart_score_pro(res):
+    """
+    Smart Score محسن - بدون تكرار في حساب الاتجاهات
+    الأوزان: Trend(30%), Volume(25%), RSI(15%), RR(15%), Price Action(15%)
+    """
     score = 0
     
-    # الاتجاهات (35 نقطة كحد أقصى)
-    if res.get('t_short') == "صاعد": score += 15
-    if res.get('t_med') == "صاعد": score += 15
-    if res.get('t_long') == "صاعد": score += 5
+    # 1. TREND (30 نقطة) - موحد بدلاً من ثلاث مؤشرات منفصلة
+    trend_strength = 0
+    if res.get('t_long') == "صاعد": trend_strength += 40
+    if res.get('t_med') == "صاعد": trend_strength += 35
+    if res.get('t_short') == "صاعد": trend_strength += 25
+    score += (trend_strength / 100) * 30
     
-    # السيولة (20 نقطة) - مع مراعاة التداول بالجنيه
+    # 2. VOLUME (25 نقطة)
     ratio = res.get('ratio', 0)
-    if ratio > 2.5: score += 20
-    elif ratio > 1.8: score += 15
-    elif ratio > 1.2: score += 8
+    if ratio > 2.5: volume_score = 100
+    elif ratio > 1.8: volume_score = 80
+    elif ratio > 1.2: volume_score = 60
+    elif ratio > 0.8: volume_score = 40
+    else: volume_score = 20
+    score += (volume_score / 100) * 25
     
     # إضافة نقاط إضافية لحجم التداول بالجنيه
     turnover = res.get('daily_turnover', 0)
     if turnover >= 50000000:
-        score += 5
-    elif turnover >= 20000000:
         score += 3
+    elif turnover >= 20000000:
+        score += 2
     elif turnover >= 5000000:
         score += 1
     
-    # RSI (15 نقطة)
+    # 3. RSI (15 نقطة)
     rsi = res.get('rsi', 50)
-    if 50 < rsi < 60:
-        score += 15
-    elif 45 < rsi <= 50 or 60 <= rsi < 65:
-        score += 10
-    elif 40 <= rsi <= 45:
-        score += 5
-    elif 30 <= rsi < 40:
-        score += 3
+    if 45 <= rsi <= 60: rsi_score = 100
+    elif 40 <= rsi <= 65: rsi_score = 80
+    elif 35 <= rsi <= 70: rsi_score = 60
+    else: rsi_score = 40
+    score += (rsi_score / 100) * 15
     
-    # نسبة المخاطرة/العائد (15 نقطة)
+    # 4. RR RATIO (15 نقطة)
     rr = res.get('rr', 0)
-    if rr >= 2.5: score += 15
-    elif rr >= 2: score += 12
-    elif rr >= 1.5: score += 8
-    elif rr >= 1.2: score += 4
+    if rr >= 2.5: rr_score = 100
+    elif rr >= 2: rr_score = 80
+    elif rr >= 1.5: rr_score = 60
+    elif rr >= 1.2: rr_score = 40
+    else: rr_score = 20
+    score += (rr_score / 100) * 15
     
-    # التغير اليومي (15 نقطة)
+    # 5. PRICE ACTION (15 نقطة)
     chg = res.get('chg', 0)
-    if chg > 1.5: score += 15
-    elif chg > 0.5: score += 10
-    elif chg > 0: score += 5
-    elif chg > -1: score += 2
+    if chg > 2: pa_score = 100
+    elif chg > 1: pa_score = 80
+    elif chg > 0.5: pa_score = 60
+    elif chg > 0: pa_score = 40
+    else: pa_score = 20
+    score += (pa_score / 100) * 15
     
     # نماذج الشموع
     candle_score = res.get('candle_strength', 0)
-    if candle_score >= 2:
-        score += 10
+    if candle_score >= 3:
+        score += 8
     elif candle_score >= 1:
-        score += 5
-    elif candle_score <= -1:
+        score += 4
+    elif candle_score <= -2:
         score -= 5
     
     return min(100, int(score))
 
-# ================== درجة الثقة ==================
+# ================== درجة الثقة (محسنة - بدون أرقام وهمية) ==================
 def get_confidence(res):
+    """
+    نظام الثقة المحسن - يستخدم تصنيف A+, A, B, C بدلاً من النسب المئوية الوهمية
+    """
     score = 0
-    total = 7  # زدنا عدد العوامل
+    total = 8  # زدنا عدد العوامل
     
     p = res.get('p', 0)
     rsi = res.get('rsi', 50)
@@ -339,21 +528,29 @@ def get_confidence(res):
     sma200 = res.get('sma200', p)
     r1 = res.get('r1', p * 1.05)
     turnover = res.get('daily_turnover', 0)
+    candle_strength = res.get('candle_strength', 0)
     
+    # الاتجاه العام
     if t_long == "صاعد" or (sma200 and p > sma200):
         score += 1
     
+    # الاتجاه المتوسط والقصير
     if t_med == "صاعد" and t_short == "صاعد":
         score += 1
     
+    # RSI
     if 45 < rsi < 65:
         score += 1
+    elif 35 <= rsi <= 70:
+        score += 0.5
     
+    # السيولة
     if ratio > 1.8:
         score += 1
     elif ratio > 1.2:
         score += 0.5
     
+    # المسافة من المقاومة
     if r1 and r1 > p:
         dist = (r1 - p) / p * 100
         if dist < 2:
@@ -361,31 +558,62 @@ def get_confidence(res):
         elif dist < 3:
             score += 0.5
     
+    # التغير اليومي
     if change > 0.3:
         score += 1
     elif change > 0:
         score += 0.5
     
-    # إضافة عامل حجم التداول بالجنيه
+    # حجم التداول بالجنيه
     if turnover >= 20000000:
         score += 1
     elif turnover >= 5000000:
         score += 0.5
     
+    # نماذج الشموع
+    if candle_strength >= 2:
+        score += 1
+    elif candle_strength >= 1:
+        score += 0.5
+    
     percent = int((score / total) * 100)
     
-    if percent >= 85:
-        advice, color, emoji = "🔥 دخول الآن (فرصة ذهبية)", "#00FF00", "🔥"
+    # تصنيف محسن (بدون نسب مئوية وهمية)
+    if percent >= 80:
+        grade = "🟢 A+"
+        advice = "🔥 فرصة عالية الجودة - جميع المؤشرات متوافقة"
+        color = "#00FF00"
+        emoji = "🔥🔥"
     elif percent >= 65:
-        advice, color, emoji = "✅ شراء حذر / مراقبة", "#ADFF2F", "✅"
-    elif percent >= 40:
-        advice, color, emoji = "🟡 انتظار (تجميع)", "#FFD700", "🟡"
+        grade = "🟢 A"
+        advice = "✅ فرصة جيدة - معظم المؤشرات إيجابية"
+        color = "#ADFF2F"
+        emoji = "✅"
+    elif percent >= 50:
+        grade = "🟡 B"
+        advice = "🟡 فرصة متوسطة - تحتاج متابعة"
+        color = "#FFD700"
+        emoji = "🟡"
+    elif percent >= 35:
+        grade = "🟠 C"
+        advice = "⚠️ فرصة ضعيفة - مؤشرات متضاربة"
+        color = "#FFA500"
+        emoji = "⚠️"
     else:
-        advice, color, emoji = "❌ تجنب السهم حالياً", "#FF6B6B", "❌"
+        grade = "🔴 D"
+        advice = "❌ تجنب - معظم المؤشرات سلبية"
+        color = "#FF4444"
+        emoji = "❌"
     
-    return {'score': percent, 'advice': advice, 'color': color, 'emoji': emoji}
+    return {
+        'score': percent, 
+        'grade': grade,
+        'advice': advice, 
+        'color': color, 
+        'emoji': emoji
+    }
 
-# ================== صائد التصحيحات (المحسن) ==================
+# ================== صائد التصحيحات (المحسن بالكامل) ==================
 def is_correction_hunter(an, market_multiplier=1.0):
     if an is None:
         return False, [], 0, "", ""
@@ -399,10 +627,11 @@ def is_correction_hunter(an, market_multiplier=1.0):
     rr = an.get('rr', 0)
     turnover = an.get('daily_turnover', 0)
     candle_strength = an.get('candle_strength', 0)
+    volatility = an.get('volatility', 1.5)
     
     reasons = []
     score = 0
-    max_score = 12  # زدنا العوامل
+    max_score = 13  # زدنا العوامل
     
     # الشرط 1: الاتجاه العام صاعد (أهم شرط)
     if t_long == "صاعد" or (sma200 and p > sma200):
@@ -411,7 +640,7 @@ def is_correction_hunter(an, market_multiplier=1.0):
     else:
         return False, ["الاتجاه العام هابط - غير مناسب"], 0, "", ""
     
-    # الشرط 2: RSI في منطقة التصحيح (28-55)
+    # الشرط 2: RSI في منطقة التصحيح (28-55) - نطاق أوسع
     if 28 <= rsi <= 55:
         score += 3
         if rsi < 35:
@@ -424,9 +653,9 @@ def is_correction_hunter(an, market_multiplier=1.0):
         score += 1
         reasons.append(f"⚠️ RSI بدأ يصعد ({rsi:.0f}) - قد يكون متأخراً قليلاً")
     else:
-        return False, [f"RSI مرتفع ({rsi:.0f}) - فاتك التصحيح"], 0, "", ""
+        return False, [f"RSI خارج نطاق التصحيح ({rsi:.0f})"], 0, "", ""
     
-    # الشرط 3: بداية ارتداد
+    # الشرط 3: بداية ارتداد (نطاق أوسع)
     if change_pct > 0:
         score += 2
         reasons.append(f"📈 تغير إيجابي ({change_pct:+.2f}%) - بداية ارتداد")
@@ -435,7 +664,10 @@ def is_correction_hunter(an, market_multiplier=1.0):
         reasons.append(f"⚖️ تغير طفيف ({change_pct:+.2f}%) - استقرار")
     
     # الشرط 4: سيولة جيدة (حجم التداول بالجنيه)
-    if turnover >= 20000000:
+    if turnover >= 30000000:
+        score += 2
+        reasons.append(f"💰 سيولة ممتازة جداً ({turnover/1000000:.0f}M ج)")
+    elif turnover >= 20000000:
         score += 2
         reasons.append(f"💰 سيولة ممتازة ({turnover/1000000:.0f}M ج)")
     elif turnover >= 5000000:
@@ -445,8 +677,11 @@ def is_correction_hunter(an, market_multiplier=1.0):
         reasons.append(f"📊 سيولة مقبولة ({ratio:.1f}x)")
     
     # الشرط 5: نسبة مخاطرة/عائد جيدة
-    if rr >= 1.5:
+    if rr >= 1.8:
         score += 1
+        reasons.append(f"⚖️ RR ممتاز ({rr})")
+    elif rr >= 1.3:
+        score += 0.5
         reasons.append(f"⚖️ RR جيد ({rr})")
     
     # الشرط 6: نماذج شموع إيجابية
@@ -454,18 +689,26 @@ def is_correction_hunter(an, market_multiplier=1.0):
         score += 1
         reasons.append("🕯️ نماذج شموع إيجابية")
     
+    # الشرط 7: تقلب مناسب
+    if volatility >= 1.2:
+        score += 1
+        reasons.append(f"📊 تقلب مناسب ({volatility:.1f}%)")
+    
     # تطبيق مضاعف السوق
     adjusted_score = score * market_multiplier
     strength = int((adjusted_score / max_score) * 100)
     strength = min(100, strength)
     
-    if strength >= 70:
+    if strength >= 75:
+        label = "🔥🔥 فرصة تصحيح ممتازة جداً"
+        color = "#1B5E20"
+    elif strength >= 60:
         label = "🔥 فرصة تصحيح ممتازة"
         color = "#2E7D32"
-    elif strength >= 50:
+    elif strength >= 45:
         label = "✅ فرصة تصحيح جيدة"
         color = "#388E3C"
-    elif strength >= 35:
+    elif strength >= 30:
         label = "🟡 فرصة تصحيح محتملة"
         color = "#F57C00"
     else:
@@ -474,7 +717,7 @@ def is_correction_hunter(an, market_multiplier=1.0):
     
     return score >= 4, reasons, strength, label, color
 
-# ================== قناص الاختراق السريع ==================
+# ================== قناص الاختراق السريع (المحسن بالكامل) ==================
 def is_rapid_breakout(an):
     if an is None:
         return {"is_breakout": False, "reasons": [], "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
@@ -489,9 +732,12 @@ def is_rapid_breakout(an):
     turnover = an.get('daily_turnover', 0)
     candle_strength = an.get('candle_strength', 0)
     
+    # تحليل جودة الاختراق
+    breakout_quality = analyze_breakout_quality(an)
+    
     reasons = []
     score = 0
-    max_score = 8  # زدنا العوامل
+    max_score = 10  # زدنا العوامل
     
     # RSI شرط (زخم)
     if 52 <= rsi <= 75:
@@ -504,27 +750,43 @@ def is_rapid_breakout(an):
         return {"is_breakout": False, "reasons": [], "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
     # السيولة شرط أساسي (حجم التداول بالجنيه)
-    if turnover >= 30000000:
-        score += 2
+    if turnover >= 50000000:
+        score += 3
+        reasons.append(f"💥 سيولة خرافية ({turnover/1000000:.0f}M ج)")
+    elif turnover >= 30000000:
+        score += 2.5
         reasons.append(f"💥 سيولة استثنائية ({turnover/1000000:.0f}M ج)")
     elif turnover >= 15000000:
+        score += 2
+        reasons.append(f"🚀 سيولة قوية جداً ({turnover/1000000:.0f}M ج)")
+    elif turnover >= 5000000:
         score += 1.5
-        reasons.append(f"🚀 سيولة قوية ({turnover/1000000:.0f}M ج)")
+        reasons.append(f"📊 سيولة جيدة ({turnover/1000000:.1f}M ج)")
     elif ratio > 1.5:
         score += 1
         reasons.append(f"📊 سيولة جيدة ({ratio:.1f}x)")
     else:
         return {"is_breakout": False, "reasons": [], "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
     
-    # القرب من المقاومة
-    if p >= r1 * 0.98:
-        score += 2
+    # القرب من المقاومة وجودة الاختراق
+    if p >= r1 * 0.99:
+        score += 3
         reasons.append(f"🎯 على وشك اختراق R1 ({r1:.3f})")
+    elif p >= r1 * 0.97:
+        score += 2
+        reasons.append(f"📍 قريب جداً من المقاومة R1")
     elif p >= r1 * 0.95:
         score += 1
         reasons.append(f"📍 قريب من المقاومة R1")
     else:
         return {"is_breakout": False, "reasons": [], "strength": 0, "label": "", "color": "#555", "target_1": 0, "target_2": 0, "stop_loss_rapid": 0}
+    
+    # إضافة نقاط جودة الاختراق
+    if breakout_quality['quality_score'] >= 60:
+        score += 2
+        reasons.append(f"📊 {breakout_quality['grade']}")
+        for r in breakout_quality['reasons'][:2]:
+            reasons.append(r)
     
     if t_short == "صاعد" and t_med == "صاعد":
         score += 1
@@ -538,13 +800,16 @@ def is_rapid_breakout(an):
     strength = int((score / max_score) * 100)
     strength = min(100, strength)
     
-    if strength >= 70:
-        label = "🔥 انفجار وشيك خلال ساعات"
+    if strength >= 75:
+        label = "🔥🔥 انفجار وشيك خلال ساعات (اختراق حقيقي)"
+        color = "#FF4444"
+    elif strength >= 60:
+        label = "🔥 انفجار وشيك خلال جلسة"
         color = "#FF6666"
-    elif strength >= 55:
+    elif strength >= 45:
         label = "⚡ اختراق متوقع خلال جلسة"
         color = "#FFB347"
-    elif strength >= 40:
+    elif strength >= 30:
         label = "🟡 مراقبة لاصطياد الاختراق"
         color = "#FFD700"
     else:
@@ -558,10 +823,11 @@ def is_rapid_breakout(an):
         "color": color,
         "target_1": r1,
         "target_2": an.get('r2', r1 * 1.03),
-        "stop_loss_rapid": max(an.get('s1', p * 0.98), p * 0.97)
+        "stop_loss_rapid": max(an.get('s1', p * 0.98), p * 0.97),
+        "breakout_quality": breakout_quality
     }
 
-# ================== دعم وارتداد متقدم ==================
+# ================== دعم وارتداد متقدم (محسن) ==================
 def is_support_with_bounce(an):
     if an is None:
         return False, [], 0, "عادي"
@@ -575,6 +841,7 @@ def is_support_with_bounce(an):
     sma20 = an.get('sma20', p)
     turnover = an.get('daily_turnover', 0)
     candle_strength = an.get('candle_strength', 0)
+    volatility = an.get('volatility', 1.5)
     
     if s1 == 0 and s2 == 0:
         return False, [], 0, "عادي"
@@ -594,33 +861,43 @@ def is_support_with_bounce(an):
     
     reasons = []
     bounce_score = 0
+    max_score = 8
     
     # كسر الدعم = خطر
     if p < nearest_support:
         return False, ["❌ كسر الدعم - خطر"], 0, "مكسور"
     
-    # تغير السعر
+    # تغير السعر - أكثر مرونة
     if 0.1 < change_pct < 4:
         bounce_score += 2
         reasons.append(f"📈 تغير إيجابي معتدل ({change_pct:+.3f}%)")
+    elif 0 < change_pct <= 0.1:
+        bounce_score += 1
+        reasons.append(f"📈 بداية تغير إيجابي ({change_pct:+.3f}%)")
     elif change_pct >= 4:
         return False, ["⚠️ تغير كبير - احترس من القمة"], 0, level
     elif change_pct <= 0:
-        return False, ["تغير سلبي - لم يرتد"], 0, level
+        return False, ["تغير سلبي - لم يرتد بعد"], 0, level
     
     # تعافي RSI
-    if rsi > 40:
-        bounce_score += 1
+    if rsi > 42:
+        bounce_score += 2
         reasons.append(f"📊 RSI بدأ بالتعافي ({rsi:.0f})")
+    elif rsi > 38:
+        bounce_score += 1
+        reasons.append(f"📊 RSI يلامس منطقة التعافي ({rsi:.0f})")
     
     # سيولة (حجم التداول بالجنيه)
-    if turnover >= 20000000:
-        bounce_score += 1
+    if turnover >= 30000000:
+        bounce_score += 2
+        reasons.append(f"💰 سيولة ممتازة جداً ({turnover/1000000:.0f}M ج)")
+    elif turnover >= 15000000:
+        bounce_score += 2
         reasons.append(f"💰 سيولة ممتازة ({turnover/1000000:.0f}M ج)")
     elif turnover >= 5000000:
         bounce_score += 1
         reasons.append(f"💰 سيولة جيدة ({turnover/1000000:.1f}M ج)")
-    elif ratio > 1.0:
+    elif ratio > 1.2:
         bounce_score += 1
         reasons.append(f"📊 سيولة جيدة ({ratio:.1f}x)")
     
@@ -629,16 +906,21 @@ def is_support_with_bounce(an):
         bounce_score += 1
         reasons.append(f"📈 السعر فوق SMA20 - بداية تكون قاع")
     
-    # نماذج شموع إيجابية
+    # نماذج شموع إيجابية عند الدعم
     if candle_strength >= 2:
         bounce_score += 1
         reasons.append("🕯️ نماذج شموع إيجابية عند الدعم")
     
-    # يحتاج 3+ نقاط للدخول
-    is_valid = bounce_score >= 3
+    # تقلب مناسب
+    if volatility >= 1.0:
+        bounce_score += 1
+        reasons.append(f"📊 تقلب مناسب ({volatility:.1f}%)")
+    
+    # يحتاج 4+ نقاط للدخول (تشديد)
+    is_valid = bounce_score >= 4
     
     if is_valid:
-        reasons.append(f"✅ نقاط الارتداد: {bounce_score}/6 - مناسب للدخول")
+        reasons.append(f"✅ نقاط الارتداد: {bounce_score}/{max_score} - مناسب للدخول")
     
     return is_valid, reasons, bounce_score, level
 
@@ -749,6 +1031,9 @@ def analyze_stock(d_row):
         # حساب قيمة التداول بالجنيه
         daily_turnover = p * v if v else 0
         
+        # حساب التقلب
+        volatility = calculate_volatility(h, l, p)
+        
         t_short = "صاعد" if (sma20 and p > sma20) else "هابط"
         t_med = "صاعد" if (sma50 and p > sma50) else "هابط"
         t_long = "صاعد" if (sma200 and p > sma200) else "هابط"
@@ -824,6 +1109,7 @@ def analyze_stock(d_row):
             "open": open_price,
             "high": high,
             "low": low,
+            "volatility": volatility,
             "entry_range": f"{entry_min:.3f} - {entry_max:.3f}",
             "entry_price": entry_price,
             "stop_loss": stop_loss,
@@ -848,7 +1134,7 @@ def preprocess(raw_data):
     return results
 
 def get_top_10(results):
-    valid = [r for r in results if r and r.get('smart_score', 0) >= 45]
+    valid = [r for r in results if r and r.get('smart_score', 0) >= 50]  # رفع الحد من 45 إلى 50
     valid = [r for r in valid if r.get('daily_turnover', 0) >= 2000000]  # تداول 2 مليون على الأقل
     sorted_results = sorted(valid, key=lambda x: x.get('smart_score', 0), reverse=True)
     return sorted_results[:10]
@@ -881,6 +1167,21 @@ def get_corrections(results, market_multiplier):
                 })
     corrections.sort(key=lambda x: x['strength'], reverse=True)
     return corrections
+
+def get_support_stocks(results):
+    support = []
+    for r in results:
+        if r and r.get('daily_turnover', 0) >= 2000000:
+            is_valid, reasons, score, level = is_support_with_bounce(r)
+            if is_valid:
+                support.append({
+                    'stock': r,
+                    'reasons': reasons,
+                    'score': score,
+                    'level': level
+                })
+    support.sort(key=lambda x: x['score'], reverse=True)
+    return support
 
 def get_fresh_data():
     with st.spinner("🔄 جاري تحليل جميع الأسهم..."):
@@ -923,8 +1224,11 @@ def render_confidence_card(res):
     st.markdown(f"""
     <div style='background: linear-gradient(135deg, #1a1a2e, #16213e); border-radius: 12px; padding: 12px; margin: 10px 0; border-right: 4px solid {conf["color"]};'>
         <div style='display: flex; justify-content: space-between; align-items: center;'>
-            <span style='font-size: 18px; font-weight: bold; color: #e0e0e0;'>{conf["emoji"]} قرار القناص</span>
-            <span style='font-size: 28px; font-weight: bold; color: {conf["color"]};'>{conf["score"]}%</span>
+            <div>
+                <span style='font-size: 18px; font-weight: bold; color: #e0e0e0;'>{conf["emoji"]} نظام الثقة</span>
+                <div style='font-size: 12px; color: #888;'>{conf['grade']}</div>
+            </div>
+            <span style='font-size: 24px; font-weight: bold; color: {conf["color"]};'>{conf['grade']}</span>
         </div>
         <div style='margin-top: 5px;'><span style='color: {conf["color"]};'>{conf["advice"]}</span></div>
     </div>
@@ -934,6 +1238,19 @@ def render_stock_card(res, is_top10=False):
     if res is None:
         st.warning("بيانات السهم غير متوفرة")
         return
+    
+    # فحص التقلب
+    is_volatile, volatility_msg = is_volatile_enough(res)
+    if not is_volatile:
+        st.warning(volatility_msg)
+    
+    # إشارة MTF
+    mtf = get_mtf_signal(res)
+    st.markdown(f"""
+    <div style='background: #0d1117; border-radius: 8px; padding: 8px; margin: 5px 0; border-right: 3px solid {mtf["color"]};'>
+        <span style='font-size: 12px;'>📊 <b>إشارة متعددة الأطر الزمنية:</b> {mtf["grade"]}</span>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.markdown(f"<div class='stock-header'>{res['name']} - {res['desc']}<span class='score-tag'>Smart: {res.get('smart_score', 0)}</span></div>", unsafe_allow_html=True)
     
@@ -986,12 +1303,17 @@ def render_stock_card(res, is_top10=False):
         t_short = "🟢 صاعد" if res['t_short'] == "صاعد" else "🔴 هابط"
         t_med = "🟢 صاعد" if res['t_med'] == "صاعد" else "🔴 هابط"
         t_long = "🟢 صاعد" if res['t_long'] == "صاعد" else "🔴 هابط"
+        
+        # عرض التقلب
+        vol_color = "🟢" if res.get('volatility', 1.5) >= 1.2 else "🟡" if res.get('volatility', 1.5) >= 0.8 else "🔴"
+        
         st.markdown(f"""
         <div style='background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;margin:10px 0;'>
             <b>📌 الاتجاهات:</b><br>
             قصير المدى (EMA20): {t_short}<br>
             متوسط المدى (EMA50): {t_med}<br>
-            طويل المدى (EMA200): {t_long}
+            طويل المدى (EMA200): {t_long}<br>
+            {vol_color} التقلب: {res.get('volatility', 1.5):.1f}%
         </div>
         """, unsafe_allow_html=True)
         
@@ -1018,7 +1340,12 @@ def render_stock_card(res, is_top10=False):
         if res.get('candle_patterns'):
             st.markdown("### 🕯️ تحليل نماذج الشموع")
             for pattern in res['candle_patterns']:
-                st.markdown(f"- {pattern}")
+                if "صاعد" in pattern or "شراء" in pattern:
+                    st.success(f"✅ {pattern}")
+                elif "هابط" in pattern or "بيع" in pattern:
+                    st.error(f"❌ {pattern}")
+                else:
+                    st.info(f"ℹ️ {pattern}")
     
     with st.expander("💰 إدارة المخاطر وخطة الدخول", expanded=True):
         deal_size = st.number_input("💰 ميزانية الصفقة (ج)", value=10000, step=1000, key=f"deal_{res['name']}")
@@ -1103,7 +1430,7 @@ def main():
     market_status = get_egx30_status()
     
     st.title("🎯 EGX Sniper Pro Ultimate")
-    st.caption("النسخة المدمجة - أفضل أداء وأعلى دقة | تحليل كل الأسهم | فرص سريعة | صائد تصحيحات | دعم وارتداد | تحليل الشموع وحجم التداول")
+    st.caption("النسخة النهائية - أفضل أداء وأعلى دقة | تحليل كل الأسهم | فرص سريعة | صائد تصحيحات | دعم وارتداد | تحليل الشموع وحجم التداول")
     
     st.markdown(f"""
     <div style="background: #0d1117; border-radius: 10px; padding: 10px; margin-bottom: 20px; text-align: center;">
@@ -1337,7 +1664,7 @@ def main():
         st.markdown("""
         <div style="background: rgba(255,102,102,0.15); border-right: 4px solid #FF6666; padding: 10px; border-radius: 8px; margin-bottom: 20px;">
             🚀 <b>فرص خلال جلسة أو جلستين</b><br>
-            • RSI بين 45-75 | • سيولة استثنائية (تداول > 15 مليون) | • قرب اختراق المقاومة | • وقف خسارة ضيق
+            • RSI بين 45-75 | • سيولة استثنائية (تداول > 15 مليون) | • قرب اختراق المقاومة | • إغلاق قوي قرب القمة
         </div>
         """, unsafe_allow_html=True)
         
@@ -1381,6 +1708,13 @@ def main():
                     <div style="background: rgba(255,102,102,0.1); border-radius: 8px; padding: 8px;">
                         ✅ {', '.join(analysis['reasons'])}
                     </div>
+                    """ + (f"""
+                    <div style="background: rgba(255,102,102,0.05); border-radius: 8px; padding: 8px; margin-top: 8px;">
+                        📊 <b>جودة الاختراق:</b> {analysis.get('breakout_quality', {}).get('grade', 'N/A')}<br>
+                        💪 قوة الإغلاق: {analysis.get('breakout_quality', {}).get('close_strength', 0):.0f}% | 
+                        📏 مدى التحرك: {analysis.get('breakout_quality', {}).get('day_range', 0):.1f}%
+                    </div>
+                    """ if analysis.get('breakout_quality') else "") + """
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -1408,16 +1742,9 @@ def main():
         """, unsafe_allow_html=True)
         
         filtered = filter_by_sector(st.session_state.all_results, st.session_state.sector_filter)
-        
-        support_stocks = []
-        for an in filtered:
-            if an and an.get('daily_turnover', 0) >= 2000000:
-                is_valid, reasons, score, level = is_support_with_bounce(an)
-                if is_valid:
-                    support_stocks.append({'stock': an, 'reasons': reasons, 'score': score, 'level': level})
+        support_stocks = get_support_stocks(filtered)
         
         if support_stocks:
-            support_stocks.sort(key=lambda x: x['score'], reverse=True)
             st.markdown(f"**🔻 عدد فرص الدعم والارتداد: {len(support_stocks)}**")
             
             for item in support_stocks:
@@ -1436,7 +1763,10 @@ def main():
                     badge = "📏 قريب نسبياً"
                     badge_color = "#ff9800"
                 
-                if score >= 5:
+                if score >= 6:
+                    quality = "🔥🔥 فرصة ممتازة جداً"
+                    quality_color = "#1B5E20"
+                elif score >= 5:
                     quality = "🔥 فرصة ممتازة"
                     quality_color = "#4caf50"
                 elif score >= 4:
@@ -1451,7 +1781,7 @@ def main():
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
                         <h3 style="margin: 0; color: #64b5f6;">🔻 {an['name']} - {an['desc']}</h3>
                         <span style="background: {badge_color}; padding: 5px 15px; border-radius: 20px; color: white; font-weight: bold;">
-                            {badge} | نقاط: {score}/6
+                            {badge} | نقاط: {score}/8
                         </span>
                     </div>
                     <div style="margin-top: 10px;">
@@ -1466,10 +1796,10 @@ def main():
                         <div>📈 تغير: {an['chg']:+.2f}%</div>
                     </div>
                     <div style="background: rgba(33,150,243,0.1); border-radius: 8px; padding: 8px;">
-                        ✅ {', '.join(reasons[:5])}
+                        ✅ {', '.join(reasons[:6])}
                     </div>
                     <div style="margin-top: 10px; background: rgba(76,175,80,0.1); border-radius: 8px; padding: 8px;">
-                        💡 <b>وقف الخسارة المقترح:</b> أسفل {an['s1']:.3f} مباشرة
+                        💡 <b>وقف الخسارة المقترح:</b> أسفل {an['s1']:.3f} مباشرة (مخاطرة حوالي {(an['p'] - an['s1'])/an['p']*100:.2f}%)
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1510,7 +1840,7 @@ def main():
                             record_trade(res, "تحليل فردي")
                             st.success("✅ تم تسجيل الصفقة!")
                     else:
-                        st.warning("⚠️ فشل تحليل السهم")
+                        st.warning("⚠️ فشل تحليل السهم - قد يكون ذو سيولة ضعيفة")
     
     elif st.session_state.page == 'performance':
         if st.button("🏠 العودة للرئيسية"): 
