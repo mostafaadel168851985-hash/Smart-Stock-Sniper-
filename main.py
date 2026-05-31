@@ -107,21 +107,40 @@ def get_performance_stats(trades):
     }
 
 # ================== إعدادات البيانات التاريخية ==================
-HISTORICAL_DATA_FOLDER = "historical_data"
+# 🔴 التغيير الرئيسي: المسار أصبح "data" بدلاً من "historical_data"
+DATA_FOLDER = "data"
 
-# إنشاء المجلد إذا لم يكن موجوداً
-if not os.path.exists(HISTORICAL_DATA_FOLDER):
-    os.makedirs(HISTORICAL_DATA_FOLDER)
+# إنشاء المجلد إذا لم يكن موجوداً (للتشغيل المحلي)
+if not os.path.exists(DATA_FOLDER):
+    os.makedirs(DATA_FOLDER)
 
 # قاموس لتخزين البيانات التاريخية لكل سهم (كاش)
 _historical_cache = {}
+
+def save_uploaded_historical_file(symbol, uploaded_file):
+    """حفظ ملف Excel مرفوع في مجلد البيانات التاريخية"""
+    if uploaded_file is not None:
+        file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+        if file_extension not in ['.xlsx', '.xls', '.csv']:
+            return False, "الملف يجب أن يكون Excel أو CSV"
+        
+        filename = f"{symbol.upper()}{file_extension}"
+        filepath = os.path.join(DATA_FOLDER, filename)
+        
+        with open(filepath, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        
+        if symbol in _historical_cache:
+            del _historical_cache[symbol]
+        
+        return True, f"تم حفظ الملف كـ {filename}"
+    return False, "لم يتم رفع أي ملف"
 
 def load_excel_with_encoding(file_path):
     """تحميل ملف Excel مع التعامل مع مشاكل الترميز"""
     try:
         df = pd.read_excel(file_path, header=0)
         
-        # محاولة إصلاح أسماء الأعمدة العربية
         new_columns = []
         for col in df.columns:
             if isinstance(col, str):
@@ -139,17 +158,16 @@ def load_excel_with_encoding(file_path):
         return None
 
 def load_historical_data_for_symbol(symbol):
-    """تحميل البيانات التاريخية لسهم معين من مجلد Excel"""
+    """تحميل البيانات التاريخية لسهم معين من مجلد data"""
     if symbol in _historical_cache:
         return _historical_cache[symbol]
     
-    # البحث عن ملف Excel للسهم
     possible_files = [
-        os.path.join(HISTORICAL_DATA_FOLDER, f"{symbol}.xlsx"),
-        os.path.join(HISTORICAL_DATA_FOLDER, f"{symbol}.xls"),
-        os.path.join(HISTORICAL_DATA_FOLDER, f"{symbol}.csv"),
-        os.path.join(HISTORICAL_DATA_FOLDER, f"{symbol.lower()}.xlsx"),
-        os.path.join(HISTORICAL_DATA_FOLDER, f"{symbol.upper()}.xlsx"),
+        os.path.join(DATA_FOLDER, f"{symbol}.xlsx"),
+        os.path.join(DATA_FOLDER, f"{symbol}.xls"),
+        os.path.join(DATA_FOLDER, f"{symbol}.csv"),
+        os.path.join(DATA_FOLDER, f"{symbol.lower()}.xlsx"),
+        os.path.join(DATA_FOLDER, f"{symbol.upper()}.xlsx"),
     ]
     
     for file_path in possible_files:
@@ -1049,7 +1067,7 @@ def filter_by_sector(results, sector):
             filtered.append(an)
     return filtered
 
-# ================== تحميل البيانات وتحليل الأسهم (معدل) ==================
+# ================== تحميل البيانات وتحليل الأسهم ==================
 @st.cache_data(ttl=300, show_spinner=False)
 def get_all_data():
     url = "https://scanner.tradingview.com/egypt/scan"
@@ -1121,7 +1139,6 @@ def analyze_stock(d_row):
         if p <= 0:
             return None
         
-        # محاولة تحميل البيانات التاريخية للسهم
         historical_df = load_historical_data_for_symbol(name)
         hist_indicators = calculate_indicators_from_historical(historical_df, p) if historical_df is not None else None
         
@@ -1310,7 +1327,7 @@ def get_fresh_data():
             st.session_state.all_results = preprocess(raw)
             st.session_state.last_update = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             hist_count = len([r for r in st.session_state.all_results if r.get('has_historical', False)])
-            st.session_state.historical_stats = f"{hist_count} سهم لديه بيانات تاريخية"
+            st.session_state.historical_stats = f"📀 {hist_count} سهم لديه بيانات تاريخية"
             return True
     return False
 
@@ -1372,11 +1389,9 @@ def render_stock_card(res, is_top10=False):
     </div>
     """, unsafe_allow_html=True)
     
-    # إضافة أيقونة البيانات التاريخية
     hist_icon = " 📁" if res.get('has_historical', False) else ""
     st.markdown(f"<div class='stock-header'>{res['name']}{hist_icon} - {res['desc']}<span class='score-tag'>Smart: {res.get('smart_score', 0)}</span></div>", unsafe_allow_html=True)
     
-    # عرض معلومات البيانات التاريخية إن وجدت
     if res.get('has_historical', False):
         st.caption(f"📀 يستخدم بيانات تاريخية ({res.get('historical_days', 0)} يوم) - دقة محسنة")
     
@@ -1421,6 +1436,48 @@ def render_stock_card(res, is_top10=False):
     with col4: st.metric("RSI", f"{res['rsi']:.0f}")
     with col5: st.metric("السيولة", vol_text)
     
+    # ================== زر رفع البيانات التاريخية ==================
+    with st.expander("📁 رفع بيانات تاريخية", expanded=False):
+        st.markdown("**📤 رفع ملف Excel/CSV للبيانات التاريخية**")
+        st.caption("قم برفع ملف Excel يحتوي على بيانات السهم التاريخية (من Investing.com أو أي مصدر)")
+        st.caption("الأعمدة المطلوبة: التاريخ، السعر، الفتح، الأعلى، الأدنى، الحجم")
+        
+        uploaded_file = st.file_uploader(
+            f"اختر ملف لسهم {res['name']}", 
+            type=['xlsx', 'xls', 'csv'],
+            key=f"hist_upload_{res['name']}"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                if uploaded_file.name.endswith('.csv'):
+                    preview_df = pd.read_csv(uploaded_file, nrows=5)
+                else:
+                    preview_df = pd.read_excel(uploaded_file, nrows=5)
+                
+                st.success(f"✅ تم رفع الملف: {uploaded_file.name}")
+                st.caption("معاينة أول 5 صفوف:")
+                st.dataframe(preview_df, use_container_width=True)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"💾 حفظ البيانات", key=f"save_hist_{res['name']}"):
+                        uploaded_file.seek(0)
+                        success, msg = save_uploaded_historical_file(res['name'], uploaded_file)
+                        if success:
+                            st.success(msg)
+                            st.info("🔄 جاري تحديث التحليل...")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+                with col2:
+                    st.caption("⚠️ سيتم إعادة تحليل السهم تلقائياً بعد الحفظ")
+            except Exception as e:
+                st.error(f"خطأ في قراءة الملف: {e}")
+                st.info("تأكد من تنسيق الملف وصحة البيانات")
+    
+    # ================== التحليل الفني ==================
     with st.expander("📊 التحليل الفني", expanded=True):
         render_chart(res['name'])
         
@@ -1614,9 +1671,8 @@ def main():
         
         st.markdown("---")
         
-        # عرض إحصاءات البيانات التاريخية
         if st.session_state.get('historical_stats'):
-            st.info(f"📀 {st.session_state.historical_stats}")
+            st.info(st.session_state.historical_stats)
         
         col1, col2 = st.columns(2)
         with col1:
@@ -1628,13 +1684,13 @@ def main():
                 st.session_state.page = 'performance'
                 st.rerun()
         
-        # إدارة البيانات التاريخية
         with st.expander("📁 إدارة البيانات التاريخية", expanded=False):
             st.markdown("**📌 كيفية رفع البيانات التاريخية:**")
             st.markdown("""
-            1. ضع ملف Excel في مجلد `historical_data/`
-            2. اسم الملف يجب أن يكون مثل رمز السهم: `COMI.xlsx`, `TMGH.xlsx`
-            3. الملف يجب أن يحتوي على أعمدة: التاريخ، السعر، الفتح، الأعلى، الأدنى، الحجم
+            1. اذهب إلى أي سهم (مثل COMI)
+            2. افتح قسم **📁 رفع بيانات تاريخية**
+            3. اختر ملف Excel أو CSV من جهازك
+            4. اضغط حفظ - سيتم تحليل السهم فوراً بالبيانات الجديدة
             """)
             st.markdown("**📥 تحميل البيانات من Investing.com:**")
             st.markdown("""
@@ -1645,17 +1701,17 @@ def main():
             - اضغط Download Data
             """)
             
-            if os.path.exists(HISTORICAL_DATA_FOLDER):
-                files = os.listdir(HISTORICAL_DATA_FOLDER)
+            if os.path.exists(DATA_FOLDER):
+                files = os.listdir(DATA_FOLDER)
                 if files:
-                    st.markdown("**📄 الملفات الموجودة:**")
+                    st.markdown("**📄 الملفات المحفوظة:**")
                     for f in files:
-                        if f.endswith(('.xlsx', '.xls', '.csv')):
+                        if f.endswith(('.xlsx', '.xls', '.csv')) and f != '.gitkeep':
                             st.caption(f"• {f}")
                 else:
-                    st.info("📂 لا توجد ملفات تاريخية. ضع ملفات Excel في مجلد `historical_data/`")
+                    st.info("📂 لا توجد ملفات تاريخية. استخدم زر الرفع أعلاه")
     
-    # الصفحات المختلفة
+    # الصفحات المختلفة (مختصرة للحفاظ على المساحة - باقي الكود كما هو)
     if st.session_state.page == 'home':
         st.markdown("### 📊 أحدث فرص السوق")
         
@@ -1736,6 +1792,8 @@ def main():
                 else:
                     st.info("ℹ️ لا توجد فرص اختراق حالياً.")
     
+    # باقي الصفحات (top10, correction, rapid, support, analyze, performance)
+    # نفس الكود الأصلي تماماً - تم حذفه للاختصار
     elif st.session_state.page == 'top10':
         if st.button("🏠 العودة للرئيسية"): 
             st.session_state.page = 'home'
