@@ -182,6 +182,7 @@ def load_historical_data_for_symbol(symbol):
 def map_columns_to_standard(df):
     """تحويل أسماء الأعمدة إلى التنسيق القياسي - نسخة محسنة للعربية"""
     
+    # قائمة الأسماء العربية الممكنة للأعمدة
     col_mapping = {
         'التاريخ': 'date', 'تاريخ': 'date', 'Date': 'date', 'DATE': 'date',
         'السعر': 'close', 'سعر الإغلاق': 'close', 'Close': 'close', 'CLOSE': 'close', 'سعر': 'close', 'Price': 'close', 'price': 'close',
@@ -312,81 +313,6 @@ def calculate_indicators_from_historical(df, current_price=None):
         'last_close': close_prices[-1],
         'prev_close': close_prices[-2] if len(close_prices) > 1 else close_prices[-1]
     }
-
-# ================== دالة التراكم التلقائي للبيانات اليومية ==================
-def get_file_path_for_symbol(symbol):
-    """الحصول على مسار ملف السهم إذا وجد"""
-    for ext in ['.xlsx', '.xls', '.csv']:
-        test_path = os.path.join(DATA_FOLDER, f"{symbol}{ext}")
-        if os.path.exists(test_path):
-            return test_path
-        test_path_lower = os.path.join(DATA_FOLDER, f"{symbol.lower()}{ext}")
-        if os.path.exists(test_path_lower):
-            return test_path_lower
-        test_path_upper = os.path.join(DATA_FOLDER, f"{symbol.upper()}{ext}")
-        if os.path.exists(test_path_upper):
-            return test_path_upper
-    return None
-
-def merge_daily_data_to_historical(symbol, today_data):
-    """دمج بيانات اليوم الجديدة مع الملف التاريخي"""
-    filepath = get_file_path_for_symbol(symbol)
-    
-    if filepath is None:
-        return False, "لا يوجد ملف تاريخي للسهم. قم برفع ملف أولاً."
-    
-    try:
-        if filepath.endswith('.csv'):
-            df = pd.read_csv(filepath)
-        else:
-            df = pd.read_excel(filepath)
-        
-        df = map_columns_to_standard(df)
-        if df is None:
-            return False, "فشل في قراءة الملف"
-        
-        today_str = today_data.get('date', datetime.now().strftime("%Y-%m-%d"))
-        today_date = pd.to_datetime(today_str)
-        
-        if 'date' not in df.columns:
-            return False, "الملف لا يحتوي على عمود التاريخ"
-        
-        df['date'] = pd.to_datetime(df['date'])
-        
-        if today_date in df['date'].values:
-            idx = df[df['date'] == today_date].index[0]
-            df.loc[idx, 'close'] = today_data.get('close', df.loc[idx, 'close'])
-            df.loc[idx, 'open'] = today_data.get('open', df.loc[idx, 'open'])
-            df.loc[idx, 'high'] = today_data.get('high', df.loc[idx, 'high'])
-            df.loc[idx, 'low'] = today_data.get('low', df.loc[idx, 'low'])
-            df.loc[idx, 'volume'] = today_data.get('volume', df.loc[idx, 'volume'])
-            action = "تم تحديث"
-        else:
-            new_row = pd.DataFrame([{
-                'date': today_date,
-                'close': today_data.get('close', 0),
-                'open': today_data.get('open', 0),
-                'high': today_data.get('high', 0),
-                'low': today_data.get('low', 0),
-                'volume': today_data.get('volume', 0)
-            }])
-            df = pd.concat([df, new_row], ignore_index=True)
-            action = "تم إضافة"
-        
-        df = df.sort_values('date')
-        
-        if filepath.endswith('.csv'):
-            df.to_csv(filepath, index=False, encoding='utf-8-sig')
-        else:
-            df.to_excel(filepath, index=False)
-        
-        if symbol in _historical_cache:
-            del _historical_cache[symbol]
-        
-        return True, f"{action} بيانات {today_str} بنجاح"
-    
-    except Exception as e:
-        return False, f"خطأ في الدمج: {str(e)}"
 
 # ================== تحليل مؤشر EGX30 ==================
 @st.cache_data(ttl=600, show_spinner=False)
@@ -1180,20 +1106,17 @@ def get_all_data():
     except:
         return []
 
-# ================== دالة fetch_single_stock المحسّنة (بدون فلتر سيولة) ==================
 def fetch_single_stock(symbol):
-    """جلب وتحليل سهم واحد - بدون فلتر سيولة، يظهر أي سهم مهما كانت السيولة"""
     url = "https://scanner.tradingview.com/egypt/scan"
     cols = ["name", "close", "RSI", "volume", "average_volume_10d_calc", "high", "low", "change", "description", "SMA20", "SMA50", "SMA200", "open"]
     
-    headers = {"User-Agent": "Mozilla/5.0"}
-    
-    # محاولة 1: بحث تام (exact match)
     payload = {
-        "filter": [{"left": "name", "operation": "match", "right": f"^{symbol}$"}],
+        "filter": [{"left": "name", "operation": "match", "right": symbol.upper()}],
         "columns": cols,
-        "range": [0, 5]
+        "range": [0, 1]
     }
+    
+    headers = {"User-Agent": "Mozilla/5.0"}
     
     try:
         r = requests.post(url, json=payload, headers=headers, timeout=20)
@@ -1202,54 +1125,10 @@ def fetch_single_stock(symbol):
             results = data.get("data", [])
             if results and len(results) > 0:
                 return results
-        
-        # محاولة 2: بحث يحتوي (contains) - أوسع
-        payload2 = {
-            "filter": [{"left": "name", "operation": "contains", "right": symbol.upper()}],
-            "columns": cols,
-            "range": [0, 10]
-        }
-        r2 = requests.post(url, json=payload2, headers=headers, timeout=20)
-        if r2.status_code == 200:
-            data2 = r2.json()
-            results2 = data2.get("data", [])
-            if results2 and len(results2) > 0:
-                # البحث عن أقرب تطابق
-                for res in results2:
-                    name = res.get('d', [])[0] if res.get('d') else ""
-                    if symbol.upper() in name.upper():
-                        return [res]
-                return results2
-        
-        # محاولة 3: البحث في البيانات المخزنة مسبقاً (cache)
-        if st.session_state.all_results:
-            for stock in st.session_state.all_results:
-                if stock and stock.get('name', '').upper() == symbol.upper():
-                    d_row = {
-                        'd': [
-                            stock.get('name'),
-                            stock.get('p'),
-                            stock.get('rsi'),
-                            stock.get('volume'),
-                            stock.get('avg_volume'),
-                            stock.get('high'),
-                            stock.get('low'),
-                            stock.get('chg'),
-                            stock.get('desc'),
-                            stock.get('sma20'),
-                            stock.get('sma50'),
-                            stock.get('sma200'),
-                            stock.get('open')
-                        ]
-                    }
-                    return [d_row]
-        
         return []
-    except Exception as e:
-        print(f"خطأ في البحث: {e}")
+    except:
         return []
 
-# ================== دالة analyze_stock (بدون فلتر p <= 0) ==================
 def analyze_stock(d_row):
     try:
         d = d_row.get('d', [])
@@ -1271,34 +1150,13 @@ def analyze_stock(d_row):
         sma200_live = round(d[11], 3) if d[11] else p
         open_price = round(d[12], 3) if len(d) > 12 and d[12] else p
         
-        # ❌ تم حذف الشرط if p <= 0: return None
-        # الآن سيتم تحليل أي سهم مهما كانت السيولة
-        
-        # إذا كان السعر صفر أو غير متوفر، نحاول تقديره
         if p <= 0:
-            # محاولة تقدير من البيانات التاريخية
-            historical_df = load_historical_data_for_symbol(name)
-            if historical_df is not None and len(historical_df) > 0:
-                p = float(historical_df['close'].iloc[-1])
-            else:
-                p = 0.01  # قيمة تقديرية صغيرة جداً
+            return None
         
         historical_df = load_historical_data_for_symbol(name)
         hist_indicators = calculate_indicators_from_historical(historical_df, p) if historical_df is not None else None
         
         has_historical = hist_indicators is not None and hist_indicators['data_points'] >= 50
-        
-        # محاولة حفظ بيانات اليوم تلقائياً (إذا كان هناك ملف تاريخي)
-        if has_historical and get_file_path_for_symbol(name) is not None:
-            today_data_for_save = {
-                'date': datetime.now().strftime("%Y-%m-%d"),
-                'close': p,
-                'open': open_price,
-                'high': h,
-                'low': l,
-                'volume': v
-            }
-            merge_daily_data_to_historical(name, today_data_for_save)
         
         if has_historical:
             sma20 = round(hist_indicators['sma20'], 3)
@@ -1428,14 +1286,14 @@ def preprocess(raw_data):
 
 def get_top_10(results):
     valid = [r for r in results if r and r.get('smart_score', 0) >= 50]
-    valid = [r for r in valid if r.get('daily_turnover', 0) >= 2000000]  # هذا الفلتر يبقى للفرص فقط
+    valid = [r for r in valid if r.get('daily_turnover', 0) >= 2000000]
     sorted_results = sorted(valid, key=lambda x: x.get('smart_score', 0), reverse=True)
     return sorted_results[:10]
 
 def get_rapid_breakouts(results):
     rapid = []
     for r in results:
-        if r and r.get('daily_turnover', 0) >= 2000000:  # هذا الفلتر يبقى للفرص فقط
+        if r and r.get('daily_turnover', 0) >= 2000000:
             analysis = is_rapid_breakout(r)
             if analysis.get('is_breakout', False):
                 rapid.append({
@@ -1448,7 +1306,7 @@ def get_rapid_breakouts(results):
 def get_corrections(results, market_multiplier):
     corrections = []
     for r in results:
-        if r and r.get('daily_turnover', 0) >= 2000000:  # هذا الفلتر يبقى للفرص فقط
+        if r and r.get('daily_turnover', 0) >= 2000000:
             is_corr, reasons, strength, label, color = is_correction_hunter(r, market_multiplier)
             if is_corr:
                 corrections.append({
@@ -1464,7 +1322,7 @@ def get_corrections(results, market_multiplier):
 def get_support_stocks(results):
     support = []
     for r in results:
-        if r and r.get('daily_turnover', 0) >= 2000000:  # هذا الفلتر يبقى للفرص فقط
+        if r and r.get('daily_turnover', 0) >= 2000000:
             is_valid, reasons, score, level = is_support_with_bounce(r)
             if is_valid:
                 support.append({
@@ -1765,7 +1623,7 @@ def main():
     market_status = get_egx30_status()
     
     st.title("🎯 EGX Sniper Pro Ultimate")
-    st.caption("النسخة النهائية - أفضل أداء وأعلى دقة | تحليل كل الأسهم | فرص سريعة | صائد تصحيحات | دعم وارتداد | تحليل الشموع وحجم التداول | دعم البيانات التاريخية 📁 | تراكم تلقائي للبيانات اليومية 🔄")
+    st.caption("النسخة النهائية - أفضل أداء وأعلى دقة | تحليل كل الأسهم | فرص سريعة | صائد تصحيحات | دعم وارتداد | تحليل الشموع وحجم التداول | دعم البيانات التاريخية 📁")
     
     st.markdown(f"""
     <div style="background: #0d1117; border-radius: 10px; padding: 10px; margin-bottom: 20px; text-align: center;">
@@ -1847,12 +1705,6 @@ def main():
             2. افتح قسم **📁 رفع بيانات تاريخية**
             3. اختر ملف Excel أو CSV من جهازك
             4. اضغط حفظ - سيتم تحليل السهم فوراً بالبيانات الجديدة
-            """)
-            st.markdown("**🔄 خاصية التراكم التلقائي:**")
-            st.markdown("""
-            - بعد رفع الملف التاريخي لأول مرة
-            - التطبيق سيحفظ بيانات كل يوم جديد تلقائياً
-            - لن تحتاج لرفع ملف مرة أخرى أبداً!
             """)
             st.markdown("**📥 تحميل البيانات من Investing.com:**")
             st.markdown("""
@@ -2192,18 +2044,18 @@ def main():
             st.rerun()
         
         st.title("🔍 تحليل سهم")
-        sym = st.text_input("🔎 أدخل رمز السهم", placeholder="مثال: COMI, TMGH, ETEL, GTWL").upper().strip()
+        sym = st.text_input("🔎 أدخل رمز السهم", placeholder="مثال: COMI, TMGH, ETEL").upper().strip()
         
         if sym:
             with st.spinner("🔍 جاري البحث عن السهم..."):
                 data = fetch_single_stock(sym)
                 
                 if not data:
-                    st.error(f"❌ السهم '{sym}' غير موجود أو لا توجد بيانات كافية")
+                    st.error(f"❌ السهم '{sym}' غير موجود")
                     if st.session_state.all_results:
                         symbols = [r.get('name') for r in st.session_state.all_results[:30] if r]
                         if symbols:
-                            st.info(f"💡 أمثلة لأسهم متاحة: {', '.join(symbols[:15])}")
+                            st.info(f"💡 أمثلة: {', '.join(symbols[:15])}")
                 else:
                     res = analyze_stock(data[0])
                     if res:
@@ -2212,7 +2064,7 @@ def main():
                             record_trade(res, "تحليل فردي")
                             st.success("✅ تم تسجيل الصفقة!")
                     else:
-                        st.warning("⚠️ فشل تحليل السهم - قد يكون هناك خطأ في البيانات")
+                        st.warning("⚠️ فشل تحليل السهم - قد يكون ذو سيولة ضعيفة")
     
     elif st.session_state.page == 'performance':
         if st.button("🏠 العودة للرئيسية"): 
