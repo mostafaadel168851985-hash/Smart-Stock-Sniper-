@@ -182,7 +182,6 @@ def load_historical_data_for_symbol(symbol):
 def map_columns_to_standard(df):
     """تحويل أسماء الأعمدة إلى التنسيق القياسي - نسخة محسنة للعربية"""
     
-    # قائمة الأسماء العربية الممكنة للأعمدة
     col_mapping = {
         'التاريخ': 'date', 'تاريخ': 'date', 'Date': 'date', 'DATE': 'date',
         'السعر': 'close', 'سعر الإغلاق': 'close', 'Close': 'close', 'CLOSE': 'close', 'سعر': 'close', 'Price': 'close', 'price': 'close',
@@ -313,6 +312,118 @@ def calculate_indicators_from_historical(df, current_price=None):
         'last_close': close_prices[-1],
         'prev_close': close_prices[-2] if len(close_prices) > 1 else close_prices[-1]
     }
+
+# ================== دالة التراكم التلقائي للبيانات اليومية ==================
+def get_file_path_for_symbol(symbol):
+    """الحصول على مسار ملف السهم إذا وجد"""
+    for ext in ['.xlsx', '.xls', '.csv']:
+        test_path = os.path.join(DATA_FOLDER, f"{symbol}{ext}")
+        if os.path.exists(test_path):
+            return test_path
+        test_path_lower = os.path.join(DATA_FOLDER, f"{symbol.lower()}{ext}")
+        if os.path.exists(test_path_lower):
+            return test_path_lower
+        test_path_upper = os.path.join(DATA_FOLDER, f"{symbol.upper()}{ext}")
+        if os.path.exists(test_path_upper):
+            return test_path_upper
+    return None
+
+def merge_daily_data_to_historical(symbol, today_data):
+    """
+    دمج بيانات اليوم الجديدة مع الملف التاريخي
+    today_data: قاموس يحتوي على {date, close, open, high, low, volume}
+    """
+    filepath = get_file_path_for_symbol(symbol)
+    
+    if filepath is None:
+        return False, "لا يوجد ملف تاريخي للسهم. قم برفع ملف أولاً."
+    
+    try:
+        # قراءة الملف الحالي
+        if filepath.endswith('.csv'):
+            df = pd.read_csv(filepath)
+        else:
+            df = pd.read_excel(filepath)
+        
+        # إصلاح أسماء الأعمدة
+        df = map_columns_to_standard(df)
+        if df is None:
+            return False, "فشل في قراءة الملف"
+        
+        # تحويل التاريخ
+        today_str = today_data.get('date', datetime.now().strftime("%Y-%m-%d"))
+        today_date = pd.to_datetime(today_str)
+        
+        if 'date' not in df.columns:
+            return False, "الملف لا يحتوي على عمود التاريخ"
+        
+        df['date'] = pd.to_datetime(df['date'])
+        
+        # التحقق إذا كان التاريخ موجود
+        if today_date in df['date'].values:
+            # تحديث الصف الموجود
+            idx = df[df['date'] == today_date].index[0]
+            df.loc[idx, 'close'] = today_data.get('close', df.loc[idx, 'close'])
+            df.loc[idx, 'open'] = today_data.get('open', df.loc[idx, 'open'])
+            df.loc[idx, 'high'] = today_data.get('high', df.loc[idx, 'high'])
+            df.loc[idx, 'low'] = today_data.get('low', df.loc[idx, 'low'])
+            df.loc[idx, 'volume'] = today_data.get('volume', df.loc[idx, 'volume'])
+            action = "تم تحديث"
+        else:
+            # إضافة صف جديد
+            new_row = pd.DataFrame([{
+                'date': today_date,
+                'close': today_data.get('close', 0),
+                'open': today_data.get('open', 0),
+                'high': today_data.get('high', 0),
+                'low': today_data.get('low', 0),
+                'volume': today_data.get('volume', 0)
+            }])
+            df = pd.concat([df, new_row], ignore_index=True)
+            action = "تم إضافة"
+        
+        # ترتيب حسب التاريخ
+        df = df.sort_values('date')
+        
+        # حفظ الملف
+        if filepath.endswith('.csv'):
+            df.to_csv(filepath, index=False, encoding='utf-8-sig')
+        else:
+            df.to_excel(filepath, index=False)
+        
+        # مسح الكاش
+        if symbol in _historical_cache:
+            del _historical_cache[symbol]
+        
+        return True, f"{action} بيانات {today_str} بنجاح"
+    
+    except Exception as e:
+        return False, f"خطأ في الدمج: {str(e)}"
+
+def auto_save_today_data(stock_data):
+    """حفظ بيانات اليوم تلقائياً من API"""
+    if stock_data is None:
+        return False
+    
+    symbol = stock_data.get('name')
+    if not symbol:
+        return False
+    
+    # التحقق من وجود ملف تاريخي
+    if get_file_path_for_symbol(symbol) is None:
+        return False
+    
+    today_data = {
+        'date': datetime.now().strftime("%Y-%m-%d"),
+        'close': stock_data.get('p', 0),
+        'open': stock_data.get('open', stock_data.get('p', 0)),
+        'high': stock_data.get('high', stock_data.get('p', 0)),
+        'low': stock_data.get('low', stock_data.get('p', 0)),
+        'volume': stock_data.get('volume', 0)
+    }
+    
+    success, msg = merge_daily_data_to_historical(symbol, today_data)
+    return success
 
 # ================== تحليل مؤشر EGX30 ==================
 @st.cache_data(ttl=600, show_spinner=False)
@@ -1158,6 +1269,18 @@ def analyze_stock(d_row):
         
         has_historical = hist_indicators is not None and hist_indicators['data_points'] >= 50
         
+        # محاولة حفظ بيانات اليوم تلقائياً (إذا كان هناك ملف تاريخي)
+        if has_historical and get_file_path_for_symbol(name) is not None:
+            today_data_for_save = {
+                'date': datetime.now().strftime("%Y-%m-%d"),
+                'close': p,
+                'open': open_price,
+                'high': h,
+                'low': l,
+                'volume': v
+            }
+            merge_daily_data_to_historical(name, today_data_for_save)
+        
         if has_historical:
             sma20 = round(hist_indicators['sma20'], 3)
             sma50 = round(hist_indicators['sma50'], 3)
@@ -1623,7 +1746,7 @@ def main():
     market_status = get_egx30_status()
     
     st.title("🎯 EGX Sniper Pro Ultimate")
-    st.caption("النسخة النهائية - أفضل أداء وأعلى دقة | تحليل كل الأسهم | فرص سريعة | صائد تصحيحات | دعم وارتداد | تحليل الشموع وحجم التداول | دعم البيانات التاريخية 📁")
+    st.caption("النسخة النهائية - أفضل أداء وأعلى دقة | تحليل كل الأسهم | فرص سريعة | صائد تصحيحات | دعم وارتداد | تحليل الشموع وحجم التداول | دعم البيانات التاريخية 📁 | تراكم تلقائي للبيانات اليومية 🔄")
     
     st.markdown(f"""
     <div style="background: #0d1117; border-radius: 10px; padding: 10px; margin-bottom: 20px; text-align: center;">
@@ -1705,6 +1828,12 @@ def main():
             2. افتح قسم **📁 رفع بيانات تاريخية**
             3. اختر ملف Excel أو CSV من جهازك
             4. اضغط حفظ - سيتم تحليل السهم فوراً بالبيانات الجديدة
+            """)
+            st.markdown("**🔄 خاصية التراكم التلقائي:**")
+            st.markdown("""
+            - بعد رفع الملف التاريخي لأول مرة
+            - التطبيق سيحفظ بيانات كل يوم جديد تلقائياً
+            - لن تحتاج لرفع ملف مرة أخرى أبداً!
             """)
             st.markdown("**📥 تحميل البيانات من Investing.com:**")
             st.markdown("""
