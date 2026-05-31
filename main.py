@@ -9,6 +9,7 @@ import urllib.parse
 import time
 import math
 import pandas as pd
+import numpy as np
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -107,18 +108,14 @@ def get_performance_stats(trades):
     }
 
 # ================== إعدادات البيانات التاريخية ==================
-# 🔴 التغيير الرئيسي: المسار أصبح "data" بدلاً من "historical_data"
 DATA_FOLDER = "data"
 
-# إنشاء المجلد إذا لم يكن موجوداً (للتشغيل المحلي)
 if not os.path.exists(DATA_FOLDER):
     os.makedirs(DATA_FOLDER)
 
-# قاموس لتخزين البيانات التاريخية لكل سهم (كاش)
 _historical_cache = {}
 
 def save_uploaded_historical_file(symbol, uploaded_file):
-    """حفظ ملف Excel مرفوع في مجلد البيانات التاريخية"""
     if uploaded_file is not None:
         file_extension = os.path.splitext(uploaded_file.name)[1].lower()
         if file_extension not in ['.xlsx', '.xls', '.csv']:
@@ -137,7 +134,6 @@ def save_uploaded_historical_file(symbol, uploaded_file):
     return False, "لم يتم رفع أي ملف"
 
 def load_excel_with_encoding(file_path):
-    """تحميل ملف Excel مع التعامل مع مشاكل الترميز"""
     try:
         df = pd.read_excel(file_path, header=0)
         
@@ -147,7 +143,10 @@ def load_excel_with_encoding(file_path):
                 try:
                     col_clean = col.encode('latin1').decode('utf-8')
                 except:
-                    col_clean = col
+                    try:
+                        col_clean = col.encode('cp1256').decode('utf-8')
+                    except:
+                        col_clean = col
                 new_columns.append(col_clean)
             else:
                 new_columns.append(col)
@@ -158,7 +157,6 @@ def load_excel_with_encoding(file_path):
         return None
 
 def load_historical_data_for_symbol(symbol):
-    """تحميل البيانات التاريخية لسهم معين من مجلد data"""
     if symbol in _historical_cache:
         return _historical_cache[symbol]
     
@@ -182,39 +180,57 @@ def load_historical_data_for_symbol(symbol):
     return None
 
 def map_columns_to_standard(df):
-    """تحويل أسماء الأعمدة إلى التنسيق القياسي"""
+    """تحويل أسماء الأعمدة إلى التنسيق القياسي - نسخة محسنة للعربية"""
+    
+    # قائمة الأسماء العربية الممكنة للأعمدة
     col_mapping = {
         'التاريخ': 'date', 'تاريخ': 'date', 'Date': 'date', 'DATE': 'date',
-        'السعر': 'close', 'سعر الإغلاق': 'close', 'Close': 'close', 'CLOSE': 'close', 'سعر': 'close',
+        'السعر': 'close', 'سعر الإغلاق': 'close', 'Close': 'close', 'CLOSE': 'close', 'سعر': 'close', 'Price': 'close', 'price': 'close',
         'الفتح': 'open', 'سعر الفتح': 'open', 'Open': 'open', 'OPEN': 'open',
         'الأعلى': 'high', 'مرتفعة': 'high', 'High': 'high', 'HIGH': 'high',
         'الأدنى': 'low', 'منخفضة': 'low', 'Low': 'low', 'LOW': 'low',
-        'الحجم': 'volume', 'Volume': 'volume', 'VOLUME': 'volume',
-        '% التغير': 'change', 'التغير': 'change', 'Change': 'change'
+        'الحجم': 'volume', 'Volume': 'volume', 'VOLUME': 'volume', 'حجم التداول': 'volume',
+        '% التغير': 'change', 'التغير': 'change', 'Change': 'change', 'change %': 'change'
     }
     
     new_df = pd.DataFrame()
     
     for col in df.columns:
-        col_str = str(col)
-        for arabic_col, english_col in col_mapping.items():
-            if arabic_col in col_str or col_str == arabic_col:
-                new_df[english_col] = df[col]
+        col_str = str(col).strip()
+        matched = False
+        
+        for arabic_name, english_name in col_mapping.items():
+            if arabic_name in col_str or col_str == arabic_name:
+                new_df[english_name] = df[col]
+                matched = True
                 break
-        else:
+        
+        if not matched:
             col_lower = col_str.lower()
-            if 'close' in col_lower or 'سعر' in col_lower:
-                new_df['close'] = df[col]
+            if 'close' in col_lower or 'سعر' in col_lower or 'price' in col_lower:
+                if 'close' not in new_df.columns:
+                    new_df['close'] = df[col]
             elif 'open' in col_lower or 'فتح' in col_lower:
-                new_df['open'] = df[col]
+                if 'open' not in new_df.columns:
+                    new_df['open'] = df[col]
             elif 'high' in col_lower or 'أعلى' in col_lower or 'مرتفع' in col_lower:
-                new_df['high'] = df[col]
+                if 'high' not in new_df.columns:
+                    new_df['high'] = df[col]
             elif 'low' in col_lower or 'أدنى' in col_lower or 'منخفض' in col_lower:
-                new_df['low'] = df[col]
+                if 'low' not in new_df.columns:
+                    new_df['low'] = df[col]
             elif 'volume' in col_lower or 'حجم' in col_lower:
-                new_df['volume'] = df[col]
+                if 'volume' not in new_df.columns:
+                    new_df['volume'] = df[col]
             elif 'date' in col_lower or 'تاريخ' in col_lower:
-                new_df['date'] = df[col]
+                if 'date' not in new_df.columns:
+                    new_df['date'] = df[col]
+    
+    if 'close' not in new_df.columns:
+        for col in df.columns:
+            if df[col].dtype in ['float64', 'int64']:
+                new_df['close'] = df[col]
+                break
     
     if 'close' not in new_df.columns:
         return None
@@ -240,7 +256,6 @@ def map_columns_to_standard(df):
     return new_df
 
 def calculate_rsi_from_prices(prices, period=14):
-    """حساب RSI من قائمة الأسعار"""
     if len(prices) < period + 1:
         return 50
     
@@ -259,7 +274,6 @@ def calculate_rsi_from_prices(prices, period=14):
     return rsi
 
 def calculate_indicators_from_historical(df, current_price=None):
-    """حساب المؤشرات الفنية من البيانات التاريخية"""
     if df is None or len(df) < 20:
         return None
     
@@ -1711,7 +1725,7 @@ def main():
                 else:
                     st.info("📂 لا توجد ملفات تاريخية. استخدم زر الرفع أعلاه")
     
-    # الصفحات المختلفة (مختصرة للحفاظ على المساحة - باقي الكود كما هو)
+    # ================== الصفحات المختلفة ==================
     if st.session_state.page == 'home':
         st.markdown("### 📊 أحدث فرص السوق")
         
@@ -1792,8 +1806,6 @@ def main():
                 else:
                     st.info("ℹ️ لا توجد فرص اختراق حالياً.")
     
-    # باقي الصفحات (top10, correction, rapid, support, analyze, performance)
-    # نفس الكود الأصلي تماماً - تم حذفه للاختصار
     elif st.session_state.page == 'top10':
         if st.button("🏠 العودة للرئيسية"): 
             st.session_state.page = 'home'
